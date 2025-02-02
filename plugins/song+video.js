@@ -1,6 +1,6 @@
 const { cmd } = require('../command');
 const yts = require('yt-search');
-const ytdl = require("@distube/ytdl-core");
+const ytdl = require('@distube/ytdl-core');
 
 // YouTube URL Normalizer
 const normalizeYouTubeURL = (url) => {
@@ -35,14 +35,29 @@ cmd({
 },
 async (conn, mek, m, { from, q, reply }) => {
     try {
-        if (!q) return reply("🚨 *Please provide a YouTube link or title!*");
+        if (!q) return reply("*🚫 Please provide a YouTube link or title!*");
 
         const search = await yts(q);
         const data = search.videos[0];
         const url = normalizeYouTubeURL(data.url);
 
-        if (!url) return reply("🚫 *Video not found!*");
+        if (!url) return reply("*🚫 Video not found!*");
 
+        // Video details
+        let desc = `╭━❮◆ SENAL MD SONG DOWNLOADER ◆❯━╮
+┃➤✰ 𝚃𝙸𝚃𝙻𝙴 : ${data.title}
+┃➤✰ 𝚅𝙸𝙴𝚆𝚂 : ${data.views}
+┃➤✰ 𝙳𝙴𝚂𝙲𝚁𝙸𝙿𝚃𝙸𝙾𝙽 : ${data.description}
+┃➤✰ 𝚃𝙸𝙼𝙴 : ${data.timestamp}
+┃➤✰ 𝙰𝙶𝙾 : ${data.ago}
+╰━━━━━━━━━━━━━━━⪼
+
+> © Powered by SENAL`;
+
+        // Send video details
+        await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
+
+        // Quality selection
         let buttons = AUDIO_QUALITIES.map((q, i) => ({
             buttonId: `audio_${i}`,
             buttonText: { displayText: `${i + 1} - ${q.label}` },
@@ -50,7 +65,7 @@ async (conn, mek, m, { from, q, reply }) => {
         }));
 
         let buttonMessage = {
-            text: `🎵 *Select Audio Quality:*\n\n*Please use 64kbps or 128kbps for best experience*`,
+            text: `🎧 *Select Audio Quality:*\n\n⚠️ *For songs, it's recommended to use 64kbps or 128kbps.*`,
             footer: "Powered by SENAL",
             buttons: buttons,
             headerType: 1
@@ -58,9 +73,12 @@ async (conn, mek, m, { from, q, reply }) => {
 
         await conn.sendMessage(from, buttonMessage, { quoted: mek });
 
-        conn.once("message", async (msg) => {
+        // Listen for user's quality selection
+        conn.on("message", async (msg) => {
             let choice = parseInt(msg.message.conversation.trim());
-            if (isNaN(choice) || choice < 1 || choice > AUDIO_QUALITIES.length) return reply("🚫 *Invalid choice!*");
+            if (isNaN(choice) || choice < 1 || choice > AUDIO_QUALITIES.length) {
+                return reply("*🚫 Invalid choice!*");
+            }
 
             let selectedQuality = AUDIO_QUALITIES[choice - 1].value;
             await reply("🎧 *Wait for your song...*");
@@ -68,20 +86,7 @@ async (conn, mek, m, { from, q, reply }) => {
             let audioStream = ytdl(url, { quality: selectedQuality, filter: "audioonly" });
 
             await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
-
-            // Sending song details after upload
-            let desc = `╭━❮◆ SENAL MD SONG DOWNLOADER ◆❯━╮
-┃➤✰ TITLE : ${data.title}
-┃➤✰ VIEWS : ${data.views}
-┃➤✰ DESCRIPTION : ${data.description}
-┃➤✰ TIME : ${data.timestamp}
-┃➤✰ AGO : ${data.ago}
-╰━━━━━━━━━━━━━━━⪼
-
-> © Powered by SENAL`;
-
-            await conn.sendMessage(from, { text: desc }, { quoted: mek });
-            await reply("✅ *Song uploaded successfully!*");
+            await reply("*✅ Uploaded!*");
         });
 
     } catch (e) {
@@ -99,14 +104,29 @@ cmd({
 },
 async (conn, mek, m, { from, q, reply }) => {
     try {
-        if (!q) return reply("🚨 *Please provide a YouTube link or title!*");
+        if (!q) return reply("*🚫 Please provide a YouTube link or title!*");
 
         const search = await yts(q);
         const data = search.videos[0];
         const url = normalizeYouTubeURL(data.url);
 
-        if (!url) return reply("🚫 *Video not found!*");
+        if (!url) return reply("*🚫 Video not found!*");
 
+        // Video details
+        let desc = `╭━❮◆ SENAL MD VIDEO DOWNLOADER ◆❯━╮
+┃➤✰ 𝚃𝙸𝚃𝙻𝙴 : ${data.title}
+┃➤✰ 𝚅𝙸𝙴𝚆𝚂 : ${data.views}
+┃➤✰ 𝙳𝙴𝚂𝙲𝚁𝙸𝙿𝚃𝙸𝙾𝙽 : ${data.description}
+┃➤✰ 𝚃𝙸𝙼𝙴 : ${data.timestamp}
+┃➤✰ 𝙰𝙶𝙾 : ${data.ago}
+╰━━━━━━━━━━━━━━━⪼
+
+> © Powered by SENAL`;
+
+        // Send video details
+        await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
+
+        // Quality selection
         let buttons = VIDEO_QUALITIES.map((q, i) => ({
             buttonId: `video_${i}`,
             buttonText: { displayText: `${i + 1} - ${q.label}` },
@@ -114,7 +134,7 @@ async (conn, mek, m, { from, q, reply }) => {
         }));
 
         let buttonMessage = {
-            text: `🎥 *Select Video Quality:*\n\n*Please use 144p or 360p for low-quality video downloads.*`,
+            text: `🎬 *Select Video Quality:*\n\n⚠️ *For videos, it's recommended to use 360p or 144p.*`,
             footer: "Powered by SENAL",
             buttons: buttons,
             headerType: 1
@@ -122,33 +142,14 @@ async (conn, mek, m, { from, q, reply }) => {
 
         await conn.sendMessage(from, buttonMessage, { quoted: mek });
 
-        conn.once("message", async (msg) => {
+        // Listen for user's quality selection
+        conn.on("message", async (msg) => {
             let choice = parseInt(msg.message.conversation.trim());
-            if (isNaN(choice) || choice < 1 || choice > VIDEO_QUALITIES.length) return reply("🚫 *Invalid choice!*");
+            if (isNaN(choice) || choice < 1 || choice > VIDEO_QUALITIES.length) {
+                return reply("*🚫 Invalid choice!*");
+            }
 
             let selectedQuality = VIDEO_QUALITIES[choice - 1].value;
-            await reply("🎬 *Wait for your video...*");
-
-            let videoStream = ytdl(url, { quality: selectedQuality });
-
-            await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
-
-            // Sending video details after upload
-            let desc = `╭━❮◆ SENAL MD VIDEO DOWNLOADER ◆❯━╮
-┃➤✰ TITLE : ${data.title}
-┃➤✰ VIEWS : ${data.views}
-┃➤✰ DESCRIPTION : ${data.description}
-┃➤✰ TIME : ${data.timestamp}
-┃➤✰ AGO : ${data.ago}
-╰━━━━━━━━━━━━━━━⪼
-
-> © Powered by SENAL`;
-
-            await conn.sendMessage(from, { text: desc }, { quoted: mek });
-            await reply("✅ *Video uploaded successfully!*");
-        });
-
-    } catch (e) {
-        reply(`🚫 *Error:* ${e}`);
-    }
-});
+            await reply
+::contentReference[oaicite:0]{index=0}
+ 
