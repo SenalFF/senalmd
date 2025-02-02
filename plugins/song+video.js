@@ -1,11 +1,7 @@
-const { cmd, commands } = require('../command');
+const { cmd } = require('../command');
 const ytdl = require('ytdl-core');
 const yts = require('yt-search');
 
-/**
- * Normalize YouTube URL
- * Converts shortened YouTube URLs (https://youtu.be/...) to standard format.
- */
 const normalizeYouTubeURL = (url) => {
     if (url.startsWith('https://youtu.be/')) {
         const videoId = url.split('/').pop().split('?')[0];
@@ -14,27 +10,28 @@ const normalizeYouTubeURL = (url) => {
     return url;
 };
 
-//=========== SONG DOWNLOAD ===========
-
+//=========== SONG DOWNLOADER ===========
 cmd({
     pattern: "song",
     desc: "Download songs",
     category: "download",
     react: "🎵",
     filename: __filename,
-},
-async (conn, mek, m, {
-    from, quoted, args, q, reply
-}) => {
+}, async (conn, mek, m, { from, q, reply }) => {
     try {
-        if (!q) return reply("*කරුණාකර Link එකක් හෝ නමක් ලබා දෙන්න 🔎...*");
+        if (!q) return reply("*🔎 Please provide a song name or YouTube link!*");
 
-        const normalizedQuery = q.startsWith('http') ? normalizeYouTubeURL(q) : q;
-        const search = await yts(normalizedQuery);
+        const searchQuery = q.startsWith('http') ? normalizeYouTubeURL(q) : q;
+        const search = await yts(searchQuery);
         const data = search.videos[0];
-        const url = data.url;
 
-        if (!url) return reply("*🚫 සොයාගත නොහැක!*");
+        if (!data) return reply("*🚫 No results found!*");
+
+        const url = data.url;
+        const info = await ytdl.getInfo(url);
+        const audioFormat = ytdl.chooseFormat(info.formats, { quality: 'highestaudio' });
+
+        if (!audioFormat || !audioFormat.url) return reply("*🚫 Unable to get audio link!*");
 
         let desc = `╭━❮◆ SENAL MD SONG DOWNLOADER ◆❯━╮
 ┃➤✰ 𝚃𝙸𝚃𝙻𝙴 : ${data.title}
@@ -43,42 +40,41 @@ async (conn, mek, m, {
 ┃➤✰ 𝚃𝙸𝙼𝙴 : ${data.timestamp}
 ┃➤✰ 𝙰𝙶𝙾 : ${data.ago}
 ╰━━━━━━━━━━━━━━━⪼
-
-> ©ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝚂𝙴𝙽𝙰𝙻`;
+> © Powered by SENAL`;
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
-        await reply("*_Downloading_* ⬇️");
+        await reply("*⬇️ Downloading song...*");
 
-        const audioStream = ytdl(url, { filter: 'audioonly', format: 'mp3' });
+        await conn.sendMessage(from, { audio: { url: audioFormat.url }, mimetype: "audio/mpeg" }, { quoted: mek });
 
-        await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
-        await reply("*_UPLOADED_* ✅");
+        await reply("*✅ Song sent successfully!*");
     } catch (e) {
-        reply(`🚫 *දෝෂයක් ඇති විය:*\n${e}`);
+        reply(`🚫 *Error occurred:*\n${e}`);
     }
 });
 
-//=========== VIDEO DOWNLOAD ===========
-
+//=========== VIDEO DOWNLOADER ===========
 cmd({
     pattern: "video",
-    desc: "Download video",
+    desc: "Download videos",
     category: "download",
     react: "🎥",
     filename: __filename,
-},
-async (conn, mek, m, {
-    from, quoted, args, q, reply
-}) => {
+}, async (conn, mek, m, { from, q, reply }) => {
     try {
-        if (!q) return reply("*කරුණාකර Link එකක් හෝ නමක් ලබා දෙන්න 🔎...*");
+        if (!q) return reply("*🔎 Please provide a video name or YouTube link!*");
 
-        const normalizedQuery = q.startsWith('http') ? normalizeYouTubeURL(q) : q;
-        const search = await yts(normalizedQuery);
+        const searchQuery = q.startsWith('http') ? normalizeYouTubeURL(q) : q;
+        const search = await yts(searchQuery);
         const data = search.videos[0];
-        const url = data.url;
 
-        if (!url) return reply("*🚫 සොයාගත නොහැක!*");
+        if (!data) return reply("*🚫 No results found!*");
+
+        const url = data.url;
+        const info = await ytdl.getInfo(url);
+        const videoFormat = ytdl.chooseFormat(info.formats, { quality: 'highestvideo' });
+
+        if (!videoFormat || !videoFormat.url) return reply("*🚫 Unable to get video link!*");
 
         let des = `╭━❮◆ SENAL MD VIDEO DOWNLOADER ◆❯━╮
 ┃➤✰ 𝚃𝙸𝚃𝙻𝙴 : ${data.title}
@@ -87,17 +83,15 @@ async (conn, mek, m, {
 ┃➤✰ 𝚃𝙸𝙼𝙴 : ${data.timestamp}
 ┃➤✰ 𝙰𝙶𝙾 : ${data.ago}
 ╰━━━━━━━━━━━━━━━⪼
-
-> ©ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝚂𝙴𝙽𝙰𝙻`;
+> © Powered by SENAL`;
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: des }, { quoted: mek });
-        await reply("*_Downloading_* ⬇️");
+        await reply("*⬇️ Downloading video...*");
 
-        const videoStream = ytdl(url, { filter: 'videoandaudio', format: 'mp4' });
+        await conn.sendMessage(from, { video: { url: videoFormat.url }, mimetype: "video/mp4" }, { quoted: mek });
 
-        await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
-        await reply("*_UPLOADED_* ✅");
-    } catch (a) {
-        reply(`🚫 *දෝෂයක් ඇති විය:*\n${a}`);
+        await reply("*✅ Video sent successfully!*");
+    } catch (e) {
+        reply(`🚫 *Error occurred:*\n${e}`);
     }
 });
