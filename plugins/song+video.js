@@ -1,5 +1,5 @@
 const { cmd, commands } = require('../command');
-const fg = require('api-dylux');
+const ytdl = require('ytdl-core');
 const yts = require('yt-search');
 
 /**
@@ -14,7 +14,7 @@ const normalizeYouTubeURL = (url) => {
     return url;
 };
 
-//===========SONG-DL===========
+//=========== SONG DOWNLOAD ===========
 
 cmd({
     pattern: "song",
@@ -24,14 +24,12 @@ cmd({
     filename: __filename,
 },
 async (conn, mek, m, {
-    from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply
+    from, quoted, args, q, reply
 }) => {
     try {
         if (!q) return reply("*කරුණාකර Link එකක් හෝ නමක් ලබා දෙන්න 🔎...*");
 
-        // Normalize URL if it is provided as a link
         const normalizedQuery = q.startsWith('http') ? normalizeYouTubeURL(q) : q;
-
         const search = await yts(normalizedQuery);
         const data = search.videos[0];
         const url = data.url;
@@ -49,25 +47,18 @@ async (conn, mek, m, {
 > ©ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝚂𝙴𝙽𝙰𝙻`;
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
+        await reply("*_Downloading_* ⬇️");
 
-        // Send downloading message
-        await reply("*_Downloading_*   ⬇️");
+        const audioStream = ytdl(url, { filter: 'audioonly', format: 'mp3' });
 
-        let down = await fg.yta(url);
-        let downloadUrl = down.dl_url;
-
-        // Send audio
-        await conn.sendMessage(from, { audio: { url: downloadUrl }, mimetype: "audio/mpeg" }, { quoted: mek });
-        await conn.sendMessage(from, { document: { url: downloadUrl }, mimetype: "audio/mpeg", fileName: `${data.title}.mp3`, caption: "©ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝚂𝙴𝙽𝙰𝙻 𝙼𝙳" }, { quoted: mek });
-
-        // Send uploaded message
-        await reply("*_UPLOADED_*  ✅");
+        await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
+        await reply("*_UPLOADED_* ✅");
     } catch (e) {
         reply(`🚫 *දෝෂයක් ඇති විය:*\n${e}`);
     }
 });
 
-//===========VIDEO-DL===========
+//=========== VIDEO DOWNLOAD ===========
 
 cmd({
     pattern: "video",
@@ -77,14 +68,12 @@ cmd({
     filename: __filename,
 },
 async (conn, mek, m, {
-    from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply
+    from, quoted, args, q, reply
 }) => {
     try {
         if (!q) return reply("*කරුණාකර Link එකක් හෝ නමක් ලබා දෙන්න 🔎...*");
 
-        // Normalize URL if it is provided as a link
         const normalizedQuery = q.startsWith('http') ? normalizeYouTubeURL(q) : q;
-
         const search = await yts(normalizedQuery);
         const data = search.videos[0];
         const url = data.url;
@@ -102,19 +91,12 @@ async (conn, mek, m, {
 > ©ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝚂𝙴𝙽𝙰𝙻`;
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: des }, { quoted: mek });
+        await reply("*_Downloading_* ⬇️");
 
-        // Send downloading message
-        await reply("*_Downloading_*   ⬇️");
+        const videoStream = ytdl(url, { filter: 'videoandaudio', format: 'mp4' });
 
-        let down = await fg.ytv(url);
-        let downloadUrl = down.dl_url;
-
-        // Send video
-        await conn.sendMessage(from, { video: { url: downloadUrl }, mimetype: "video/mp4" }, { quoted: mek });
-        await conn.sendMessage(from, { document: { url: downloadUrl }, mimetype: "video/mp4", fileName: `${data.title}.mp4`, caption: "©ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝚂𝙴𝙽𝙰𝙻 𝙼𝙳" }, { quoted: mek });
-
-        // Send uploaded message
-        await reply("*_UPLOADED_*  ✅");
+        await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
+        await reply("*_UPLOADED_* ✅");
     } catch (a) {
         reply(`🚫 *දෝෂයක් ඇති විය:*\n${a}`);
     }
