@@ -30,14 +30,7 @@
     "util": "^0.12.4",
     "vm": "^0.1.0",
     "wa-sticker-formatter": "^4.4.4",
-    "yt-search": "2.11.1"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/senal2/SenalMD.git"
-  },
-  "license": "MIT",
-  "engines": {
-    "node": ">=16.0.0"
+    "yt-search": "2.11.1",
+    "ytdl-core": "^4.11.5"
   }
 }
