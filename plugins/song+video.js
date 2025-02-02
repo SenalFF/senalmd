@@ -1,5 +1,5 @@
 const { cmd } = require('../command');
-const ytdl = require('ytdl-core');
+const ytdl = require('@distube/ytdl-core');  // Updated to @distube/ytdl-core
 const yts = require('yt-search');
 
 const normalizeYouTubeURL = (url) => {
@@ -34,11 +34,11 @@ cmd({
         if (!audioFormat || !audioFormat.url) return reply("*🚫 Unable to get audio link!*");
 
         let desc = `╭━❮◆ SENAL MD SONG DOWNLOADER ◆❯━╮
-┃➤✰ 𝚃𝙸𝚃𝙻𝙴 : ${data.title}
-┃➤✰ 𝚅𝙸𝙴𝚆𝚂 : ${data.views}
-┃➤✰ 𝙳𝙴𝚂𝙲𝚁𝙸𝙿𝚃𝙸𝙾𝙽 : ${data.description}
-┃➤✰ 𝚃𝙸𝙼𝙴 : ${data.timestamp}
-┃➤✰ 𝙰𝙶𝙾 : ${data.ago}
+┃➤✰ TITLE : ${data.title}
+┃➤✰ VIEWS : ${data.views}
+┃➤✰ DESCRIPTION : ${data.description}
+┃➤✰ TIME : ${data.timestamp}
+┃➤✰ AGO : ${data.ago}
 ╰━━━━━━━━━━━━━━━⪼
 > © Powered by SENAL`;
 
@@ -77,11 +77,11 @@ cmd({
         if (!videoFormat || !videoFormat.url) return reply("*🚫 Unable to get video link!*");
 
         let des = `╭━❮◆ SENAL MD VIDEO DOWNLOADER ◆❯━╮
-┃➤✰ 𝚃𝙸𝚃𝙻𝙴 : ${data.title}
-┃➤✰ 𝚅𝙸𝙴𝚆𝚂 : ${data.views}
-┃➤✰ 𝙳𝙴𝚂𝙲𝚁𝙸𝙿𝚃𝙸𝙾𝙽 : ${data.description}
-┃➤✰ 𝚃𝙸𝙼𝙴 : ${data.timestamp}
-┃➤✰ 𝙰𝙶𝙾 : ${data.ago}
+┃➤✰ TITLE : ${data.title}
+┃➤✰ VIEWS : ${data.views}
+┃➤✰ DESCRIPTION : ${data.description}
+┃➤✰ TIME : ${data.timestamp}
+┃➤✰ AGO : ${data.ago}
 ╰━━━━━━━━━━━━━━━⪼
 > © Powered by SENAL`;
 
