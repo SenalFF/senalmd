@@ -25,6 +25,8 @@ const VIDEO_QUALITIES = [
     { label: "720p", value: "highest" }
 ];
 
+let activeDownloads = {};
+
 // ====================== SONG DOWNLOADER ======================
 cmd({
     pattern: "song",
@@ -43,13 +45,14 @@ async (conn, mek, m, { from, q, reply }) => {
 
         if (!url) return reply("🚫 *Video not found!*");
 
-        let desc = `╭━❮◆ SENAL MD SONG DOWNLOADER ◆❯━╮
-┃➤✰ *TITLE:* ${data.title}
-┃➤✰ *VIEWS:* ${data.views}
-┃➤✰ *DURATION:* ${data.timestamp}
-┃➤✰ *UPLOADED:* ${data.ago}
-╰━━━━━━━━━━━━━━━⪼
-> © Powered by SENAL`;
+        let desc = `🎵 *SENAL MD SONG DOWNLOADER* 🎵
+        
+🎶 *Title:* ${data.title}
+👀 *Views:* ${data.views}
+🕒 *Duration:* ${data.timestamp}
+📅 *Uploaded:* ${data.ago}
+
+✅ *Select a quality to download:*`;
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
 
@@ -66,32 +69,10 @@ async (conn, mek, m, { from, q, reply }) => {
             headerType: 1
         }, { quoted: mek });
 
+        // Save the URL to track button responses
+        activeDownloads[from] = { type: "song", url };
     } catch (e) {
         reply(`🚫 *Error:* ${e}`);
-    }
-});
-
-// Listen for button interactions
-cmd({
-    onButton: true,
-}, async (conn, mek, m, { from, buttonId, reply }) => {
-    if (buttonId.startsWith("song_")) {
-        try {
-            let choice = parseInt(buttonId.split("_")[1]);
-            let selectedQuality = AUDIO_QUALITIES[choice].value;
-
-            let msg = await conn.fetchMessage(mek.key);
-            let url = msg.text.match(/https:\/\/www\.youtube\.com\/watch\?v=[^ ]+/)[0];
-
-            await reply("🎧 *Downloading your song...*");
-
-            let audioStream = ytdl(url, { quality: selectedQuality, filter: "audioonly" });
-
-            await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
-            await reply("✅ *Song sent successfully!*");
-        } catch (e) {
-            reply(`🚫 *Error:* ${e}`);
-        }
     }
 });
 
@@ -113,13 +94,14 @@ async (conn, mek, m, { from, q, reply }) => {
 
         if (!url) return reply("🚫 *Video not found!*");
 
-        let desc = `╭━❮◆ SENAL MD VIDEO DOWNLOADER ◆❯━╮
-┃➤✰ *TITLE:* ${data.title}
-┃➤✰ *VIEWS:* ${data.views}
-┃➤✰ *DURATION:* ${data.timestamp}
-┃➤✰ *UPLOADED:* ${data.ago}
-╰━━━━━━━━━━━━━━━⪼
-> © Powered by SENAL`;
+        let desc = `🎥 *SENAL MD VIDEO DOWNLOADER* 🎥
+        
+🎬 *Title:* ${data.title}
+👀 *Views:* ${data.views}
+🕒 *Duration:* ${data.timestamp}
+📅 *Uploaded:* ${data.ago}
+
+✅ *Select a quality to download:*`;
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
 
@@ -136,22 +118,37 @@ async (conn, mek, m, { from, q, reply }) => {
             headerType: 1
         }, { quoted: mek });
 
+        // Save the URL to track button responses
+        activeDownloads[from] = { type: "video", url };
     } catch (e) {
         reply(`🚫 *Error:* ${e}`);
     }
 });
 
-// Listen for button interactions
+// ====================== BUTTON RESPONSE HANDLER ======================
 cmd({
     onButton: true,
 }, async (conn, mek, m, { from, buttonId, reply }) => {
-    if (buttonId.startsWith("video_")) {
-        try {
+    try {
+        if (!activeDownloads[from]) return reply("🚫 *No active download request!*");
+
+        let { type, url } = activeDownloads[from];
+
+        if (buttonId.startsWith("song_")) {
+            let choice = parseInt(buttonId.split("_")[1]);
+            let selectedQuality = AUDIO_QUALITIES[choice].value;
+
+            await reply("🎧 *Downloading your song...*");
+
+            let audioStream = ytdl(url, { quality: selectedQuality, filter: "audioonly" });
+
+            await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
+            await reply("✅ *Song sent successfully!*");
+        }
+
+        if (buttonId.startsWith("video_")) {
             let choice = parseInt(buttonId.split("_")[1]);
             let selectedQuality = VIDEO_QUALITIES[choice].value;
-
-            let msg = await conn.fetchMessage(mek.key);
-            let url = msg.text.match(/https:\/\/www\.youtube\.com\/watch\?v=[^ ]+/)[0];
 
             await reply("🎬 *Downloading your video...*");
 
@@ -159,8 +156,12 @@ cmd({
 
             await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
             await reply("✅ *Video sent successfully!*");
-        } catch (e) {
-            reply(`🚫 *Error:* ${e}`);
         }
+
+        // Remove active request after processing
+        delete activeDownloads[from];
+
+    } catch (e) {
+        reply(`🚫 *Error:* ${e}`);
     }
 });
