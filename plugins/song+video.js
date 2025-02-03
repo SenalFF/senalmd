@@ -51,22 +51,21 @@ async (conn, mek, m, { from, q, reply, isGroup }) => {
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("audio", AUDIO_QUALITIES));
 
-        // Listen for the next message (quality selection)
-        conn.on('message', async (msg) => {
-            let choice = parseInt(msg.message.conversation.trim());
-            if (isNaN(choice) || choice < 1 || choice > AUDIO_QUALITIES.length) {
-                return reply("🚫 *Invalid choice!* Please send a valid number.");
-            }
+        // Wait for user input
+        const msg = await conn.waitForMessage(from);
 
-            let selectedQuality = AUDIO_QUALITIES[choice - 1].value;
-            await reply("🎶 *Downloading your song...* ⏳");
+        let choice = parseInt(msg.message.conversation.trim());
+        if (isNaN(choice) || choice < 1 || choice > AUDIO_QUALITIES.length) {
+            return reply("🚫 *Invalid choice!* Please send a valid number.");
+        }
 
-            let audioStream = ytdl(data.url, { quality: selectedQuality, filter: "audioonly" });
-            await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
+        let selectedQuality = AUDIO_QUALITIES[choice - 1].value;
+        await reply("🎶 *Downloading your song...* ⏳");
 
-            await reply("✅ *Song uploaded!* 🎵");
-        });
+        let audioStream = ytdl(data.url, { quality: selectedQuality, filter: "audioonly" });
+        await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
 
+        await reply("✅ *Song uploaded!* 🎵");
     } catch (e) {
         reply(`🚫 *Error:* ${e.message}`);
     }
@@ -99,22 +98,21 @@ async (conn, mek, m, { from, q, reply }) => {
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("video", VIDEO_QUALITIES));
 
-        // Listen for the next message (quality selection)
-        conn.on('message', async (msg) => {
-            let choice = parseInt(msg.message.conversation.trim());
-            if (isNaN(choice) || choice < 1 || choice > VIDEO_QUALITIES.length) {
-                return reply("🚫 *Invalid choice!* Please send a valid number.");
-            }
+        // Wait for user input
+        const msg = await conn.waitForMessage(from);
 
-            let selectedQuality = VIDEO_QUALITIES[choice - 1].value;
-            await reply("🎥 *Downloading your video...* ⏳");
+        let choice = parseInt(msg.message.conversation.trim());
+        if (isNaN(choice) || choice < 1 || choice > VIDEO_QUALITIES.length) {
+            return reply("🚫 *Invalid choice!* Please send a valid number.");
+        }
 
-            let videoStream = ytdl(data.url, { quality: selectedQuality });
-            await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
+        let selectedQuality = VIDEO_QUALITIES[choice - 1].value;
+        await reply("🎥 *Downloading your video...* ⏳");
 
-            await reply("✅ *Video uploaded!* 🎬");
-        });
+        let videoStream = ytdl(data.url, { quality: selectedQuality });
+        await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
 
+        await reply("✅ *Video uploaded!* 🎬");
     } catch (e) {
         reply(`🚫 *Error:* ${e.message}`);
     }
