@@ -2,7 +2,6 @@ const { cmd } = require('../command');
 const yts = require('yt-search');
 const ytdl = require('@distube/ytdl-core');
 
-// Quality options
 const AUDIO_QUALITIES = [
     { label: "64kbps", value: "lowestaudio" },
     { label: "128kbps", value: "audioonly" },
@@ -16,9 +15,8 @@ const VIDEO_QUALITIES = [
     { label: "720p", value: "highest" }
 ];
 
-// Function to format quality selection message
-const formatQualityMessage = (type, qualities) => {
-    let msg = `⚠️ *Please select a ${type} quality:*\n\n`;
+const qualityPrompt = (type, qualities) => {
+    let msg = `⚠️ *Select a ${type} quality by sending a number:*\n\n`;
     qualities.forEach((q, i) => {
         msg += `*${i + 1} - ${q.label}*\n`;
     });
@@ -26,7 +24,7 @@ const formatQualityMessage = (type, qualities) => {
     return msg;
 };
 
-// ====================== SONG DOWNLOADER ======================
+// ========== SONG DOWNLOADER ==========
 cmd({
     pattern: "song",
     desc: "Download songs with quality selection",
@@ -34,15 +32,14 @@ cmd({
     react: "🎵",
     filename: __filename,
 },
-async (conn, mek, m, { from, q, reply }) => {
+async (conn, mek, m, { from, q, reply, isGroup }) => {
     try {
-        if (!q) return reply("🚫 *Please provide a YouTube link or title!*");
+        if (!q) return reply("🚫 *Provide a YouTube link or title!*");
 
         const search = await yts(q);
         const data = search.videos[0];
         if (!data) return reply("🚫 *No results found!*");
 
-        // Video details
         let desc = `🎵 *SENAL MD SONG DOWNLOADER* 🎶\n\n` +
                    `📌 *Title:* ${data.title}\n` +
                    `👀 *Views:* ${data.views}\n` +
@@ -52,9 +49,10 @@ async (conn, mek, m, { from, q, reply }) => {
                    `💠 *Powered by SENAL*`;
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
-        await reply(formatQualityMessage("audio", AUDIO_QUALITIES));
+        await reply(qualityPrompt("audio", AUDIO_QUALITIES));
 
-        conn.once("message", async (msg) => {
+        // Listen for the next message in the chat
+        conn.onceMessage(from, async (msg) => {
             let choice = parseInt(msg.message.conversation.trim());
             if (isNaN(choice) || choice < 1 || choice > AUDIO_QUALITIES.length) {
                 return reply("🚫 *Invalid choice!* Please send a valid number.");
@@ -74,7 +72,7 @@ async (conn, mek, m, { from, q, reply }) => {
     }
 });
 
-// ====================== VIDEO DOWNLOADER ======================
+// ========== VIDEO DOWNLOADER ==========
 cmd({
     pattern: "video",
     desc: "Download videos with quality selection",
@@ -84,13 +82,12 @@ cmd({
 },
 async (conn, mek, m, { from, q, reply }) => {
     try {
-        if (!q) return reply("🚫 *Please provide a YouTube link or title!*");
+        if (!q) return reply("🚫 *Provide a YouTube link or title!*");
 
         const search = await yts(q);
         const data = search.videos[0];
         if (!data) return reply("🚫 *No results found!*");
 
-        // Video details
         let desc = `🎬 *SENAL MD VIDEO DOWNLOADER* 🎥\n\n` +
                    `📌 *Title:* ${data.title}\n` +
                    `👀 *Views:* ${data.views}\n` +
@@ -100,9 +97,10 @@ async (conn, mek, m, { from, q, reply }) => {
                    `💠 *Powered by SENAL*`;
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
-        await reply(formatQualityMessage("video", VIDEO_QUALITIES));
+        await reply(qualityPrompt("video", VIDEO_QUALITIES));
 
-        conn.once("message", async (msg) => {
+        // Listen for the next message in the chat
+        conn.onceMessage(from, async (msg) => {
             let choice = parseInt(msg.message.conversation.trim());
             if (isNaN(choice) || choice < 1 || choice > VIDEO_QUALITIES.length) {
                 return reply("🚫 *Invalid choice!* Please send a valid number.");
