@@ -51,15 +51,15 @@ async (conn, mek, m, { from, q, reply }) => {
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("audio", AUDIO_QUALITIES));
 
-        // Wait for user reply with a timeout (5 minutes)
+        // Listen for the user's reply with a 5-minute timeout
         const filter = (msg) => msg.from === from && !isNaN(parseInt(msg.message.conversation.trim()));
-        const collected = await conn.awaitMessages({ filter, time: 300000, max: 1 });
+        const collected = await conn.waitForMessage({ filter, time: 300000 });
 
-        if (collected.size === 0) {
+        if (!collected) {
             return reply("🚫 *Timed out!* Please try again.");
         }
 
-        let choice = parseInt(collected.first().message.conversation.trim());
+        let choice = parseInt(collected.message.conversation.trim());
         if (choice < 1 || choice > AUDIO_QUALITIES.length) {
             return reply("🚫 *Invalid choice!* Please send a valid number.");
         }
@@ -103,15 +103,15 @@ async (conn, mek, m, { from, q, reply }) => {
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("video", VIDEO_QUALITIES));
 
-        // Wait for user reply with a timeout (5 minutes)
+        // Listen for the user's reply with a 5-minute timeout
         const filter = (msg) => msg.from === from && !isNaN(parseInt(msg.message.conversation.trim()));
-        const collected = await conn.awaitMessages({ filter, time: 300000, max: 1 });
+        const collected = await conn.waitForMessage({ filter, time: 300000 });
 
-        if (collected.size === 0) {
+        if (!collected) {
             return reply("🚫 *Timed out!* Please try again.");
         }
 
-        let choice = parseInt(collected.first().message.conversation.trim());
+        let choice = parseInt(collected.message.conversation.trim());
         if (choice < 1 || choice > VIDEO_QUALITIES.length) {
             return reply("🚫 *Invalid choice!* Please send a valid number.");
         }
