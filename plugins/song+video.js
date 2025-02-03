@@ -2,7 +2,7 @@ const { cmd } = require('../command');
 const yts = require('yt-search');
 const ytdl = require('@distube/ytdl-core');
 
-// Quality options
+// Quality options for audio and video
 const AUDIO_QUALITIES = [
     { label: "64kbps", value: "lowestaudio" },
     { label: "128kbps", value: "audioonly" },
@@ -16,7 +16,7 @@ const VIDEO_QUALITIES = [
     { label: "720p", value: "highest" }
 ];
 
-// Quality prompt function for audio and video
+// Quality prompt for both audio and video
 const qualityPrompt = (type, qualities) => {
     let msg = `⚠️ *Select a ${type} quality by sending a number:*\n\n`;
     qualities.forEach((q, i) => {
@@ -53,29 +53,28 @@ async (conn, mek, m, { from, q, reply }) => {
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("audio", AUDIO_QUALITIES));
 
-        // Listen for the user's response with a 5-minute timeout
-        let timeout = setTimeout(() => {
-            reply("🚫 *Timed out!* Please try again.");
-        }, 300000);  // 5 minutes timeout
+        // Wait for the user's quality selection
+        const collector = conn.createMessageCollector({ 
+            filter: m => m.from === from && !isNaN(m.text.trim()) && parseInt(m.text.trim()) >= 1 && parseInt(m.text.trim()) <= AUDIO_QUALITIES.length, 
+            time: 60000 // 1 minute timeout
+        });
 
-        conn.on('message', async (msg) => {
-            if (msg.from === from && !isNaN(parseInt(msg.message.conversation.trim()))) {
-                clearTimeout(timeout);  // Clear the timeout when a response is received
+        collector.on('collect', async (msg) => {
+            let choice = parseInt(msg.text.trim());
+            let selectedQuality = AUDIO_QUALITIES[choice - 1].value;
+            await reply(`✅ *Selected Quality:* ${AUDIO_QUALITIES[choice - 1].label}`);
 
-                let choice = parseInt(msg.message.conversation.trim());
-                if (choice < 1 || choice > AUDIO_QUALITIES.length) {
-                    return reply("🚫 *Invalid choice!* Please send a valid number.");
-                }
+            await reply("🎶 *Streaming your song...* ⏳");
 
-                let selectedQuality = AUDIO_QUALITIES[choice - 1].value;
-                await reply(`✅ *Selected Quality:* ${AUDIO_QUALITIES[choice - 1].label}`);
+            let audioStream = ytdl(data.url, { quality: selectedQuality, filter: "audioonly" });
+            await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
 
-                await reply("🎶 *Streaming your song...* ⏳");
+            await reply("✅ *Song uploaded!* 🎵");
+        });
 
-                let audioStream = ytdl(data.url, { quality: selectedQuality, filter: "audioonly" });
-                await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
-
-                await reply("✅ *Song uploaded!* 🎵");
+        collector.on('end', (collected, reason) => {
+            if (reason === 'time') {
+                reply("🚫 *Timed out!* Please try again and select a valid quality.");
             }
         });
 
@@ -111,29 +110,28 @@ async (conn, mek, m, { from, q, reply }) => {
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("video", VIDEO_QUALITIES));
 
-        // Listen for the user's response with a 5-minute timeout
-        let timeout = setTimeout(() => {
-            reply("🚫 *Timed out!* Please try again.");
-        }, 300000);  // 5 minutes timeout
+        // Wait for the user's quality selection
+        const collector = conn.createMessageCollector({ 
+            filter: m => m.from === from && !isNaN(m.text.trim()) && parseInt(m.text.trim()) >= 1 && parseInt(m.text.trim()) <= VIDEO_QUALITIES.length, 
+            time: 60000 // 1 minute timeout
+        });
 
-        conn.on('message', async (msg) => {
-            if (msg.from === from && !isNaN(parseInt(msg.message.conversation.trim()))) {
-                clearTimeout(timeout);  // Clear the timeout when a response is received
+        collector.on('collect', async (msg) => {
+            let choice = parseInt(msg.text.trim());
+            let selectedQuality = VIDEO_QUALITIES[choice - 1].value;
+            await reply(`✅ *Selected Quality:* ${VIDEO_QUALITIES[choice - 1].label}`);
 
-                let choice = parseInt(msg.message.conversation.trim());
-                if (choice < 1 || choice > VIDEO_QUALITIES.length) {
-                    return reply("🚫 *Invalid choice!* Please send a valid number.");
-                }
+            await reply("🎥 *Streaming your video...* ⏳");
 
-                let selectedQuality = VIDEO_QUALITIES[choice - 1].value;
-                await reply(`✅ *Selected Quality:* ${VIDEO_QUALITIES[choice - 1].label}`);
+            let videoStream = ytdl(data.url, { quality: selectedQuality });
+            await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
 
-                await reply("🎥 *Streaming your video...* ⏳");
+            await reply("✅ *Video uploaded!* 🎬");
+        });
 
-                let videoStream = ytdl(data.url, { quality: selectedQuality });
-                await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
-
-                await reply("✅ *Video uploaded!* 🎬");
+        collector.on('end', (collected, reason) => {
+            if (reason === 'time') {
+                reply("🚫 *Timed out!* Please try again and select a valid quality.");
             }
         });
 
