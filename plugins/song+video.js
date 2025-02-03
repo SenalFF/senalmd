@@ -65,7 +65,7 @@ async (conn, mek, m, { from, q, reply }) => {
         await conn.sendMessage(from, {
             text: "🎧 *Select Audio Quality:*",
             footer: "Powered by SENAL",
-            buttons,
+            buttons: buttons,
             headerType: 1
         }, { quoted: mek });
 
