@@ -53,31 +53,24 @@ async (conn, mek, m, { from, q, reply }) => {
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("audio", AUDIO_QUALITIES));
 
-        // Wait for the user's quality selection
-        const collector = conn.createMessageCollector({ 
-            filter: m => m.from === from && !isNaN(m.text.trim()) && parseInt(m.text.trim()) >= 1 && parseInt(m.text.trim()) <= AUDIO_QUALITIES.length, 
-            time: 60000 // 1 minute timeout
-        });
+        // Wait for the user's quality selection (using awaitMessages)
+        const filter = m => m.from === from && !isNaN(m.text.trim()) && parseInt(m.text.trim()) >= 1 && parseInt(m.text.trim()) <= AUDIO_QUALITIES.length;
+        const collected = await conn.awaitMessages({ filter, time: 60000, max: 1 });
 
-        collector.on('collect', async (msg) => {
-            let choice = parseInt(msg.text.trim());
-            let selectedQuality = AUDIO_QUALITIES[choice - 1].value;
-            await reply(`✅ *Selected Quality:* ${AUDIO_QUALITIES[choice - 1].label}`);
+        if (collected.size === 0) {
+            return reply("🚫 *Timed out!* Please try again and select a valid quality.");
+        }
 
-            await reply("🎶 *Streaming your song...* ⏳");
+        let choice = parseInt(collected.first().text.trim());
+        let selectedQuality = AUDIO_QUALITIES[choice - 1].value;
+        await reply(`✅ *Selected Quality:* ${AUDIO_QUALITIES[choice - 1].label}`);
 
-            let audioStream = ytdl(data.url, { quality: selectedQuality, filter: "audioonly" });
-            await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
+        await reply("🎶 *Streaming your song...* ⏳");
 
-            await reply("✅ *Song uploaded!* 🎵");
-        });
+        let audioStream = ytdl(data.url, { quality: selectedQuality, filter: "audioonly" });
+        await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
 
-        collector.on('end', (collected, reason) => {
-            if (reason === 'time') {
-                reply("🚫 *Timed out!* Please try again and select a valid quality.");
-            }
-        });
-
+        await reply("✅ *Song uploaded!* 🎵");
     } catch (e) {
         reply(`🚫 *Error:* ${e.message}`);
     }
@@ -110,31 +103,24 @@ async (conn, mek, m, { from, q, reply }) => {
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("video", VIDEO_QUALITIES));
 
-        // Wait for the user's quality selection
-        const collector = conn.createMessageCollector({ 
-            filter: m => m.from === from && !isNaN(m.text.trim()) && parseInt(m.text.trim()) >= 1 && parseInt(m.text.trim()) <= VIDEO_QUALITIES.length, 
-            time: 60000 // 1 minute timeout
-        });
+        // Wait for the user's quality selection (using awaitMessages)
+        const filter = m => m.from === from && !isNaN(m.text.trim()) && parseInt(m.text.trim()) >= 1 && parseInt(m.text.trim()) <= VIDEO_QUALITIES.length;
+        const collected = await conn.awaitMessages({ filter, time: 60000, max: 1 });
 
-        collector.on('collect', async (msg) => {
-            let choice = parseInt(msg.text.trim());
-            let selectedQuality = VIDEO_QUALITIES[choice - 1].value;
-            await reply(`✅ *Selected Quality:* ${VIDEO_QUALITIES[choice - 1].label}`);
+        if (collected.size === 0) {
+            return reply("🚫 *Timed out!* Please try again and select a valid quality.");
+        }
 
-            await reply("🎥 *Streaming your video...* ⏳");
+        let choice = parseInt(collected.first().text.trim());
+        let selectedQuality = VIDEO_QUALITIES[choice - 1].value;
+        await reply(`✅ *Selected Quality:* ${VIDEO_QUALITIES[choice - 1].label}`);
 
-            let videoStream = ytdl(data.url, { quality: selectedQuality });
-            await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
+        await reply("🎥 *Streaming your video...* ⏳");
 
-            await reply("✅ *Video uploaded!* 🎬");
-        });
+        let videoStream = ytdl(data.url, { quality: selectedQuality });
+        await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
 
-        collector.on('end', (collected, reason) => {
-            if (reason === 'time') {
-                reply("🚫 *Timed out!* Please try again and select a valid quality.");
-            }
-        });
-
+        await reply("✅ *Video uploaded!* 🎬");
     } catch (e) {
         reply(`🚫 *Error:* ${e.message}`);
     }
