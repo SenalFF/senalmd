@@ -32,7 +32,7 @@ cmd({
     react: "🎵",
     filename: __filename,
 },
-async (conn, mek, m, { from, q, reply, isGroup }) => {
+async (conn, mek, m, { from, q, reply }) => {
     try {
         if (!q) return reply("🚫 *Provide a YouTube link or title!*");
 
@@ -51,11 +51,16 @@ async (conn, mek, m, { from, q, reply, isGroup }) => {
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("audio", AUDIO_QUALITIES));
 
-        // Wait for user input
-        const msg = await conn.waitForMessage(from);
+        // Wait for user reply with a timeout (5 minutes)
+        const filter = (msg) => msg.from === from && !isNaN(parseInt(msg.message.conversation.trim()));
+        const collected = await conn.awaitMessages({ filter, time: 300000, max: 1 });
 
-        let choice = parseInt(msg.message.conversation.trim());
-        if (isNaN(choice) || choice < 1 || choice > AUDIO_QUALITIES.length) {
+        if (collected.size === 0) {
+            return reply("🚫 *Timed out!* Please try again.");
+        }
+
+        let choice = parseInt(collected.first().message.conversation.trim());
+        if (choice < 1 || choice > AUDIO_QUALITIES.length) {
             return reply("🚫 *Invalid choice!* Please send a valid number.");
         }
 
@@ -98,11 +103,16 @@ async (conn, mek, m, { from, q, reply }) => {
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("video", VIDEO_QUALITIES));
 
-        // Wait for user input
-        const msg = await conn.waitForMessage(from);
+        // Wait for user reply with a timeout (5 minutes)
+        const filter = (msg) => msg.from === from && !isNaN(parseInt(msg.message.conversation.trim()));
+        const collected = await conn.awaitMessages({ filter, time: 300000, max: 1 });
 
-        let choice = parseInt(msg.message.conversation.trim());
-        if (isNaN(choice) || choice < 1 || choice > VIDEO_QUALITIES.length) {
+        if (collected.size === 0) {
+            return reply("🚫 *Timed out!* Please try again.");
+        }
+
+        let choice = parseInt(collected.first().message.conversation.trim());
+        if (choice < 1 || choice > VIDEO_QUALITIES.length) {
             return reply("🚫 *Invalid choice!* Please send a valid number.");
         }
 
