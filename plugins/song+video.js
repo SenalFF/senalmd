@@ -53,29 +53,32 @@ async (conn, mek, m, { from, q, reply }) => {
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("audio", AUDIO_QUALITIES));
 
-        // Listen for the user's reply with a 5-minute timeout
-        const filter = (msg) => msg.from === from && !isNaN(parseInt(msg.message.conversation.trim()));
+        // Listen for the user's response with a 5-minute timeout
+        let timeout = setTimeout(() => {
+            reply("🚫 *Timed out!* Please try again.");
+        }, 300000);  // 5 minutes timeout
 
-        const collected = await conn.awaitMessages({ filter, time: 300000, max: 1 });
+        conn.on('message', async (msg) => {
+            if (msg.from === from && !isNaN(parseInt(msg.message.conversation.trim()))) {
+                clearTimeout(timeout);  // Clear the timeout when a response is received
 
-        if (!collected.size) {
-            return reply("🚫 *Timed out!* Please try again.");
-        }
+                let choice = parseInt(msg.message.conversation.trim());
+                if (choice < 1 || choice > AUDIO_QUALITIES.length) {
+                    return reply("🚫 *Invalid choice!* Please send a valid number.");
+                }
 
-        let choice = parseInt(collected.first().message.conversation.trim());
-        if (choice < 1 || choice > AUDIO_QUALITIES.length) {
-            return reply("🚫 *Invalid choice!* Please send a valid number.");
-        }
+                let selectedQuality = AUDIO_QUALITIES[choice - 1].value;
+                await reply(`✅ *Selected Quality:* ${AUDIO_QUALITIES[choice - 1].label}`);
 
-        let selectedQuality = AUDIO_QUALITIES[choice - 1].value;
-        await reply(`✅ *Selected Quality:* ${AUDIO_QUALITIES[choice - 1].label}`);
+                await reply("🎶 *Streaming your song...* ⏳");
 
-        await reply("🎶 *Streaming your song...* ⏳");
+                let audioStream = ytdl(data.url, { quality: selectedQuality, filter: "audioonly" });
+                await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
 
-        let audioStream = ytdl(data.url, { quality: selectedQuality, filter: "audioonly" });
-        await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
+                await reply("✅ *Song uploaded!* 🎵");
+            }
+        });
 
-        await reply("✅ *Song uploaded!* 🎵");
     } catch (e) {
         reply(`🚫 *Error:* ${e.message}`);
     }
@@ -108,29 +111,32 @@ async (conn, mek, m, { from, q, reply }) => {
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("video", VIDEO_QUALITIES));
 
-        // Listen for the user's reply with a 5-minute timeout
-        const filter = (msg) => msg.from === from && !isNaN(parseInt(msg.message.conversation.trim()));
+        // Listen for the user's response with a 5-minute timeout
+        let timeout = setTimeout(() => {
+            reply("🚫 *Timed out!* Please try again.");
+        }, 300000);  // 5 minutes timeout
 
-        const collected = await conn.awaitMessages({ filter, time: 300000, max: 1 });
+        conn.on('message', async (msg) => {
+            if (msg.from === from && !isNaN(parseInt(msg.message.conversation.trim()))) {
+                clearTimeout(timeout);  // Clear the timeout when a response is received
 
-        if (!collected.size) {
-            return reply("🚫 *Timed out!* Please try again.");
-        }
+                let choice = parseInt(msg.message.conversation.trim());
+                if (choice < 1 || choice > VIDEO_QUALITIES.length) {
+                    return reply("🚫 *Invalid choice!* Please send a valid number.");
+                }
 
-        let choice = parseInt(collected.first().message.conversation.trim());
-        if (choice < 1 || choice > VIDEO_QUALITIES.length) {
-            return reply("🚫 *Invalid choice!* Please send a valid number.");
-        }
+                let selectedQuality = VIDEO_QUALITIES[choice - 1].value;
+                await reply(`✅ *Selected Quality:* ${VIDEO_QUALITIES[choice - 1].label}`);
 
-        let selectedQuality = VIDEO_QUALITIES[choice - 1].value;
-        await reply(`✅ *Selected Quality:* ${VIDEO_QUALITIES[choice - 1].label}`);
+                await reply("🎥 *Streaming your video...* ⏳");
 
-        await reply("🎥 *Streaming your video...* ⏳");
+                let videoStream = ytdl(data.url, { quality: selectedQuality });
+                await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
 
-        let videoStream = ytdl(data.url, { quality: selectedQuality });
-        await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
+                await reply("✅ *Video uploaded!* 🎬");
+            }
+        });
 
-        await reply("✅ *Video uploaded!* 🎬");
     } catch (e) {
         reply(`🚫 *Error:* ${e.message}`);
     }
