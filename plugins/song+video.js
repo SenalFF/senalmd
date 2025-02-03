@@ -51,8 +51,8 @@ async (conn, mek, m, { from, q, reply, isGroup }) => {
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("audio", AUDIO_QUALITIES));
 
-        // Listen for the next message in the chat
-        conn.onceMessage(from, async (msg) => {
+        // Listen for the next message (quality selection)
+        conn.on('message', async (msg) => {
             let choice = parseInt(msg.message.conversation.trim());
             if (isNaN(choice) || choice < 1 || choice > AUDIO_QUALITIES.length) {
                 return reply("🚫 *Invalid choice!* Please send a valid number.");
@@ -99,8 +99,8 @@ async (conn, mek, m, { from, q, reply }) => {
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("video", VIDEO_QUALITIES));
 
-        // Listen for the next message in the chat
-        conn.onceMessage(from, async (msg) => {
+        // Listen for the next message (quality selection)
+        conn.on('message', async (msg) => {
             let choice = parseInt(msg.message.conversation.trim());
             if (isNaN(choice) || choice < 1 || choice > VIDEO_QUALITIES.length) {
                 return reply("🚫 *Invalid choice!* Please send a valid number.");
