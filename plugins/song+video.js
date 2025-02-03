@@ -35,21 +35,21 @@ cmd({
 },
 async (conn, mek, m, { from, q, reply }) => {
     try {
-        if (!q) return reply("*🚫 Please provide a YouTube link or title!*");
+        if (!q) return reply("🚫 *Please provide a YouTube link or title!*");
 
         const search = await yts(q);
         const data = search.videos[0];
         const url = normalizeYouTubeURL(data.url);
 
-        if (!url) return reply("*🚫 Video not found!*");
+        if (!url) return reply("🚫 *Video not found!*");
 
         // Video details
         let desc = `╭━❮◆ SENAL MD SONG DOWNLOADER ◆❯━╮
-┃➤✰ 𝚃𝙸𝚃𝙻𝙴 : ${data.title}
-┃➤✰ 𝚅𝙸𝙴𝚆𝚂 : ${data.views}
-┃➤✰ 𝙳𝙴𝚂𝙲𝚁𝙸𝙿𝚃𝙸𝙾𝙽 : ${data.description}
-┃➤✰ 𝚃𝙸𝙼𝙴 : ${data.timestamp}
-┃➤✰ 𝙰𝙶𝙾 : ${data.ago}
+┃➤✰ *Title:* ${data.title}
+┃➤✰ *Views:* ${data.views}
+┃➤✰ *Description:* ${data.description}
+┃➤✰ *Time:* ${data.timestamp}
+┃➤✰ *Uploaded:* ${data.ago}
 ╰━━━━━━━━━━━━━━━⪼
 
 > © Powered by SENAL`;
@@ -59,7 +59,7 @@ async (conn, mek, m, { from, q, reply }) => {
 
         // Quality selection
         let buttons = AUDIO_QUALITIES.map((q, i) => ({
-            buttonId: `audio_${i}`,
+            buttonId: `song_${i}`,
             buttonText: { displayText: `${i + 1} - ${q.label}` },
             type: 1
         }));
@@ -74,20 +74,20 @@ async (conn, mek, m, { from, q, reply }) => {
         await conn.sendMessage(from, buttonMessage, { quoted: mek });
 
         // Listen for user's quality selection
-        conn.on("message", async (msg) => {
-            let choice = parseInt(msg.message.conversation.trim());
+        conn.waitForResponse = async (message) => {
+            let choice = parseInt(message.message.conversation.trim());
             if (isNaN(choice) || choice < 1 || choice > AUDIO_QUALITIES.length) {
-                return reply("*🚫 Invalid choice!*");
+                return reply("🚫 *Invalid choice!*");
             }
 
             let selectedQuality = AUDIO_QUALITIES[choice - 1].value;
-            await reply("🎧 *Wait for your song...*");
+            await reply("🎧 *Downloading your song...*");
 
             let audioStream = ytdl(url, { quality: selectedQuality, filter: "audioonly" });
 
             await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
-            await reply("*✅ Uploaded!*");
-        });
+            await reply("✅ *Uploaded!*");
+        };
 
     } catch (e) {
         reply(`🚫 *Error:* ${e}`);
@@ -104,21 +104,21 @@ cmd({
 },
 async (conn, mek, m, { from, q, reply }) => {
     try {
-        if (!q) return reply("*🚫 Please provide a YouTube link or title!*");
+        if (!q) return reply("🚫 *Please provide a YouTube link or title!*");
 
         const search = await yts(q);
         const data = search.videos[0];
         const url = normalizeYouTubeURL(data.url);
 
-        if (!url) return reply("*🚫 Video not found!*");
+        if (!url) return reply("🚫 *Video not found!*");
 
         // Video details
         let desc = `╭━❮◆ SENAL MD VIDEO DOWNLOADER ◆❯━╮
-┃➤✰ 𝚃𝙸𝚃𝙻𝙴 : ${data.title}
-┃➤✰ 𝚅𝙸𝙴𝚆𝚂 : ${data.views}
-┃➤✰ 𝙳𝙴𝚂𝙲𝚁𝙸𝙿𝚃𝙸𝙾𝙽 : ${data.description}
-┃➤✰ 𝚃𝙸𝙼𝙴 : ${data.timestamp}
-┃➤✰ 𝙰𝙶𝙾 : ${data.ago}
+┃➤✰ *Title:* ${data.title}
+┃➤✰ *Views:* ${data.views}
+┃➤✰ *Description:* ${data.description}
+┃➤✰ *Time:* ${data.timestamp}
+┃➤✰ *Uploaded:* ${data.ago}
 ╰━━━━━━━━━━━━━━━⪼
 
 > © Powered by SENAL`;
@@ -143,13 +143,22 @@ async (conn, mek, m, { from, q, reply }) => {
         await conn.sendMessage(from, buttonMessage, { quoted: mek });
 
         // Listen for user's quality selection
-        conn.on("message", async (msg) => {
-            let choice = parseInt(msg.message.conversation.trim());
+        conn.waitForResponse = async (message) => {
+            let choice = parseInt(message.message.conversation.trim());
             if (isNaN(choice) || choice < 1 || choice > VIDEO_QUALITIES.length) {
-                return reply("*🚫 Invalid choice!*");
+                return reply("🚫 *Invalid choice!*");
             }
 
             let selectedQuality = VIDEO_QUALITIES[choice - 1].value;
-            await reply
-::contentReference[oaicite:0]{index=0}
- 
+            await reply("🎬 *Downloading your video...*");
+
+            let videoStream = ytdl(url, { quality: selectedQuality });
+
+            await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
+            await reply("✅ *Uploaded!*");
+        };
+
+    } catch (e) {
+        reply(`🚫 *Error:* ${e}`);
+    }
+});
