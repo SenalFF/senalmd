@@ -46,47 +46,52 @@ async (conn, mek, m, { from, q, reply }) => {
         let desc = `╭━❮◆ SENAL MD SONG DOWNLOADER ◆❯━╮
 ┃➤✰ *TITLE:* ${data.title}
 ┃➤✰ *VIEWS:* ${data.views}
-┃➤✰ *DESCRIPTION:* ${data.description}
 ┃➤✰ *DURATION:* ${data.timestamp}
 ┃➤✰ *UPLOADED:* ${data.ago}
 ╰━━━━━━━━━━━━━━━⪼
-
 > © Powered by SENAL`;
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
 
-        let qualityButtons = AUDIO_QUALITIES.map((q, i) => ({
-            buttonId: `audio_${i}`,
-            buttonText: { displayText: `${i + 1} - ${q.label}` },
+        let buttons = AUDIO_QUALITIES.map((q, i) => ({
+            buttonId: `song_${i}`,
+            buttonText: { displayText: `${q.label}` },
             type: 1
         }));
 
-        let buttonMessage = {
-            text: `🎧 *Select Audio Quality:*\n\n⚠️ *Recommended: 64kbps or 128kbps.*`,
+        await conn.sendMessage(from, {
+            text: "🎧 *Select Audio Quality:*",
             footer: "Powered by SENAL",
-            buttons: qualityButtons,
+            buttons,
             headerType: 1
-        };
+        }, { quoted: mek });
 
-        await conn.sendMessage(from, buttonMessage, { quoted: mek });
+    } catch (e) {
+        reply(`🚫 *Error:* ${e}`);
+    }
+});
 
-        conn.once("message", async (msg) => {
-            let choice = parseInt(msg.message.conversation.trim());
-            if (isNaN(choice) || choice < 1 || choice > AUDIO_QUALITIES.length) {
-                return reply("🚫 *Invalid choice!*");
-            }
+// Listen for button interactions
+cmd({
+    onButton: true,
+}, async (conn, mek, m, { from, buttonId, reply }) => {
+    if (buttonId.startsWith("song_")) {
+        try {
+            let choice = parseInt(buttonId.split("_")[1]);
+            let selectedQuality = AUDIO_QUALITIES[choice].value;
 
-            let selectedQuality = AUDIO_QUALITIES[choice - 1].value;
+            let msg = await conn.fetchMessage(mek.key);
+            let url = msg.text.match(/https:\/\/www\.youtube\.com\/watch\?v=[^ ]+/)[0];
+
             await reply("🎧 *Downloading your song...*");
 
             let audioStream = ytdl(url, { quality: selectedQuality, filter: "audioonly" });
 
             await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
             await reply("✅ *Song sent successfully!*");
-        });
-
-    } catch (e) {
-        reply(`🚫 *Error:* ${e}`);
+        } catch (e) {
+            reply(`🚫 *Error:* ${e}`);
+        }
     }
 });
 
@@ -111,46 +116,51 @@ async (conn, mek, m, { from, q, reply }) => {
         let desc = `╭━❮◆ SENAL MD VIDEO DOWNLOADER ◆❯━╮
 ┃➤✰ *TITLE:* ${data.title}
 ┃➤✰ *VIEWS:* ${data.views}
-┃➤✰ *DESCRIPTION:* ${data.description}
 ┃➤✰ *DURATION:* ${data.timestamp}
 ┃➤✰ *UPLOADED:* ${data.ago}
 ╰━━━━━━━━━━━━━━━⪼
-
 > © Powered by SENAL`;
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
 
-        let qualityButtons = VIDEO_QUALITIES.map((q, i) => ({
+        let buttons = VIDEO_QUALITIES.map((q, i) => ({
             buttonId: `video_${i}`,
-            buttonText: { displayText: `${i + 1} - ${q.label}` },
+            buttonText: { displayText: `${q.label}` },
             type: 1
         }));
 
-        let buttonMessage = {
-            text: `🎬 *Select Video Quality:*\n\n⚠️ *Recommended: 360p or 144p.*`,
+        await conn.sendMessage(from, {
+            text: "🎬 *Select Video Quality:*",
             footer: "Powered by SENAL",
-            buttons: qualityButtons,
+            buttons,
             headerType: 1
-        };
+        }, { quoted: mek });
 
-        await conn.sendMessage(from, buttonMessage, { quoted: mek });
+    } catch (e) {
+        reply(`🚫 *Error:* ${e}`);
+    }
+});
 
-        conn.once("message", async (msg) => {
-            let choice = parseInt(msg.message.conversation.trim());
-            if (isNaN(choice) || choice < 1 || choice > VIDEO_QUALITIES.length) {
-                return reply("🚫 *Invalid choice!*");
-            }
+// Listen for button interactions
+cmd({
+    onButton: true,
+}, async (conn, mek, m, { from, buttonId, reply }) => {
+    if (buttonId.startsWith("video_")) {
+        try {
+            let choice = parseInt(buttonId.split("_")[1]);
+            let selectedQuality = VIDEO_QUALITIES[choice].value;
 
-            let selectedQuality = VIDEO_QUALITIES[choice - 1].value;
+            let msg = await conn.fetchMessage(mek.key);
+            let url = msg.text.match(/https:\/\/www\.youtube\.com\/watch\?v=[^ ]+/)[0];
+
             await reply("🎬 *Downloading your video...*");
 
             let videoStream = ytdl(url, { quality: selectedQuality, filter: "videoandaudio" });
 
             await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
             await reply("✅ *Video sent successfully!*");
-        });
-
-    } catch (e) {
-        reply(`🚫 *Error:* ${e}`);
+        } catch (e) {
+            reply(`🚫 *Error:* ${e}`);
+        }
     }
 });
