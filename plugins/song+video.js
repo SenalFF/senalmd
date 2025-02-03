@@ -2,6 +2,7 @@ const { cmd } = require('../command');
 const yts = require('yt-search');
 const ytdl = require('@distube/ytdl-core');
 
+// Quality options
 const AUDIO_QUALITIES = [
     { label: "64kbps", value: "lowestaudio" },
     { label: "128kbps", value: "audioonly" },
@@ -15,6 +16,7 @@ const VIDEO_QUALITIES = [
     { label: "720p", value: "highest" }
 ];
 
+// Quality prompt function for audio and video
 const qualityPrompt = (type, qualities) => {
     let msg = `⚠️ *Select a ${type} quality by sending a number:*\n\n`;
     qualities.forEach((q, i) => {
@@ -53,19 +55,22 @@ async (conn, mek, m, { from, q, reply }) => {
 
         // Listen for the user's reply with a 5-minute timeout
         const filter = (msg) => msg.from === from && !isNaN(parseInt(msg.message.conversation.trim()));
-        const collected = await conn.waitForMessage({ filter, time: 300000 });
 
-        if (!collected) {
+        const collected = await conn.awaitMessages({ filter, time: 300000, max: 1 });
+
+        if (!collected.size) {
             return reply("🚫 *Timed out!* Please try again.");
         }
 
-        let choice = parseInt(collected.message.conversation.trim());
+        let choice = parseInt(collected.first().message.conversation.trim());
         if (choice < 1 || choice > AUDIO_QUALITIES.length) {
             return reply("🚫 *Invalid choice!* Please send a valid number.");
         }
 
         let selectedQuality = AUDIO_QUALITIES[choice - 1].value;
-        await reply("🎶 *Downloading your song...* ⏳");
+        await reply(`✅ *Selected Quality:* ${AUDIO_QUALITIES[choice - 1].label}`);
+
+        await reply("🎶 *Streaming your song...* ⏳");
 
         let audioStream = ytdl(data.url, { quality: selectedQuality, filter: "audioonly" });
         await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
@@ -105,19 +110,22 @@ async (conn, mek, m, { from, q, reply }) => {
 
         // Listen for the user's reply with a 5-minute timeout
         const filter = (msg) => msg.from === from && !isNaN(parseInt(msg.message.conversation.trim()));
-        const collected = await conn.waitForMessage({ filter, time: 300000 });
 
-        if (!collected) {
+        const collected = await conn.awaitMessages({ filter, time: 300000, max: 1 });
+
+        if (!collected.size) {
             return reply("🚫 *Timed out!* Please try again.");
         }
 
-        let choice = parseInt(collected.message.conversation.trim());
+        let choice = parseInt(collected.first().message.conversation.trim());
         if (choice < 1 || choice > VIDEO_QUALITIES.length) {
             return reply("🚫 *Invalid choice!* Please send a valid number.");
         }
 
         let selectedQuality = VIDEO_QUALITIES[choice - 1].value;
-        await reply("🎥 *Downloading your video...* ⏳");
+        await reply(`✅ *Selected Quality:* ${VIDEO_QUALITIES[choice - 1].label}`);
+
+        await reply("🎥 *Streaming your video...* ⏳");
 
         let videoStream = ytdl(data.url, { quality: selectedQuality });
         await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
