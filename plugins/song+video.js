@@ -28,11 +28,17 @@ const qualityPrompt = (type, qualities) => {
 // Function to listen for user response
 async function waitForResponse(sock, from, validOptions, timeout = 60000) {
     return new Promise((resolve) => {
-        const handleMessage = async (msg) => {
+        const handleMessage = async (upsert) => {
+            const messages = upsert.messages;
+            if (!messages || messages.length === 0) return;
+
+            const msg = messages[0];
+            if (!msg.key || !msg.key.remoteJid) return;
+
             if (msg.key.remoteJid === from && msg.message?.conversation) {
                 let text = msg.message.conversation.trim();
                 let choice = parseInt(text);
-                
+
                 if (!isNaN(choice) && choice >= 1 && choice <= validOptions.length) {
                     sock.ev.off('messages.upsert', handleMessage); // Stop listening
                     resolve(validOptions[choice - 1].value);
