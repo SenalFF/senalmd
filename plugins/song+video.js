@@ -2,7 +2,7 @@ const { cmd } = require('../command');
 const yts = require('yt-search');
 const ytdl = require('@distube/ytdl-core');
 
-// Quality options for audio and video
+// Quality options
 const AUDIO_QUALITIES = [
     { label: "64kbps", value: "lowestaudio" },
     { label: "128kbps", value: "audioonly" },
@@ -16,15 +16,39 @@ const VIDEO_QUALITIES = [
     { label: "720p", value: "highest" }
 ];
 
-// Quality prompt for both audio and video
+// Function to generate quality selection message
 const qualityPrompt = (type, qualities) => {
     let msg = `⚠️ *Select a ${type} quality by sending a number:*\n\n`;
     qualities.forEach((q, i) => {
         msg += `*${i + 1} - ${q.label}*\n`;
     });
-    msg += `\n🎶 *For songs, use 64kbps or 128kbps.*\n🎬 *For videos, use 360p or 144p.*\n🚨 *Reply with the number!*`;
-    return msg;
+    return msg + `\n🚨 *Reply with the number!*`;
 };
+
+// Function to listen for user response
+async function waitForResponse(sock, from, validOptions, timeout = 60000) {
+    return new Promise((resolve) => {
+        const handleMessage = async (msg) => {
+            if (msg.key.remoteJid === from && msg.message?.conversation) {
+                let text = msg.message.conversation.trim();
+                let choice = parseInt(text);
+                
+                if (!isNaN(choice) && choice >= 1 && choice <= validOptions.length) {
+                    sock.ev.off('messages.upsert', handleMessage); // Stop listening
+                    resolve(validOptions[choice - 1].value);
+                }
+            }
+        };
+
+        sock.ev.on('messages.upsert', handleMessage); // Listen for messages
+
+        // Timeout handler
+        setTimeout(() => {
+            sock.ev.off('messages.upsert', handleMessage); // Stop listening
+            resolve(null);
+        }, timeout);
+    });
+}
 
 // ========== SONG DOWNLOADER ==========
 cmd({
@@ -34,7 +58,7 @@ cmd({
     react: "🎵",
     filename: __filename,
 },
-async (conn, mek, m, { from, q, reply }) => {
+async (sock, mek, m, { from, q, reply }) => {
     try {
         if (!q) return reply("🚫 *Provide a YouTube link or title!*");
 
@@ -50,30 +74,20 @@ async (conn, mek, m, { from, q, reply }) => {
                    `📅 *Uploaded:* ${data.ago}\n\n` +
                    `💠 *Powered by SENAL*`;
 
-        await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
+        await sock.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("audio", AUDIO_QUALITIES));
 
-        // Listen for the user's quality selection using a message listener
-        conn.on('message', async (msg) => {
-            if (msg.from === from && !isNaN(msg.text.trim()) && parseInt(msg.text.trim()) >= 1 && parseInt(msg.text.trim()) <= AUDIO_QUALITIES.length) {
-                let choice = parseInt(msg.text.trim());
-                let selectedQuality = AUDIO_QUALITIES[choice - 1].value;
-                await reply(`✅ *Selected Quality:* ${AUDIO_QUALITIES[choice - 1].label}`);
+        // Wait for user response
+        let selectedQuality = await waitForResponse(sock, from, AUDIO_QUALITIES);
+        if (!selectedQuality) return reply("🚫 *Timed out!* Please try again.");
 
-                await reply("🎶 *Streaming your song...* ⏳");
+        await reply(`✅ *Selected Quality:* ${selectedQuality}`);
+        await reply("🎶 *Downloading your song...* ⏳");
 
-                let audioStream = ytdl(data.url, { quality: selectedQuality, filter: "audioonly" });
-                await conn.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
+        let audioStream = ytdl(data.url, { quality: selectedQuality, filter: "audioonly" });
+        await sock.sendMessage(from, { audio: { stream: audioStream }, mimetype: "audio/mpeg" }, { quoted: mek });
 
-                await reply("✅ *Song uploaded!* 🎵");
-
-                // Remove the message listener after the reply is processed
-                conn.removeAllListeners('message');
-            } else {
-                // Optional: Handle invalid input
-                await reply("🚫 *Invalid selection, please reply with a number corresponding to a valid quality.*");
-            }
-        });
+        await reply("✅ *Song uploaded!* 🎵");
     } catch (e) {
         reply(`🚫 *Error:* ${e.message}`);
     }
@@ -87,7 +101,7 @@ cmd({
     react: "🎥",
     filename: __filename,
 },
-async (conn, mek, m, { from, q, reply }) => {
+async (sock, mek, m, { from, q, reply }) => {
     try {
         if (!q) return reply("🚫 *Provide a YouTube link or title!*");
 
@@ -103,30 +117,20 @@ async (conn, mek, m, { from, q, reply }) => {
                    `📅 *Uploaded:* ${data.ago}\n\n` +
                    `💠 *Powered by SENAL*`;
 
-        await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
+        await sock.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
         await reply(qualityPrompt("video", VIDEO_QUALITIES));
 
-        // Listen for the user's quality selection using a message listener
-        conn.on('message', async (msg) => {
-            if (msg.from === from && !isNaN(msg.text.trim()) && parseInt(msg.text.trim()) >= 1 && parseInt(msg.text.trim()) <= VIDEO_QUALITIES.length) {
-                let choice = parseInt(msg.text.trim());
-                let selectedQuality = VIDEO_QUALITIES[choice - 1].value;
-                await reply(`✅ *Selected Quality:* ${VIDEO_QUALITIES[choice - 1].label}`);
+        // Wait for user response
+        let selectedQuality = await waitForResponse(sock, from, VIDEO_QUALITIES);
+        if (!selectedQuality) return reply("🚫 *Timed out!* Please try again.");
 
-                await reply("🎥 *Streaming your video...* ⏳");
+        await reply(`✅ *Selected Quality:* ${selectedQuality}`);
+        await reply("🎥 *Downloading your video...* ⏳");
 
-                let videoStream = ytdl(data.url, { quality: selectedQuality });
-                await conn.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
+        let videoStream = ytdl(data.url, { quality: selectedQuality });
+        await sock.sendMessage(from, { video: { stream: videoStream }, mimetype: "video/mp4" }, { quoted: mek });
 
-                await reply("✅ *Video uploaded!* 🎬");
-
-                // Remove the message listener after the reply is processed
-                conn.removeAllListeners('message');
-            } else {
-                // Optional: Handle invalid input
-                await reply("🚫 *Invalid selection, please reply with a number corresponding to a valid quality.*");
-            }
-        });
+        await reply("✅ *Video uploaded!* 🎬");
     } catch (e) {
         reply(`🚫 *Error:* ${e.message}`);
     }
