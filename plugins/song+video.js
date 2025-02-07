@@ -15,22 +15,13 @@ const VIDEO_QUALITIES = [
     { label: "720p", value: "highest" }
 ];
 
-const qualityPrompt = (type, qualities) => {
-    let msg = `⚠️ *Select a ${type} quality by clicking a button:*\n\n`;
-    qualities.forEach((q, i) => {
-        msg += `*${i + 1} - ${q.label}*\n`;
-    });
-    return msg;
-};
-
-// Function to create buttons dynamically
 const createQualityButtons = (prefix, type, qualities, query) => {
     return qualities.map((q, i) => ({
-        name: "quick_reply",
-        buttonParamsJson: JSON.stringify({
-            display_text: q.label,
-            id: `${prefix}${type === "audio" ? "ta" : "tv"} ${query} ${q.value}`
-        })
+        type: "reply",
+        reply: {
+            id: `${prefix}${type === "audio" ? "ta" : "tv"} ${query} ${q.value}`,
+            title: q.label
+        }
     }));
 };
 
@@ -59,14 +50,20 @@ async (sock, mek, m, { from, q, prefix, reply }) => {
                    `💠 *Powered by SENAL*`;
 
         let buttons = createQualityButtons(prefix, "audio", AUDIO_QUALITIES, q);
-        let opts = {
-            header: '',
-            footer: `🔹 Select quality below`,
-            body: desc,
-            image: { url: data.thumbnail }
+
+        let message = {
+            interactive: {
+                type: "list",
+                body: { text: desc },
+                footer: { text: "🔹 Select a quality below" },
+                action: {
+                    button: "Select Quality",
+                    sections: [{ title: "Audio Quality Options", rows: buttons }]
+                }
+            }
         };
 
-        return await sock.sendMessage(from, { buttonsMessage: { buttons, ...opts } }, { quoted: mek });
+        return await sock.sendMessage(from, message, { quoted: mek });
     } catch (e) {
         console.log(e);
         reply(`🚫 *Error:* ${e.message}`);
@@ -98,14 +95,20 @@ async (sock, mek, m, { from, q, prefix, reply }) => {
                    `💠 *Powered by SENAL*`;
 
         let buttons = createQualityButtons(prefix, "video", VIDEO_QUALITIES, q);
-        let opts = {
-            header: '',
-            footer: `🔹 Select quality below`,
-            body: desc,
-            image: { url: data.thumbnail }
+
+        let message = {
+            interactive: {
+                type: "list",
+                body: { text: desc },
+                footer: { text: "🔹 Select a quality below" },
+                action: {
+                    button: "Select Quality",
+                    sections: [{ title: "Video Quality Options", rows: buttons }]
+                }
+            }
         };
 
-        return await sock.sendMessage(from, { buttonsMessage: { buttons, ...opts } }, { quoted: mek });
+        return await sock.sendMessage(from, message, { quoted: mek });
     } catch (e) {
         console.log(e);
         reply(`🚫 *Error:* ${e.message}`);
