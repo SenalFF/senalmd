@@ -3,24 +3,24 @@ const yts = require('yt-search');
 const ytdl = require('@distube/ytdl-core');
 
 const AUDIO_QUALITIES = [
-    { label: "64kbps", value: "lowestaudio" },
-    { label: "128kbps", value: "audioonly" },
-    { label: "192kbps", value: "highestaudio" }
+    { label: "64kbps", id: "lowestaudio" },
+    { label: "128kbps", id: "audioonly" },
+    { label: "192kbps", id: "highestaudio" }
 ];
 
 const VIDEO_QUALITIES = [
-    { label: "144p", value: "tiny" },
-    { label: "360p", value: "lowest" },
-    { label: "480p", value: "medium" },
-    { label: "720p", value: "highest" }
+    { label: "144p", id: "tiny" },
+    { label: "360p", id: "lowest" },
+    { label: "480p", id: "medium" },
+    { label: "720p", id: "highest" }
 ];
 
-const createQualityButtons = (prefix, type, qualities, query) => {
-    return qualities.map((q, i) => ({
+const createButtons = (type, qualities, q, prefix) => {
+    return qualities.map((qObj) => ({
         type: "reply",
         reply: {
-            id: `${prefix}${type === "audio" ? "ta" : "tv"} ${query} ${q.value}`,
-            title: q.label
+            id: `${prefix}${type === "audio" ? "ta" : "tv"} ${q} ${qObj.id}`,
+            title: qObj.label
         }
     }));
 };
@@ -49,16 +49,15 @@ async (sock, mek, m, { from, q, prefix, reply }) => {
                    `📅 *Uploaded:* ${data.ago}\n\n` +
                    `💠 *Powered by SENAL*`;
 
-        let buttons = createQualityButtons(prefix, "audio", AUDIO_QUALITIES, q);
+        let buttons = createButtons("audio", AUDIO_QUALITIES, q, prefix);
 
         let message = {
             interactive: {
-                type: "list",
+                type: "button",
                 body: { text: desc },
                 footer: { text: "🔹 Select a quality below" },
                 action: {
-                    button: "Select Quality",
-                    sections: [{ title: "Audio Quality Options", rows: buttons }]
+                    buttons: buttons
                 }
             }
         };
@@ -94,16 +93,15 @@ async (sock, mek, m, { from, q, prefix, reply }) => {
                    `📅 *Uploaded:* ${data.ago}\n\n` +
                    `💠 *Powered by SENAL*`;
 
-        let buttons = createQualityButtons(prefix, "video", VIDEO_QUALITIES, q);
+        let buttons = createButtons("video", VIDEO_QUALITIES, q, prefix);
 
         let message = {
             interactive: {
-                type: "list",
+                type: "button",
                 body: { text: desc },
                 footer: { text: "🔹 Select a quality below" },
                 action: {
-                    button: "Select Quality",
-                    sections: [{ title: "Video Quality Options", rows: buttons }]
+                    buttons: buttons
                 }
             }
         };
