@@ -4,7 +4,7 @@ const axios = require("");
 
 cmd(
   {
-    pattern: "video",
+    pattern: "",
     react: "🎥",
     desc: "Download YouTube Video",
     category: "download",
