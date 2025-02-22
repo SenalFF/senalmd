@@ -4,8 +4,8 @@ const { ytmp4 } = require("@vreden/youtube_scraper");
 
 cmd(
   {
-    pattern: "video",
-    react: "🎥",
+    pattern: "song",
+    react: "🎵",
     desc: "Download Song",
     category: "download",
     filename: __filename,
@@ -49,7 +49,7 @@ cmd(
 
       // Song metadata description
       let desc = `
-*❤️SENAL MD SONG DOWNLOADER❤️*
+*❤️SENAL MD VIDEO DOWNLOADER😚*
 
 👻 *title* : ${data.title}
 👻 *description* : ${data.description}
@@ -58,11 +58,11 @@ cmd(
 👻 *views* : ${data.views}
 👻 *url* : ${data.url}
 
-𝐌𝐚𝐝𝐞 𝐛𝐲 S҈E҈N҈A҈L҈
+𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
 `;
 
       // Send metadata thumbnail message
-      await senal.sendMessage(
+      await robin.sendMessage(
         from,
         { image: { url: data.thumbnail }, caption: desc },
         { quoted: mek }
@@ -80,27 +80,27 @@ cmd(
           : durationParts[0] * 60 + durationParts[1];
 
       if (totalSeconds > 1800) {
-        return reply("⏱️ audio limit is 30 minitues");
+        return reply("⏱️ video limit is 30 minitues");
       }
 
       // Send audio file
-      await senal.sendMessage(
+      await robin.sendMessage(
         from,
         {
           audio: { url: songData.download.url },
-          mimetype: "audio/mpeg",
+          mimetype: "video/mp4",
         },
         { quoted: mek }
       );
 
       // Send as a document (optional)
-      await senal.sendMessage(
+      await robin.sendMessage(
         from,
         {
           document: { url: songData.download.url },
-          mimetype: "audio/mpeg",
-          fileName: `${data.title}.mp3`,
-          caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 S̳E̳N̳A̳L̳",
+          mimetype: "video /mp4",
+          fileName: `${data.title}.mp4`,
+          caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝙎𝙀𝙉𝘼𝙇",
         },
         { quoted: mek }
       );
