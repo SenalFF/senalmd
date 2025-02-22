@@ -1,6 +1,6 @@
 const { cmd, commands } = require("../command");
 const yts = require("yt-search");
-const { ytmp3 } = require("");
+const { ytmp3 } = require("@vreden/youtube_scraper");
 
 cmd(
   {
@@ -49,7 +49,7 @@ cmd(
 
       // Song metadata description
       let desc = `
-*❤️ROBIN SONG DOWNLOADER❤️*
+*❤️SENAL MD SONG DOWNLOADER❤️*
 
 👻 *title* : ${data.title}
 👻 *description* : ${data.description}
@@ -58,11 +58,11 @@ cmd(
 👻 *views* : ${data.views}
 👻 *url* : ${data.url}
 
-𝐌𝐚𝐝𝐞 𝐛𝐲 𝐒_𝐈_𝐇_𝐈_𝐋_𝐄_𝐋
+𝐌𝐚𝐝𝐞 𝐛𝐲 S҈E҈N҈A҈L҈
 `;
 
       // Send metadata thumbnail message
-      await robin.sendMessage(
+      await senal.sendMessage(
         from,
         { image: { url: data.thumbnail }, caption: desc },
         { quoted: mek }
@@ -84,7 +84,7 @@ cmd(
       }
 
       // Send audio file
-      await robin.sendMessage(
+      await senal.sendMessage(
         from,
         {
           audio: { url: songData.download.url },
@@ -94,13 +94,13 @@ cmd(
       );
 
       // Send as a document (optional)
-      await robin.sendMessage(
+      await senal.sendMessage(
         from,
         {
           document: { url: songData.download.url },
           mimetype: "audio/mpeg",
           fileName: `${data.title}.mp3`,
-          caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝐒_𝐈_𝐇_𝐈_𝐋_𝐄_𝐋",
+          caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 S̳E̳N̳A̳L̳",
         },
         { quoted: mek }
       );
