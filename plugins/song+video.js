@@ -1,6 +1,6 @@
 const { cmd } = require('../command');
 const yts = require('yt-search');
-const ytdl = require('@distube/ytdl-core');
+const ytdl = require('@l);
 
 const AUDIO_QUALITIES = [
     { label: "64kbps", id: "lowestaudio" },
