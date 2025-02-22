@@ -49,7 +49,7 @@ cmd(
 
       // Song metadata description
       let desc = `
-*❤️SENAL MD SONG DOWNLOADER❤️*
+*❤️SENAL MD SONG DOWNLOADER😚*
 
 👻 *title* : ${data.title}
 👻 *description* : ${data.description}
@@ -58,11 +58,11 @@ cmd(
 👻 *views* : ${data.views}
 👻 *url* : ${data.url}
 
-𝐌𝐚𝐝𝐞 𝐛𝐲 S҈E҈N҈A҈L҈
+𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
 `;
 
       // Send metadata thumbnail message
-      await senal.sendMessage(
+      await robin.sendMessage(
         from,
         { image: { url: data.thumbnail }, caption: desc },
         { quoted: mek }
@@ -84,7 +84,7 @@ cmd(
       }
 
       // Send audio file
-      await senal.sendMessage(
+      await robin.sendMessage(
         from,
         {
           audio: { url: songData.download.url },
@@ -94,13 +94,13 @@ cmd(
       );
 
       // Send as a document (optional)
-      await senal.sendMessage(
+      await robin.sendMessage(
         from,
         {
           document: { url: songData.download.url },
           mimetype: "audio/mpeg",
           fileName: `${data.title}.mp3`,
-          caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 S̳E̳N̳A̳L̳",
+          caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝙎𝙀𝙉𝘼𝙇",
         },
         { quoted: mek }
       );
