@@ -27,7 +27,7 @@ const createButtons = (type, qualities, q, prefix) => {
 
 // ========== SONG DOWNLOADER ==========
 cmd({
-    pattern: "song",
+    pattern: "",
     desc: "Download songs with quality selection",
     category: "download",
     react: "🎵",
@@ -71,7 +71,7 @@ async (sock, mek, m, { from, q, prefix, reply }) => {
 
 // ========== VIDEO DOWNLOADER ==========
 cmd({
-    pattern: "video",
+    pattern: "",
     desc: "Download videos with quality selection",
     category: "download",
     react: "🎥",
