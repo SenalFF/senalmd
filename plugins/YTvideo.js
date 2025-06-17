@@ -1,114 +1,45 @@
-const { cmd, commands } = require("../command");
+const { cmd } = require("../command");
 const yts = require("yt-search");
 const { ytmp4 } = require("@vreden/youtube_scraper");
 
 cmd(
   {
     pattern: "video",
-    react: "🎥",
-    desc: "Download Song",
+    react: "🎬",
+    desc: "Download YouTube Video",
     category: "download",
     filename: __filename,
   },
-  async (
-    robin,
-    mek,
-    m,
-    {
-      from,
-      quoted,
-      body,
-      isCmd,
-      command,
-      args,
-      q,
-      isGroup,
-      sender,
-      senderNumber,
-      botNumber2,
-      botNumber,
-      pushname,
-      isMe,
-      isOwner,
-      groupMetadata,
-      groupName,
-      participants,
-      groupAdmins,
-      isBotAdmins,
-      isAdmins,
-      reply,
-    }
-  ) => {
+  async (robin, mek, m, { q, from, reply }) => {
     try {
-      if (!q) return reply("*නමක් හරි ලින්ක් එකක් හරි දෙන්න* 🌚❤️");
+      if (!q) return reply("*Give a video name or YouTube link* 🎥");
 
-      // Search for the video
       const search = await yts(q);
       const data = search.videos[0];
       const url = data.url;
 
-      // Song metadata description
-      let desc = `
-*❤️SENAL MD SONG DOWNLOADER❤️*
+      const duration = data.seconds;
+      if (duration > 1800) return reply("⏱️ Video limit is 30 minutes.");
 
-👻 *title* : ${data.title}
-👻 *description* : ${data.description}
-👻 *time* : ${data.timestamp}
-👻 *ago* : ${data.ago}
-👻 *views* : ${data.views}
-👻 *url* : ${data.url}
+      const video = await ytmp4(url, "360");
 
-𝐌𝐚𝐝𝐞 𝐛𝐲 S҈E҈N҈A҈L҈
+      const caption = `
+*🎥 Title:* ${data.title}
+*📆 Published:* ${data.ago}
+*👁 Views:* ${data.views}
+*🔗 URL:* ${url}
+
+🎬 Powered by SENAL MD
 `;
 
-      // Send metadata thumbnail message
-      await senal.sendMessage(
+      await robin.sendMessage(
         from,
-        { image: { url: data.thumbnail }, caption: desc },
+        { video: { url: video.download.url }, caption },
         { quoted: mek }
       );
-
-      // Download the audio using @vreden/youtube_scraper
-      const quality = "128"; // Default quality
-      const songData = await ytmp3(url, quality);
-
-      // Validate song duration (limit: 30 minutes)
-      let durationParts = data.timestamp.split(":").map(Number);
-      let totalSeconds =
-        durationParts.length === 3
-          ? durationParts[0] * 3600 + durationParts[1] * 60 + durationParts[2]
-          : durationParts[0] * 60 + durationParts[1];
-
-      if (totalSeconds > 1800) {
-        return reply("⏱️ audio limit is 30 minitues");
-      }
-
-      // Send audio file
-      await senal.sendMessage(
-        from,
-        {
-          audio: { url: songData.download.url },
-          mimetype: "audio/mpeg",
-        },
-        { quoted: mek }
-      );
-
-      // Send as a document (optional)
-      await senal.sendMessage(
-        from,
-        {
-          document: { url: songData.download.url },
-          mimetype: "audio/mpeg",
-          fileName: `${data.title}.mp3`,
-          caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 S̳E̳N̳A̳L̳",
-        },
-        { quoted: mek }
-      );
-
-      return reply("*Thanks for using my bot* 🌚❤️");
-    } catch (e) {
-      console.log(e);
-      reply(`❌ Error: ${e.message}`);
+    } catch (err) {
+      console.log(err);
+      reply("❌ Error downloading video.");
     }
   }
 );
