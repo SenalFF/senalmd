@@ -2,114 +2,90 @@ const { cmd } = require("../command");
 const yts = require("yt-search");
 const { ytmp4 } = require("@vreden/youtube_scraper");
 
-const tempStore = {}; // Temporary store for user video selections
-
 cmd(
   {
-    pattern: "pathan",
+    pattern: "video",
     react: "🎬",
-    desc: "Download YouTube video (choose quality)",
+    desc: "Download YouTube video",
     category: "download",
     filename: __filename,
   },
-  async (robin, mek, m, { q, from, reply }) => {
+  async (
+    robin,
+    mek,
+    m,
+    {
+      from,
+      q,
+      reply,
+    }
+  ) => {
     try {
-      if (!q) return reply("🎥 *Enter a video name or link to download*\n\n_Example:_ `.pathan shape of you`");
+      if (!q) return reply("*Video name එකක් හරි link එකක් හරි දාන්න බ්‍රෝ* 🎬");
 
       const search = await yts(q);
       const data = search.videos[0];
-      if (!data) return reply("❌ No results found.");
+      const url = data.url;
 
-      if (data.seconds > 1800) return reply("⏱️ *Video is longer than 30 minutes*");
+      let desc = `
+*🎬 SENAL MD VIDEO DOWNLOADER 😎*
 
-      // Store URL for later
-      tempStore[from] = {
-        url: data.url,
-        title: data.title,
-        thumb: data.thumbnail,
-      };
+👻 *title* : ${data.title}
+👻 *description* : ${data.description}
+👻 *time* : ${data.timestamp}
+👻 *ago* : ${data.ago}
+👻 *views* : ${data.views}
+👻 *url* : ${data.url}
 
-      // Ask for quality selection
-      await robin.sendMessage(
-        from,
-        {
-          text: `🎬 *Select video quality for:* ${data.title}`,
-          footer: "🔽 Choose the quality below",
-          title: "SENAL MD Video Downloader",
-          buttonText: "🎞 Select Quality",
-          sections: [
-            {
-              title: "Available Qualities",
-              rows: [
-                { title: "144p", rowId: `.getvideo 144` },
-                { title: "240p", rowId: `.getvideo 240` },
-                { title: "360p", rowId: `.getvideo 360` },
-                { title: "480p", rowId: `.getvideo 480` },
-                { title: "720p", rowId: `.getvideo 720` },
-                { title: "1080p", rowId: `.getvideo 1080` },
-              ],
-            },
-          ],
-        },
-        { quoted: mek }
-      );
-    } catch (e) {
-      console.error(e);
-      reply("❌ Error: " + e.message);
-    }
-  }
-);
-
-// This handles .getvideo 360, etc.
-cmd(
-  {
-    pattern: "getvideo",
-    desc: "Handle video quality selection",
-    fromMe: false,
-  },
-  async (robin, mek, m, { q, from, reply }) => {
-    try {
-      const quality = q || "360";
-      const info = tempStore[from];
-
-      if (!info) return reply("❌ No video session found. Try using `.pathan` again.");
-
-      const video = await ytmp4(info.url, quality);
-
-      const caption = `
-🎬 *Title:* ${info.title}
-📽 *Quality:* ${quality}p
-
-ᴠɪᴅᴇᴏ ʙʏ ꜱᴇɴᴀʟ ᴍᴅ
+𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
 `;
 
-      // Send video
+      await robin.sendMessage(
+        from,
+        { image: { url: data.thumbnail }, caption: desc },
+        { quoted: mek }
+      );
+
+      const videoData = await ytmp4(url);
+
+      // Video duration check (max 30 minutes)
+      let durationParts = data.timestamp.split(":").map(Number);
+      let totalSeconds =
+        durationParts.length === 3
+          ? durationParts[0] * 3600 + durationParts[1] * 60 + durationParts[2]
+          : durationParts[0] * 60 + durationParts[1];
+
+      if (totalSeconds > 1800) {
+        return reply("⏱️ Video limit is 30 minutes.");
+      }
+
+      // Send video as stream
       await robin.sendMessage(
         from,
         {
-          video: { url: video.download.url },
+          video: { url: videoData.download.url },
           mimetype: "video/mp4",
-          caption,
+          caption: `🎥 ${data.title}`,
         },
         { quoted: mek }
       );
 
-      // Send as document
+      // Send video as document (optional)
       await robin.sendMessage(
         from,
         {
-          document: { url: video.download.url },
+          document: { url: videoData.download.url },
           mimetype: "video/mp4",
-          fileName: `${info.title} (${quality}p).mp4`,
-          caption: "📁 *Video as Document* | Made by SENAL MD",
+          fileName: `${data.title}.mp4`,
+          caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝙎𝙀𝙉𝘼𝙇",
         },
         { quoted: mek }
       );
 
-      delete tempStore[from]; // Clear stored session
+      return reply("*✅ Download complete* 🎬❤️");
     } catch (e) {
       console.error(e);
-      reply("❌ Error fetching video. Try again.");
+      reply(`❌ Error: ${e.message}`);
     }
   }
 );
