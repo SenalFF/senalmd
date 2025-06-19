@@ -1,0 +1,23 @@
+name: senal-md-bot
+routes:
+  - name: web
+    path: /
+    port: 8000
+
+build:
+  # Node.js build steps
+  install:
+    # Install system-level dependencies like ffmpeg
+    - apt-get update && apt-get install -y ffmpeg
+    - npm install
+
+  # Start your bot
+  command: node index.js
+
+envs:
+  - name: NODE_ENV
+    value: production
+
+# Optional: If you use a buildpack instead of Docker
+instance:
+  type: micro
