@@ -1,72 +1,72 @@
-const { cmd } = require("../command");
-const yts = require("yt-search");
-const { ytmp4 } = require("@vreden/youtube_scraper");
-const axios = require("axios");
-const { spawn } = require("child_process");
-const ffmpegPath = require("ffmpeg-static");
-const { Readable } = require("stream");
+const { cmd } = require('../command'); // ✅ Corrected path
+const yts = require('@vreden/youtube_scraper');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('ffmpeg-static');
+const axios = require('axios');
+
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 cmd({
-  pattern: "video2",
-  desc: "Stream YouTube video and send",
+  pattern: "video",
+  desc: "Download video from YouTube",
   category: "download",
   react: "🎥",
   filename: __filename,
-},
-async (conn, mek, m, { q, from, reply }) => {
+}, async (conn, mek, m, { q, reply, from }) => {
   try {
-    if (!q) return reply("*🔍 කරුණාකර නමක් හෝ ලින්ක් එකක් ලබා දෙන්න.*");
+    if (!q) return reply("*කරුණාකර Link එකක් හෝ නමක් ලබා දෙන්න 🔎...*");
 
-    const search = await yts(q);
-    const video = search.videos[0];
-    const url = video.url;
+    const query = q.startsWith('http') ? q : `ytsearch:${q}`;
+    const result = await yts(query);
+    const data = result.videos[0];
+    if (!data || !data.url) return reply("*🚫 සොයාගත නොහැක!*");
 
-    const info = await ytmp4(url);
-    const videoUrl = info.download.url;
+    const description = `╭━❮◆ SENAL MD VIDEO DOWNLOADER ◆❯━╮
+┃➤✰ 𝚃𝙸𝚃𝙻𝙴 : ${data.title}
+┃➤✰ 𝚅𝙸𝙴𝚆𝚂 : ${data.views}
+┃➤✰ 𝙳𝙴𝚂𝙲𝚁𝙸𝙿𝚃𝙸𝙾𝙽 : ${data.description}
+┃➤✰ 𝚃𝙸𝙼𝙴 : ${data.timestamp}
+┃➤✰ 𝙰𝙶𝙾 : ${data.ago}
+╰━━━━━━━━━━━━━━━⪼
 
-    // Download video stream
-    const { data: videoStream } = await axios.get(videoUrl, {
-      responseType: "stream"
+© ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝚂𝙴𝙽𝙰𝙻`;
+
+    await conn.sendMessage(from, {
+      image: { url: data.thumbnail },
+      caption: description,
+    }, { quoted: mek });
+
+    await reply("*_Downloading and converting..._ ⏳*");
+
+    const response = await axios({
+      url: data.url,
+      method: 'GET',
+      responseType: 'stream',
     });
 
-    reply("🎬 *Streaming video through FFmpeg...*");
+    const chunks = [];
+    const stream = ffmpeg(response.data)
+      .format('webm')
+      .videoCodec('libvpx')
+      .audioCodec('libvorbis')
+      .on('error', (err) => reply(`❌ FFmpeg Error: ${err.message}`))
+      .on('end', async () => {
+        const buffer = Buffer.concat(chunks);
+        await conn.sendMessage(from, {
+          video: buffer,
+          mimetype: 'video/webm',
+          fileName: `${data.title}.webm`,
+          caption: "© 𝚂𝙴𝙽𝙰𝙻 𝙼𝙳 | Converted & Sent 🎥",
+        }, { quoted: mek });
 
-    // Start ffmpeg process with input from stream and output to pipe
-    const ffmpeg = spawn(ffmpegPath, [
-      "-i", "pipe:0",
-      "-f", "mp4",
-      "-vcodec", "copy",
-      "-acodec", "copy",
-      "pipe:1"
-    ]);
+        await reply("*_UPLOADED ✅_*");
+      })
+      .pipe();
 
-    videoStream.pipe(ffmpeg.stdin);
-
-    let chunks = [];
-    ffmpeg.stdout.on("data", chunk => chunks.push(chunk));
-
-    ffmpeg.on("close", async code => {
-      if (code !== 0) return reply("❌ FFmpeg process failed");
-
-      const finalBuffer = Buffer.concat(chunks);
-
-      await conn.sendMessage(
-        from,
-        {
-          video: finalBuffer,
-          mimetype: "video/mp4",
-          caption: `🎞️ *${video.title}*\n© 𝚂𝙴𝙽𝙰𝙻-𝙼𝙳`,
-        },
-        { quoted: mek }
-      );
-
-      reply("✅ *Uploaded without saving locally!*");
-    });
-
-    ffmpeg.stderr.on("data", err => console.log("FFmpeg:", err.toString()));
+    stream.on('data', chunk => chunks.push(chunk));
 
   } catch (err) {
-    console.error(err);
+    console.error("Error in video command:", err);
     reply(`🚫 *දෝෂයක් ඇති විය:*\n${err.message}`);
   }
-})
+});
