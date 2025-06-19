@@ -1,91 +1,59 @@
-const { cmd } = require("../command");
+//===========VIDEO-DL===========
+
 const yts = require("yt-search");
 const { ytmp4 } = require("@vreden/youtube_scraper");
+const { cmd } = require("../command"); // adjust if needed
 
-cmd(
-  {
-    pattern: "video",
-    react: "🎬",
-    desc: "Download YouTube video",
-    category: "download",
-    filename: __filename,
-  },
-  async (
-    robin,
-    mek,
-    m,
-    {
-      from,
-      q,
-      reply,
-    }
-  ) => {
-    try {
-      if (!q) return reply("*Video name එකක් හරි link එකක් හරි දාන්න බ්‍රෝ* 🎬");
+cmd({
+  pattern: "video",
+  desc: "Download video",
+  category: "download",
+  react: "🎥",
+  filename: __filename,
+},
+async (conn, mek, m, {
+  from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply
+}) => {
+  try {
+    if (!q) return reply("*කරුණාකර Link එකක් හෝ නමක් ලබා දෙන්න 🔎...*");
 
-      const search = await yts(q);
-      const data = search.videos[0];
-      const url = data.url;
+    const normalizedQuery = q.startsWith('http') ? q : q;
 
-      let desc = `
-*🎬 SENAL MD VIDEO DOWNLOADER 😎*
+    const search = await yts(normalizedQuery);
+    const data = search.videos[0];
+    const url = data.url;
 
-👻 *title* : ${data.title}
-👻 *description* : ${data.description}
-👻 *time* : ${data.timestamp}
-👻 *ago* : ${data.ago}
-👻 *views* : ${data.views}
-👻 *url* : ${data.url}
+    if (!url) return reply("*🚫 සොයාගත නොහැක!*");
 
-𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
-`;
+    let des = `╭━❮◆ SENAL MD VIDEO DOWNLOADER ◆❯━╮
+┃➤✰ 𝚃𝙸𝚃𝙻𝙴 : ${data.title}
+┃➤✰ 𝚅𝙸𝙴𝚆𝚂 : ${data.views}
+┃➤✰ 𝙳𝙴𝚂𝙲𝚁𝙸𝙿𝚃𝙸𝙾𝙽 : ${data.description}
+┃➤✰ 𝚃𝙸𝙼𝙴 : ${data.timestamp}
+┃➤✰ 𝙰𝙶𝙾 : ${data.ago}
+╰━━━━━━━━━━━━━━━⪼
 
-      await robin.sendMessage(
-        from,
-        { image: { url: data.thumbnail }, caption: desc },
-        { quoted: mek }
-      );
+> ©ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝚂𝙴𝙽𝙰𝙻`;
 
-      const videoData = await ytmp4(url);
+    await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: des }, { quoted: mek });
 
-      // Video duration check (max 30 minutes)
-      let durationParts = data.timestamp.split(":").map(Number);
-      let totalSeconds =
-        durationParts.length === 3
-          ? durationParts[0] * 3600 + durationParts[1] * 60 + durationParts[2]
-          : durationParts[0] * 60 + durationParts[1];
+    await reply("*_Downloading_*   ⬇️");
 
-      if (totalSeconds > 1800) {
-        return reply("⏱️ Video limit is 30 minutes.");
-      }
+    const down = await ytmp4(url); // using @vreden/youtube_scraper
+    const downloadUrl = down.download.url;
 
-      // Send video as stream
-      await robin.sendMessage(
-        from,
-        {
-          video: { url: videoData.download.url },
-          mimetype: "video/mp4",
-          caption: `🎥 ${data.title}`,
-        },
-        { quoted: mek }
-      );
+    await conn.sendMessage(from, { video: { url: downloadUrl }, mimetype: "video/mp4" }, { quoted: mek });
 
-      // Send video as document (optional)
-      await robin.sendMessage(
-        from,
-        {
-          document: { url: videoData.download.url },
-          mimetype: "video/mp4",
-          fileName: `${data.title}.mp4`,
-          caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝙎𝙀𝙉𝘼𝙇",
-        },
-        { quoted: mek }
-      );
+    await conn.sendMessage(from, {
+      document: { url: downloadUrl },
+      mimetype: "video/mp4",
+      fileName: `${data.title}.mp4`,
+      caption: "©ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝚂𝙴𝙽𝙰𝙻 𝙼𝙳"
+    }, { quoted: mek });
 
-      return reply("*✅ Download complete* 🎬❤️");
-    } catch (e) {
-      console.error(e);
-      reply(`❌ Error: ${e.message}`);
-    }
+    await reply("*_UPLOADED_*  ✅");
+
+  } catch (a) {
+    reply(`🚫 *දෝෂයක් ඇති විය:*\n${a}`);
   }
-);
+});
