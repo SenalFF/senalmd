@@ -1,12 +1,12 @@
-const { cmd, commands } = require("../command");
+const { cmd } = require("../command");
 const yts = require("yt-search");
-const { ytPlaymp4 } = require("ruhend-scraper");
+const { ytmp4 } = require("ruhend-scraper");
 
 cmd(
   {
     pattern: "video",
     react: "🎵",
-    desc: "Download Song",
+    desc: "Download YouTube Video",
     category: "download",
     filename: __filename,
   },
@@ -16,96 +16,75 @@ cmd(
     m,
     {
       from,
-      quoted,
-      body,
-      isCmd,
-      command,
-      args,
       q,
-      isGroup,
-      sender,
-      senderNumber,
-      botNumber2,
-      botNumber,
-      pushname,
-      isMe,
-      isOwner,
-      groupMetadata,
-      groupName,
-      participants,
-      groupAdmins,
-      isBotAdmins,
-      isAdmins,
       reply,
     }
   ) => {
     try {
       if (!q) return reply("*නමක් හරි ලින්ක් එකක් හරි දෙන්න* 🌚❤️");
 
-      // Search for video
+      // Search YouTube using yts
       const search = await yts(q);
-      const data = search.videos[0];
-      const url = data.url;
+      const video = search.videos[0];
+      const url = video.url;
 
-      // Video metadata
-      let desc = `
-*❤️SENAL MD Video DOWNLOADER😚*
+      // Video details
+      const desc = `
+*❤️ SENAL MD Video Downloader 😚*
 
-👻 *title* : ${data.title}
-👻 *description* : ${data.description}
-👻 *time* : ${data.timestamp}
-👻 *ago* : ${data.ago}
-👻 *views* : ${data.views}
-👻 *url* : ${data.url}
+👻 *Title*       : ${video.title}
+👻 *Description* : ${video.description}
+👻 *Duration*    : ${video.timestamp}
+👻 *Views*       : ${video.views}
+👻 *Uploaded*    : ${video.ago}
+👻 *URL*         : ${url}
 
 𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
 `;
 
+      // Send thumbnail and info
       await robin.sendMessage(
         from,
-        { image: { url: data.thumbnail }, caption: desc },
+        { image: { url: video.thumbnail }, caption: desc },
         { quoted: mek }
       );
 
-      // Video duration limit check (30 min)
-      let durationParts = data.timestamp.split(":").map(Number);
-      let totalSeconds =
-        durationParts.length === 3
-          ? durationParts[0] * 3600 + durationParts[1] * 60 + durationParts[2]
-          : durationParts[0] * 60 + durationParts[1];
+      // Duration check (limit to 30 minutes)
+      let [min, sec] = video.timestamp.split(":").map(Number);
+      let totalSeconds = min * 60 + sec;
+      if (totalSeconds > 1800) return reply("⏱️ Video limit is 30 minutes");
 
-      if (totalSeconds > 1800) {
-        return reply("⏱️ video limit is 30 minitues");
-      }
+      // Download video with ruhend-scraper
+      const { title, audio, video: videoUrl, thumbnail } = await ytmp4(url);
 
-      // Get download link from ruhend-scraper
-      const result = await ytPlaymp4(q);
-
+      // Send video file
       await robin.sendMessage(
         from,
         {
-          video: { url: result.url },
+          video: { url: videoUrl },
           mimetype: "video/mp4",
+          caption: `🎬 ${title}`,
         },
         { quoted: mek }
       );
 
-      // Send as document (optional)
+      // Send as document
       await robin.sendMessage(
         from,
         {
-          document: { url: result.url },
+          document: { url: videoUrl },
           mimetype: "video/mp4",
-          fileName: `${result.title}.mp4`,
+          fileName: `${title}.mp4`,
           caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝙎𝙀𝙉𝘼𝙇",
         },
         { quoted: mek }
       );
 
-      return reply("*Thanks for using my bot* 🌚❤️");
+      return reply("*✅ Video sent successfully!* 🌚❤️");
+
     } catch (e) {
-      console.log(e);
-      reply(`❌ Error: ${e.message}`);
+      console.error(e);
+      return reply(`❌ Error: ${e.message}`);
     }
   }
 );
