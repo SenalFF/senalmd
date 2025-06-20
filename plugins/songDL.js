@@ -20,7 +20,7 @@ function formatSize(bytes) {
 
 cmd(
   {
-    pattern: "song",
+    pattern: "play",
     react: "🎧",
     desc: "Download YouTube Song as Audio",
     category: "download",
