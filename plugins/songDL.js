@@ -11,7 +11,7 @@ function normalizeYouTubeUrl(input) {
 
 cmd(
   {
-    pattern: "song",
+    pattern: "play",
     react: "🎧",
     desc: "Download YouTube Song (MP3)",
     category: "download",
