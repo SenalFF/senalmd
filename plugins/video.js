@@ -3,7 +3,7 @@ const yts = require('yt-search');
 const { ytmp4 } = require('@vreden/youtube_scraper');
 
 cmd({
-  pattern: "video",
+  pattern: "video2",
   desc: "Download YouTube video by name or link",
   category: "download",
   react: "📽️",
