@@ -1,12 +1,12 @@
-const { cmd, commands } = require("../command");
+const { cmd } = require("../command");
 const yts = require("yt-search");
-const { ytmp4 } = require("@vreden/youtube_scraper");
+const axios = require("axios");
 
 cmd(
   {
     pattern: "video",
     react: "🎥",
-    desc: "Download Song",
+    desc: "Download YouTube Video",
     category: "download",
     filename: __filename,
   },
@@ -14,100 +14,89 @@ cmd(
     robin,
     mek,
     m,
-    {
-      from,
-      quoted,
-      body,
-      isCmd,
-      command,
-      args,
-      q,
-      isGroup,
-      sender,
-      senderNumber,
-      botNumber2,
-      botNumber,
-      pushname,
-      isMe,
-      isOwner,
-      groupMetadata,
-      groupName,
-      participants,
-      groupAdmins,
-      isBotAdmins,
-      isAdmins,
-      reply,
-    }
+    { from, quoted, body, isCmd, command, args, q, isGroup, sender, reply }
   ) => {
     try {
-      if (!q) return reply("*නමක් හරි ලින්ක් එකක් හරි දෙන්න* 🌚❤️");
+      if (!q) return reply("*🛑 Please provide a YouTube video name or URL.*");
 
       // Search for the video
       const search = await yts(q);
       const data = search.videos[0];
       const url = data.url;
 
-      // Song metadata description
-      let desc = `
-*❤️SENAL MD Video DOWNLOADER😚*
+      // Metadata caption
+      let desc = `🎥 *SENAL MD YOUTUBE DOWNLOADER* 🎥
 
-👻 *title* : ${data.title}
-👻 *description* : ${data.description}
-👻 *time* : ${data.timestamp}
-👻 *ago* : ${data.ago}
-👻 *views* : ${data.views}
-👻 *url* : ${data.url}
+🔹 *Title*     : ${data.title}
+⏱️ *Duration*  : ${data.timestamp}
+👁️ *Views*     : ${data.views}
+📤 *Uploaded*  : ${data.ago}
+👤 *Channel*   : ${data.author.name}
+🔗 *Video URL* : ${data.url}
 
-𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
-`;
+✨ 𝑷𝒐𝒘𝒆𝒓𝒆𝒅 𝒃𝒚 *SENAL MD BOT* ✨`;
 
-      // Send metadata thumbnail message
+      // Send metadata and thumbnail
       await robin.sendMessage(
         from,
         { image: { url: data.thumbnail }, caption: desc },
         { quoted: mek }
       );
 
-      // Download the audio using @vreden/youtube_scraper
-      const quality = "128"; // Default quality
-      const songData = await ytmp4(url, quality);
+      // Video download function
+      const downloadVideo = async (url, quality) => {
+        const apiUrl = `https://p.oceansaver.in/ajax/download.php?format=${quality}&url=${encodeURIComponent(
+          url
+        )}&api=dfcb6d76f2f6a9894gjkege8a4ab232222`;
 
-      // Validate song duration (limit: 30 minutes)
-      let durationParts = data.timestamp.split(":").map(Number);
-      let totalSeconds =
-        durationParts.length === 3
-          ? durationParts[0] * 3600 + durationParts[1] * 60 + durationParts[2]
-          : durationParts[0] * 60 + durationParts[1];
+        const response = await axios.get(apiUrl);
 
-      if (totalSeconds > 1800) {
-        return reply("⏱️ audio limit is 30 minitues");
-      }
+        if (response.data && response.data.success) {
+          const { id, title } = response.data;
 
-      // Send audio file
+          const progressUrl = `https://p.oceansaver.in/ajax/progress.php?id=${id}`;
+
+          while (true) {
+            const progress = await axios.get(progressUrl);
+
+            if (
+              progress.data.success &&
+              progress.data.progress === 1000 &&
+              progress.data.download_url
+            ) {
+              const videoBuffer = await axios.get(progress.data.download_url, {
+                responseType: "arraybuffer",
+              });
+
+              return { buffer: videoBuffer.data, title };
+            }
+
+            // Wait 5 seconds before retrying
+            await new Promise((resolve) => setTimeout(resolve, 5000));
+          }
+        } else {
+          throw new Error("❌ Failed to get download info.");
+        }
+      };
+
+      const quality = "360";
+      const video = await downloadVideo(url, quality);
+
       await robin.sendMessage(
         from,
         {
-          audio: { url: songData.download.url },
-          mimetype: "video/mp4",
+          video: video.buffer,
+          caption: `🎬 *${video.title}*
+
+✅ 𝑫𝒐𝒘𝒏𝒍𝒐𝒂𝒅 𝑪𝒐𝒎𝒑𝒍𝒆𝒕𝒆! 💾
+🌟 𝑷𝒐𝒘𝒆𝒓𝒆𝒅 𝒃𝒚 *SENAL MD* 🤖`,
         },
         { quoted: mek }
       );
 
-      // Send as a document (optional)
-      await robin.sendMessage(
-        from,
-        {
-          document: { url: songData.download.url },
-          mimetype: "video/mp4",
-          fileName: `${data.title}.mp4`,
-          caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝙎𝙀𝙉𝘼𝙇",
-        },
-        { quoted: mek }
-      );
-
-      return reply("*Thanks for using my bot* 🌚❤️");
+      reply("*Thanks for using SENAL MD Bot! 🎥❤️*");
     } catch (e) {
-      console.log(e);
+      console.error(e);
       reply(`❌ Error: ${e.message}`);
     }
   }
