@@ -1,6 +1,7 @@
 const { cmd, commands } = require("../command");
 const yts = require("yt-search");
-const { search, ytmp3, ytmp4, ytdlv2, channel } = require('@vreden/youtube_scraper');
+const { ytPlaymp4 } = require("ruhend-scraper");
+
 cmd(
   {
     pattern: "video",
@@ -41,12 +42,12 @@ cmd(
     try {
       if (!q) return reply("*නමක් හරි ලින්ක් එකක් හරි දෙන්න* 🌚❤️");
 
-      // Search for the video
+      // Search for video
       const search = await yts(q);
       const data = search.videos[0];
       const url = data.url;
 
-      // video metadata description
+      // Video metadata
       let desc = `
 *❤️SENAL MD Video DOWNLOADER😚*
 
@@ -60,18 +61,13 @@ cmd(
 𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
 `;
 
-      // Send metadata thumbnail message
       await robin.sendMessage(
         from,
         { image: { url: data.thumbnail }, caption: desc },
         { quoted: mek }
       );
 
-      // Download the video using @vreden/youtube_scraper
-      const quality = "360"; // Default quality
-      const videoData = await ytmp4(url, quality);
-
-      // Validate video duration (limit: 30 minutes)
+      // Video duration limit check (30 min)
       let durationParts = data.timestamp.split(":").map(Number);
       let totalSeconds =
         durationParts.length === 3
@@ -82,23 +78,25 @@ cmd(
         return reply("⏱️ video limit is 30 minitues");
       }
 
-      // Send video file
+      // Get download link from ruhend-scraper
+      const result = await ytPlaymp4(q);
+
       await robin.sendMessage(
         from,
         {
-          video: { url: videoData.download.url },
+          video: { url: result.url },
           mimetype: "video/mp4",
         },
         { quoted: mek }
       );
 
-      // Send as a document (optional)
+      // Send as document (optional)
       await robin.sendMessage(
         from,
         {
-          document: { url: videoData.download.url },
+          document: { url: result.url },
           mimetype: "video/mp4",
-          fileName: `${data.title}.mp4`,
+          fileName: `${result.title}.mp4`,
           caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝙎𝙀𝙉𝘼𝙇",
         },
         { quoted: mek }
