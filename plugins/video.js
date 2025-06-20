@@ -7,7 +7,7 @@ const axios = require('axios');
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 cmd({
-  pattern: "video",
+  pattern: "video2",
   desc: "Download video from YouTube",
   category: "download",
   react: "🎥",
