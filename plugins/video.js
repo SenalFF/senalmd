@@ -1,68 +1,50 @@
-const { cmd } = require('../command');
 const { ytmp4 } = require('@vreden/youtube_scraper');
 const yts = require('yt-search');
 const axios = require('axios');
-const { PassThrough } = require('stream');
+const { cmd } = require('../command'); // your command handler
 
 cmd({
-  pattern: "video2",
-  desc: "Download YouTube video",
-  category: "download",
-  react: "🎥",
+  pattern: 'video2',
+  desc: 'Download YouTube videos by name or URL',
+  category: 'download',
+  use: '.video <song name or link>',
   filename: __filename,
-}, async (conn, mek, m, { q, reply, from }) => {
+}, async (m, conn, text) => {
   try {
-    if (!q) return reply("*🔎 කරුණාකර Link එකක් හෝ නමක් ලබා දෙන්න...*");
+    const { from, quoted } = m;
 
-    // Search YouTube video
-    const search = await yts(q);
+    // Get search query
+    const query = text || quoted?.text;
+    if (!query) return m.reply('❌ කරුණාකර වීඩියෝවක් ලබාදෙන්න: *.video senura remix*');
+
+    // Search with yt-search
+    const search = await yts(query);
     const videoInfo = search.videos[0];
-    if (!videoInfo || !videoInfo.url) return reply("🚫 *වීඩියෝව සොයාගත නොහැක!*");
+    if (!videoInfo) return m.reply('🚫 වීඩියෝවක් හමු නොවීය.');
 
-    // Get video download link (360p default)
-    const download = await ytmp4(videoInfo.url, "360");
+    const url = videoInfo.url;
+    const title = videoInfo.title;
+    const duration = videoInfo.timestamp;
+    const thumb = videoInfo.thumbnail;
+    const views = videoInfo.views;
+
+    // Get download link using youtube_scraper
+    const download = await ytmp4(url, "360");
     if (!download.status || !download.download?.url) {
-      return reply("❌ *වීඩියෝ බාගත කළ නොහැක!*");
+      return m.reply('🚫 වීඩියෝව බාගත කිරීම අසාර්ථක විය.');
     }
 
-    // Stylish message
-    const caption = `╭━❮◆ *SENAL MD VIDEO DOWNLOADER* ◆❯━╮
-┃➤✰ 𝚃𝙸𝚃𝙻𝙴 : ${videoInfo.title}
-┃➤✰ 𝚅𝙸𝙴𝚆𝚂 : ${videoInfo.views}
-┃➤✰ 𝙳𝚄𝚁𝙰𝚃𝙸𝙾𝙽 : ${videoInfo.timestamp}
-┃➤✰ 𝙿𝚄𝙱𝙻𝙸𝚂𝙷𝙴𝙳 : ${videoInfo.ago}
-╰━━━━━━━━━━━━━━━⪼
-
-© ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝚂𝙴𝙽𝙰𝙻`;
+    // Download and stream video to WhatsApp
+    const streamResponse = await axios.get(download.download.url, { responseType: 'stream' });
 
     await conn.sendMessage(from, {
-      image: { url: videoInfo.thumbnail },
-      caption,
-    }, { quoted: mek });
+      video: { stream: streamResponse.data },
+      mimetype: 'video/mp4',
+      caption: `🎬 *${title}*\n⏱️ ${duration} | 👁️ ${views.toLocaleString()}\n🔗 ${url}\n\n✅ *Powered by SENAL MD*`,
+    }, { quoted: m });
 
-    await reply("*📥 බාගත කරමින් පවතී...*");
-
-    // Stream video to WhatsApp
-    const stream = new PassThrough();
-    axios({
-      method: 'get',
-      url: download.download.url,
-      responseType: 'stream',
-    }).then(res => {
-      res.data.pipe(stream);
-
-      conn.sendMessage(from, {
-        video: stream,
-        mimetype: 'video/mp4',
-        caption: `🎬 ${videoInfo.title}\n\n✅ *Powered by SENAL MD*`,
-      }, { quoted: mek });
-    }).catch(err => {
-      console.error(err);
-      reply("🚫 *වීඩියෝ Stream කිරීමේදී දෝෂයකි!*");
-    });
-
-  } catch (err) {
-    console.error("Video Download Error:", err);
-    reply(`❌ *දෝෂයක් ඇතිවීය:*\n${err.message}`);
+  } catch (e) {
+    console.error("Video Download Error:", e);
+    m.reply('🚫 *වීඩියෝ බාගත කිරීමේදී දෝෂයක් ඇතිවිය.*');
   }
 });
