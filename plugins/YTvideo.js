@@ -1,59 +1,114 @@
-//===========VIDEO-DL===========
-
+const { cmd, commands } = require("../command");
 const yts = require("yt-search");
 const { ytmp4 } = require("@vreden/youtube_scraper");
-const { cmd } = require("../command"); // adjust if needed
 
-cmd({
-  pattern: "video",
-  desc: "Download video",
-  category: "download",
-  react: "🎥",
-  filename: __filename,
-},
-async (conn, mek, m, {
-  from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply
-}) => {
-  try {
-    if (!q) return reply("*කරුණාකර Link එකක් හෝ නමක් ලබා දෙන්න 🔎...*");
+cmd(
+  {
+    pattern: "video",
+    react: "🎥",
+    desc: "Download Song",
+    category: "download",
+    filename: __filename,
+  },
+  async (
+    robin,
+    mek,
+    m,
+    {
+      from,
+      quoted,
+      body,
+      isCmd,
+      command,
+      args,
+      q,
+      isGroup,
+      sender,
+      senderNumber,
+      botNumber2,
+      botNumber,
+      pushname,
+      isMe,
+      isOwner,
+      groupMetadata,
+      groupName,
+      participants,
+      groupAdmins,
+      isBotAdmins,
+      isAdmins,
+      reply,
+    }
+  ) => {
+    try {
+      if (!q) return reply("*නමක් හරි ලින්ක් එකක් හරි දෙන්න* 🌚❤️");
 
-    const normalizedQuery = q.startsWith('http') ? q : q;
+      // Search for the video
+      const search = await yts(q);
+      const data = search.videos[0];
+      const url = data.url;
 
-    const search = await yts(normalizedQuery);
-    const data = search.videos[0];
-    const url = data.url;
+      // Song metadata description
+      let desc = `
+*❤️SENAL MD Video DOWNLOADER😚*
 
-    if (!url) return reply("*🚫 සොයාගත නොහැක!*");
+👻 *title* : ${data.title}
+👻 *description* : ${data.description}
+👻 *time* : ${data.timestamp}
+👻 *ago* : ${data.ago}
+👻 *views* : ${data.views}
+👻 *url* : ${data.url}
 
-    let des = `╭━❮◆ SENAL MD VIDEO DOWNLOADER ◆❯━╮
-┃➤✰ 𝚃𝙸𝚃𝙻𝙴 : ${data.title}
-┃➤✰ 𝚅𝙸𝙴𝚆𝚂 : ${data.views}
-┃➤✰ 𝙳𝙴𝚂𝙲𝚁𝙸𝙿𝚃𝙸𝙾𝙽 : ${data.description}
-┃➤✰ 𝚃𝙸𝙼𝙴 : ${data.timestamp}
-┃➤✰ 𝙰𝙶𝙾 : ${data.ago}
-╰━━━━━━━━━━━━━━━⪼
+𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
+`;
 
-> ©ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝚂𝙴𝙽𝙰𝙻`;
+      // Send metadata thumbnail message
+      await robin.sendMessage(
+        from,
+        { image: { url: data.thumbnail }, caption: desc },
+        { quoted: mek }
+      );
 
-    await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: des }, { quoted: mek });
+      // Download the audio using @vreden/youtube_scraper
+      const quality = "128"; // Default quality
+      const songData = await ytmp4(url, quality);
 
-    await reply("*_Downloading_*   ⬇️");
+      // Validate song duration (limit: 30 minutes)
+      let durationParts = data.timestamp.split(":").map(Number);
+      let totalSeconds =
+        durationParts.length === 3
+          ? durationParts[0] * 3600 + durationParts[1] * 60 + durationParts[2]
+          : durationParts[0] * 60 + durationParts[1];
 
-    const down = await ytmp4(url); // using @vreden/youtube_scraper
-    const downloadUrl = down.download.url;
+      if (totalSeconds > 1800) {
+        return reply("⏱️ audio limit is 30 minitues");
+      }
 
-    await conn.sendMessage(from, { video: { url: downloadUrl }, mimetype: "video/mp4" }, { quoted: mek });
+      // Send audio file
+      await robin.sendMessage(
+        from,
+        {
+          audio: { url: songData.download.url },
+          mimetype: "video/mp4",
+        },
+        { quoted: mek }
+      );
 
-    await conn.sendMessage(from, {
-      document: { url: downloadUrl },
-      mimetype: "video/mp4",
-      fileName: `${data.title}.mp4`,
-      caption: "©ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝚂𝙴𝙽𝙰𝙻 𝙼𝙳"
-    }, { quoted: mek });
+      // Send as a document (optional)
+      await robin.sendMessage(
+        from,
+        {
+          document: { url: songData.download.url },
+          mimetype: "video/mp4",
+          fileName: `${data.title}.mp4`,
+          caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝙎𝙀𝙉𝘼𝙇",
+        },
+        { quoted: mek }
+      );
 
-    await reply("*_UPLOADED_*  ✅");
-
-  } catch (a) {
-    reply(`🚫 *දෝෂයක් ඇති විය:*\n${a}`);
+      return reply("*Thanks for using my bot* 🌚❤️");
+    } catch (e) {
+      console.log(e);
+      reply(`❌ Error: ${e.message}`);
+    }
   }
-});
+);,
