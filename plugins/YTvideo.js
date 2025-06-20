@@ -52,11 +52,12 @@ cmd(
       const caption = `
 *❤️ SENAL MD Video Downloader 😚*
 
-👻 *Title*     : ${videoInfo.title}
-👻 *Duration*  : ${videoInfo.duration}
-👻 *Views*     : ${videoInfo.views}
-👻 *Uploaded*  : ${videoInfo.upload}
-👻 *URL*       : ${videoUrl}
+ 
+👑 *Title*     : ${videoInfo.title}
+⏱️ *Duration*  : ${videoInfo.duration}
+👀 *Views*     : ${videoInfo.views}
+📤 *Uploaded*  : ${videoInfo.upload}
+🔗 *URL*       : ${videoUrl}
 
 𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
 `;
