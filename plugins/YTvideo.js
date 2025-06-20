@@ -2,10 +2,17 @@ const { cmd } = require("../command");
 const yts = require("yt-search");
 const { ytmp4 } = require("ruhend-scraper");
 
+// ✅ YouTube URL normalizer
+function normalizeYouTubeUrl(input) {
+  const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+  const match = input.match(regex);
+  return match ? `https://www.youtube.com/watch?v=${match[1]}` : null;
+}
+
 cmd(
   {
     pattern: "video",
-    react: "🎵",
+    react: "🎥",
     desc: "Download YouTube Video",
     category: "download",
     filename: __filename,
@@ -14,74 +21,77 @@ cmd(
     robin,
     mek,
     m,
-    {
-      from,
-      q,
-      reply,
-    }
+    { from, q, reply }
   ) => {
     try {
       if (!q) return reply("*නමක් හරි ලින්ක් එකක් හරි දෙන්න* 🌚❤️");
 
-      // Search YouTube using yts
-      const search = await yts(q);
-      const video = search.videos[0];
-      const url = video.url;
+      // Check and normalize YouTube URL
+      let videoUrl = "";
+      let videoInfo = {};
+      const normalizedUrl = normalizeYouTubeUrl(q);
 
-      // Video details
-      const desc = `
+      if (normalizedUrl) {
+        videoUrl = normalizedUrl;
+        videoInfo = await ytmp4(videoUrl);
+      } else {
+        // Search if not a link
+        const search = await yts(q);
+        const result = search.videos[0];
+        if (!result) return reply("❌ Video not found, try another name.");
+
+        videoUrl = result.url;
+        videoInfo = await ytmp4(videoUrl);
+      }
+
+      // Duration check (max 30 mins)
+      const [min, sec = 0] = videoInfo.duration.split(":").map(Number);
+      const totalSeconds = min * 60 + sec;
+      if (totalSeconds > 1800) return reply("⏱️ Video limit is 30 minutes!");
+
+      const caption = `
 *❤️ SENAL MD Video Downloader 😚*
 
-👻 *Title*       : ${video.title}
-👻 *Description* : ${video.description}
-👻 *Duration*    : ${video.timestamp}
-👻 *Views*       : ${video.views}
-👻 *Uploaded*    : ${video.ago}
-👻 *URL*         : ${url}
+👻 *Title*     : ${videoInfo.title}
+👻 *Duration*  : ${videoInfo.duration}
+👻 *Views*     : ${videoInfo.views}
+👻 *Uploaded*  : ${videoInfo.upload}
+👻 *URL*       : ${videoUrl}
 
 𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
 `;
 
-      // Send thumbnail and info
+      // Thumbnail
       await robin.sendMessage(
         from,
-        { image: { url: video.thumbnail }, caption: desc },
+        { image: { url: videoInfo.thumbnail }, caption },
         { quoted: mek }
       );
 
-      // Duration check (limit to 30 minutes)
-      let [min, sec] = video.timestamp.split(":").map(Number);
-      let totalSeconds = min * 60 + sec;
-      if (totalSeconds > 1800) return reply("⏱️ Video limit is 30 minutes");
-
-      // Download video with ruhend-scraper
-      const { title, audio, video: videoUrl, thumbnail } = await ytmp4(url);
-
-      // Send video file
+      // Send video
       await robin.sendMessage(
         from,
         {
-          video: { url: videoUrl },
+          video: { url: videoInfo.video },
           mimetype: "video/mp4",
-          caption: `🎬 ${title}`,
+          caption: `🎬 ${videoInfo.title}`,
         },
         { quoted: mek }
       );
 
-      // Send as document
+      // Optional: Document
       await robin.sendMessage(
         from,
         {
-          document: { url: videoUrl },
+          document: { url: videoInfo.video },
           mimetype: "video/mp4",
-          fileName: `${title}.mp4`,
+          fileName: `${videoInfo.title}.mp4`,
           caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝙎𝙀𝙉𝘼𝙇",
         },
         { quoted: mek }
       );
 
       return reply("*✅ Video sent successfully!* 🌚❤️");
-
     } catch (e) {
       console.error(e);
       return reply(`❌ Error: ${e.message}`);
