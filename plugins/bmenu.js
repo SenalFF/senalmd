@@ -1,15 +1,27 @@
-const { cmd } = require('../command');
-const { sendMainMenu } = require('../lib/bmsg');
+const { cmd } = require('../command'); // adjust path if needed
 
-cmd(
-  {
-    pattern: 'bmenu',
-    react: '📁',
-    desc: 'Shows main button menu with categories',
+cmd({
+    pattern: 'menu2',
+    desc: 'Show bot command menu',
     category: 'menu',
-    filename: __filename,
-  },
-  async (conn, mek, m, { from }) => {
-    await sendMainMenu(conn, from, mek);
-  }
-);
+    react: '📃',
+    filename: __filename
+}, async (conn, m, msg, { reply }) => {
+    const menu = `
+╭─────『 *MR SENAL CONTROL CMDz* 』─────◆
+│
+│  1. 🎵 Download Song
+│  2. 🎥 Download Video
+│  3. 📱 Download APK
+│  4. ✨ Sticker Maker
+│  5. 👤 Bot Check
+│
+╰─────────────◆
+
+_Reply with a number to continue..._
+
+╰─⧼ ɢᴇɴᴇʀᴀᴛᴇᴅ ʙʏ ᴍʀ ꜱᴇɴᴀʟ ⧽
+    `;
+
+    await reply(menu);
+});
