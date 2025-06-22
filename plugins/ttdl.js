@@ -1,5 +1,5 @@
 // plugins/ttdl.js
-const { cmd } = require("../command");
+const { cmd, commands } = require("../command");
 const { ttdl } = require("ruhend-scraper");
 const yts = require("yt-search");
 const axios = require("axios");
