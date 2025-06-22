@@ -2,7 +2,7 @@ const { cmd } = require('../command');
 
 // Main Menu
 cmd({
-    pattern: "menu",
+    pattern: "menu2",
     desc: "Show the bot menu",
     category: "menu",
     react: "🧚‍♀️",
