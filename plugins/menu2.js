@@ -1,4 +1,4 @@
-const { cmd } = require('../command') // same as alive.js path
+const {cmd , commands} = require('../command') // same as alive.js path
 
 // Main menu command
 cmd({
