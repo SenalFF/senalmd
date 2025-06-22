@@ -1,4 +1,4 @@
-const { cmd } = require('../command'); // adjust path if needed
+const { cmd } = require('../command');
 
 cmd({
     pattern: 'menu3',
@@ -6,7 +6,7 @@ cmd({
     category: 'menu',
     react: '📲',
     filename: __filename
-}, async (conn, m, msg, { sendMessage }) => {
+}, async (conn, m, msg) => {
     const buttons = [
         { buttonId: 'songmenu', buttonText: { displayText: '🎵 Download Song' }, type: 1 },
         { buttonId: 'videomenu', buttonText: { displayText: '🎥 Download Video' }, type: 1 },
@@ -15,15 +15,17 @@ cmd({
         { buttonId: 'botcheck', buttonText: { displayText: '👤 Bot Check' }, type: 1 }
     ];
 
-    const message = {
+    const buttonMessage = {
         text: `╭─────『 *MR SENAL CONTROL CMDz* 』─────◆
 │ Choose an option below:
 ╰─────────────◆
+
 ɢᴇɴᴇʀᴀᴛᴇᴅ ʙʏ ᴍʀ ꜱᴇɴᴀʟ`,
         footer: 'Click a button below 👇',
         buttons: buttons,
         headerType: 1
     };
 
-    await conn.sendMessage(m.chat, message, { quoted: m });
+    // 🔧 FIX: Make sure to use `conn.sendMessage` and NOT `sendMessage` from args
+    await conn.sendMessage(m.chat, buttonMessage, { quoted: m });
 });
