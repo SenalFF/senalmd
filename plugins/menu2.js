@@ -1,7 +1,7 @@
 const { cmd } = require('../command');
 
 cmd({
-    pattern: 'menu',
+    pattern: 'menu3',
     desc: 'Display the command menu with buttons',
     category: 'main',
     react: '📖'
