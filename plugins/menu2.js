@@ -3,13 +3,13 @@ const { cmd, commands } = require('../command');
 cmd({
     pattern: "menu2",
     desc: "Display the bot's menu",
-    category: "menu",
+    category: "menu2",
     react: "🧚‍♀️",
     filename: __filename
 },
-async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
+async (conn, mek, m, { from, reply }) => {
     try {
-        // Define the list message for the main menu (categories)
+        console.log("↪️ Sending Main Menu to:", from);
         const menuMessage = {
             text: `😈🏆 Şєᶰάℓ м𝐝 ✎♡\n\n👨‍💻 Owner: Mr Senal\n📞 Number: 0769872xxx\n🧬 Version: 1.0.0\n💻 Host: fv-az661-842\n💫 Prefix: .`,
             footer: 'Reply with a number (1-9) to select a category.\n > © POWERED BY SENAL MD',
@@ -34,7 +34,6 @@ async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sen
             listType: 1,
         };
 
-        // Send the list message with an image
         await conn.sendMessage(from, {
             image: { url: 'https://files.catbox.moe/gm88nn.png' },
             caption: menuMessage.text,
@@ -45,25 +44,31 @@ async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sen
         }, { quoted: mek });
 
     } catch (e) {
-        console.log(e);
+        console.error("❌ Error in menu2 command:", e);
         reply(`Error: ${e.message}`);
     }
 });
 
-// Handle category selection (new command to process replies)
+
 cmd({
     pattern: "handle_menu",
     desc: "Handle menu selections",
     category: "menu",
     filename: __filename,
-    hidden: true, // Hide from menu to avoid clutter
+    hidden: true,
 },
-async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
-    try {
-        // Check if the message is a list response or a numeric reply
-        let selectedOption = m.message.listResponseMessage?.singleSelectReply?.selectedRowId || body.trim();
+async (conn, mek, m, context) => {
+    const {
+        from, quoted, body, isGroup, sender, senderNumber,
+        botNumber2, botNumber, pushname, isMe, isOwner,
+        groupMetadata, groupName, participants, groupAdmins,
+        isBotAdmins, isAdmins, reply
+    } = context;
 
-        // Define sub-menus for each category
+    try {
+        const selectedOption = m.message?.listResponseMessage?.singleSelectReply?.selectedRowId || body.trim();
+        console.log("📥 Menu selection received:", selectedOption);
+
         const subMenus = {
             category_owner: {
                 text: 'Owner Commands',
@@ -154,33 +159,7 @@ async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sen
             },
         };
 
-        // Handle category selection
-        if (subMenus[selectedOption]) {
-            const subMenu = subMenus[selectedOption];
-            await conn.sendMessage(from, {
-                text: subMenu.text,
-                footer: 'Reply with a number to select a command.\n > © POWERED BY SENAL MD',
-                title: subMenu.text,
-                buttonText: 'View Commands',
-                sections: [{ title: subMenu.text, rows: subMenu.rows }],
-                listType: 1,
-            }, { quoted: mek });
-            return;
-        }
-
-        // Handle command selection
-        if (selectedOption && selectedOption.startsWith('cmd_')) {
-            const command = selectedOption.replace('cmd_', '.').toLowerCase();
-            await conn.sendMessage(from, { text: `Executing ${command}` }, { quoted: mek });
-            // Trigger the command (assumes your command system supports this)
-            // You may need to adjust this based on how your `cmd` system works
-            const cmdEvent = { ...m, message: { conversation: command } };
-            commands.find(c => c.pattern === command.replace('.', ''))?.function(conn, cmdEvent, m, { from, quoted, body: command, isCmd: true, command, args: [], q: '', isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
-            return;
-        }
-
-        // Handle numeric replies for main menu
-        const numericMap = {
+        const numberMap = {
             '1': 'category_owner',
             '2': 'category_fun',
             '3': 'category_converter',
@@ -192,26 +171,41 @@ async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sen
             '9': 'category_other',
         };
 
-        if (numericMap[selectedOption]) {
-            const subMenu = subMenus[numericMap[selectedOption]];
+        const selected = subMenus[selectedOption] || subMenus[numberMap[selectedOption]];
+
+        if (selected) {
+            console.log(`✅ Submenu selected: ${selected.text}`);
             await conn.sendMessage(from, {
-                text: subMenu.text,
+                text: selected.text,
                 footer: 'Reply with a number to select a command.\n > © POWERED BY SENAL MD',
-                title: subMenu.text,
+                title: selected.text,
                 buttonText: 'View Commands',
-                sections: [{ title: subMenu.text, rows: subMenu.rows }],
+                sections: [{ title: selected.text, rows: selected.rows }],
                 listType: 1,
             }, { quoted: mek });
             return;
         }
 
-        // Invalid selection
-        if (selectedOption) {
-            await conn.sendMessage(from, { text: 'Invalid selection. Please reply with a valid number.' }, { quoted: mek });
+        // Execute command
+        if (selectedOption.startsWith('cmd_')) {
+            const command = selectedOption.replace('cmd_', '.');
+            console.log(`⚙️ Executing command: ${command}`);
+
+            await conn.sendMessage(from, { text: `Executing ${command}` }, { quoted: mek });
+
+            const fakeMessage = { ...m, message: { conversation: command } };
+            const foundCmd = commands.find(c => c.pattern === command.replace('.', ''));
+
+            if (foundCmd) {
+                foundCmd.function(conn, fakeMessage, m, context);
+            } else {
+                console.warn(`⚠️ Command not found: ${command}`);
+                reply("Command not found!");
+            }
         }
 
-    } catch (e) {
-        console.log(e);
-        reply(`Error: ${e.message}`);
+    } catch (err) {
+        console.error("❌ Error in handle_menu:", err);
+        reply(`Error: ${err.message}`);
     }
 });
