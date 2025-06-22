@@ -1,52 +1,29 @@
-const { proto } = require('@whiskeysockets/baileys');
+const { cmd } = require('../command'); // adjust path if needed
 
-module.exports = {
-    pattern: 'menu2',
-    alias: ['help2'],
-    desc: 'Show Senal MD Menu',
-    react: '📑',
-    category: 'Main',
-    use: '.menu2',
-    async function(conn, m, mData) {
-        try {
-            const { pushname, sender, from } = mData;
+cmd({
+    pattern: 'menu3',
+    desc: 'Show bot button menu',
+    category: 'menu',
+    react: '📲',
+    filename: __filename
+}, async (conn, m, msg, { sendMessage }) => {
+    const buttons = [
+        { buttonId: 'songmenu', buttonText: { displayText: '🎵 Download Song' }, type: 1 },
+        { buttonId: 'videomenu', buttonText: { displayText: '🎥 Download Video' }, type: 1 },
+        { buttonId: 'apkmenu', buttonText: { displayText: '📱 Download APK' }, type: 1 },
+        { buttonId: 'stickermenu', buttonText: { displayText: '✨ Sticker Maker' }, type: 1 },
+        { buttonId: 'botcheck', buttonText: { displayText: '👤 Bot Check' }, type: 1 }
+    ];
 
-            const menuText = `
-┌──『 *Senal-MD Menu* 』
-│👤 User: ${pushname}
-│📱 Number: wa.me/${sender.split('@')[0]}
-│🔰 Prefix: .
-├────────────────────
-│ 1. .alive
-│ 2. .song [name]
-│ 3. .video [name]
-│ 4. .apk [name]
-│ 5. .sticker
-│ 6. .photo [url]
-├────────────────────
-│ 7. Bot Check 🔍
-└──────
-            `.trim();
+    const message = {
+        text: `╭─────『 *MR SENAL CONTROL CMDz* 』─────◆
+│ Choose an option below:
+╰─────────────◆
+ɢᴇɴᴇʀᴀᴛᴇᴅ ʙʏ ᴍʀ ꜱᴇɴᴀʟ`,
+        footer: 'Click a button below 👇',
+        buttons: buttons,
+        headerType: 1
+    };
 
-            const buttons = [
-                { buttonId: '.alive', buttonText: { displayText: '🟢 Bot Alive' }, type: 1 },
-                { buttonId: '.song wow', buttonText: { displayText: '🎵 Download Song' }, type: 1 },
-                { buttonId: '.video wow', buttonText: { displayText: '🎥 Download Video' }, type: 1 },
-                { buttonId: '.apk tiktok', buttonText: { displayText: '📲 Download APK' }, type: 1 },
-                { buttonId: '.sticker', buttonText: { displayText: '✨ Sticker Maker' }, type: 1 },
-                { buttonId: '.menu', buttonText: { displayText: '📋 Classic Menu' }, type: 1 },
-            ];
-
-            await conn.sendMessage(from, {
-                text: menuText,
-                footer: 'ɢᴇɴᴇʀᴀᴛᴇᴅ ʙʏ ᴍʀ ꜱᴇɴᴀʟ',
-                buttons: buttons,
-                headerType: 1
-            }, { quoted: m });
-
-        } catch (e) {
-            console.log('💥 MENU ERROR:', e);
-            conn.sendMessage(m.chat, { text: '❌ Error showing menu, check console.' }, { quoted: m });
-        }
-    }
-};
+    await conn.sendMessage(m.chat, message, { quoted: m });
+});
