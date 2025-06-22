@@ -20,7 +20,7 @@ async function getFileSizeMB(url) {
 
 cmd(
   {
-    pattern: "ttdl",
+    pattern: "tiktok",
     desc: "TikTok Downloader with Options",
     react: "🎵",
     category: "download",
@@ -37,7 +37,11 @@ cmd(
         data = await ttdl(url);
       } else {
         const search = await yts(q);
-        const ytResult = search.videos.find(v => v.author.name.toLowerCase().includes("tiktok") || v.title.toLowerCase().includes("tiktok"));
+        const ytResult = search.videos.find(
+          (v) =>
+            v.author.name.toLowerCase().includes("tiktok") ||
+            v.title.toLowerCase().includes("tiktok")
+        );
         if (!ytResult) return reply("❌ TikTok video not found.");
         data = await ttdl(ytResult.url);
       }
@@ -70,7 +74,7 @@ cmd(
 2. 🎥 Full Video
 3. ⏱ Short Video (<1min)
 4. 📁 Video (Document File)
-      
+
 _Reply with 1/2/3/4 to choose option._
 `;
 
@@ -80,12 +84,25 @@ _Reply with 1/2/3/4 to choose option._
         { quoted: mek }
       );
 
-      // Await reply from user
-      robin.ev.once("messages.upsert", async (res) => {
-        const userReply = res.messages?.[0]?.message?.conversation || "";
-        const option = userReply.trim();
+      // Handler for user reply
+      const onReply = async (res) => {
+        const msg = res.messages?.[0];
+        if (!msg || msg.key.remoteJid !== from || msg.key.fromMe) return;
+
+        const userReply = msg.message?.conversation?.trim();
+
+        // Check if reply is valid option
+        if (!["1", "2", "3", "4"].includes(userReply)) {
+          await reply("❌ Invalid option. Please reply with 1, 2, 3 or 4.");
+          return;
+        }
+
+        // Remove listener & timeout on valid reply
+        robin.ev.off("messages.upsert", onReply);
+        clearTimeout(timeout);
 
         const fileSize = await getFileSizeMB(video);
+
         const videoMsg = {
           video: { url: video },
           mimetype: "video/mp4",
@@ -103,7 +120,7 @@ _Reply with 1/2/3/4 to choose option._
           ptt: false,
         };
 
-        switch (option) {
+        switch (userReply) {
           case "1":
             await robin.sendMessage(from, audioMsg, { quoted: mek });
             await reply("🎵 *Audio sent successfully!*");
@@ -115,21 +132,29 @@ _Reply with 1/2/3/4 to choose option._
             break;
 
           case "3":
-            if (fileSize > 1) return reply("⛔ This video is not short (<1 min).");
+            if (fileSize > 1)
+              return reply("⛔ This video is not short (<1 min).");
             await robin.sendMessage(from, videoMsg, { quoted: mek });
             await reply("⏱ *Short video sent!*");
             break;
 
           case "4":
             await robin.sendMessage(from, docMsg, { quoted: mek });
-            await reply(`📦 *Document uploaded successfully!* (${fileSize.toFixed(2)}MB)`);
+            await reply(
+              `📦 *Document uploaded successfully!* (${fileSize.toFixed(2)}MB)`
+            );
             break;
-
-          default:
-            await reply("❌ Invalid option. Please reply with 1, 2, 3 or 4.");
         }
-      });
+      };
 
+      // Listen for user reply
+      robin.ev.on("messages.upsert", onReply);
+
+      // Timeout after 60 seconds if no reply
+      const timeout = setTimeout(() => {
+        robin.ev.off("messages.upsert", onReply);
+        reply("⌛ Timeout. Please try the command again.");
+      }, 60000);
     } catch (e) {
       console.error(e);
       return reply(`❌ Error: ${e.message}`);
