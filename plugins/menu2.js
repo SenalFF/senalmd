@@ -1,51 +1,52 @@
-const { cmd } = require('../command');
+const { cmd } = require('../command') // same as alive.js path
 
+// Main menu command
 cmd({
     pattern: "menu2",
-    desc: "Simple category menu",
-    category: "menu",
+    desc: "Show command categories",
+    category: "main",
     react: "📋",
     filename: __filename
-},
-async (conn, m, { reply }) => {
+}, async (conn, mek, m, {
+    from, reply, pushname
+}) => {
     try {
-        const buttons = [
-            {
-                buttonId: 'check_menu',
-                buttonText: { displayText: '✅ Check Menu' },
-                type: 1
-            },
-            {
-                buttonId: 'download_menu',
-                buttonText: { displayText: '⬇️ Download Menu' },
-                type: 1
-            },
-            {
-                buttonId: 'search_menu',
-                buttonText: { displayText: '🔍 Search Menu' },
-                type: 1
-            },
-            {
-                buttonId: 'converter_menu',
-                buttonText: { displayText: '🔄 Converter Menu' },
-                type: 1
-            },
-            {
-                buttonId: 'owner_menu',
-                buttonText: { displayText: '👑 Owner Menu' },
-                type: 1
-            }
-        ];
+        const menuText = `📋 *Command Menu* — Hello ${pushname}
 
-        const buttonMessage = {
-            text: '*📂 Select a Category Menu:*',
-            buttons: buttons,
-            headerType: 1
-        };
+1️⃣ Download  
+2️⃣ Search  
+3️⃣ Converter  
+4️⃣ Owner  
+5️⃣ Check
 
-        await conn.sendMessage(m.from, buttonMessage, { quoted: m });
+_Reply with a number (e.g., just send "1") to view commands in that category._`;
+
+        return await reply(menuText);
     } catch (e) {
         console.log(e);
-        reply('❌ Error showing menu.');
+        reply(`${e}`);
+    }
+});
+
+// Option 1 - Download category
+cmd({
+    pattern: "^1$",
+    desc: "Reply option for download section",
+    category: "main",
+    react: "📥",
+    filename: __filename
+}, async (conn, mek, m, {
+    from, reply
+}) => {
+    try {
+        const downloadText = `📥 *Download Cmd*
+
+▶️ *.play* — Play YouTube audio  
+🎥 *.video* — Download YouTube video  
+🎵 *.song* — Download song by title`;
+        return await reply(downloadText);
+    } catch (e) {
+        console.log(e);
+        reply(`${e}`);
     }
 });
