@@ -3,6 +3,8 @@ const { ttdl } = require("ruhend-scraper");
 const yts = require("yt-search");
 const axios = require("axios");
 
+const activeSessions = new Map(); // For tracking active user download sessions
+
 function normalizeTikTokUrl(text) {
   const regex = /(https?:\/\/)?(www\.)?(vm\.tiktok\.com|vt\.tiktok\.com|tiktok\.com)\/[^\s]+/;
   const match = text.match(regex);
@@ -20,14 +22,16 @@ async function getFileSizeMB(url) {
 
 cmd(
   {
-    pattern: "tiktok",
+    pattern: "ttdl",
     desc: "TikTok Downloader with Options",
-    react: "🎵",
+    react: "🎞️",
     category: "download",
     filename: __filename,
   },
   async (robin, mek, m, { q, reply, from }) => {
     try {
+      const sender = mek.key.participant || mek.key.remoteJid;
+
       if (!q) return reply("📌 Send TikTok link or video keyword.");
 
       const url = normalizeTikTokUrl(q);
@@ -84,76 +88,21 @@ _Reply with 1/2/3/4 to choose option._
         { quoted: mek }
       );
 
-      // Handler for user reply
-      const onReply = async (res) => {
-        const msg = res.messages?.[0];
-        if (!msg || msg.key.remoteJid !== from || msg.key.fromMe) return;
+      // Save session
+      activeSessions.set(sender, {
+        from,
+        title,
+        video,
+        music,
+        quoted: mek,
+      });
 
-        const userReply = msg.message?.conversation?.trim();
-
-        // Check if reply is valid option
-        if (!["1", "2", "3", "4"].includes(userReply)) {
-          await reply("❌ Invalid option. Please reply with 1, 2, 3 or 4.");
-          return;
+      // Clear after 60s
+      setTimeout(() => {
+        if (activeSessions.has(sender)) {
+          activeSessions.delete(sender);
+          robin.sendMessage(from, { text: "⌛ Timeout. Please try again." }, { quoted: mek });
         }
-
-        // Remove listener & timeout on valid reply
-        robin.ev.off("messages.upsert", onReply);
-        clearTimeout(timeout);
-
-        const fileSize = await getFileSizeMB(video);
-
-        const videoMsg = {
-          video: { url: video },
-          mimetype: "video/mp4",
-          caption: "🎥 TikTok Video",
-        };
-        const docMsg = {
-          document: { url: video },
-          mimetype: "video/mp4",
-          fileName: `${title}.mp4`,
-          caption: "📁 TikTok Video (Document)",
-        };
-        const audioMsg = {
-          audio: { url: music },
-          mimetype: "audio/mpeg",
-          ptt: false,
-        };
-
-        switch (userReply) {
-          case "1":
-            await robin.sendMessage(from, audioMsg, { quoted: mek });
-            await reply("🎵 *Audio sent successfully!*");
-            break;
-
-          case "2":
-            await robin.sendMessage(from, videoMsg, { quoted: mek });
-            await reply("🎥 *Video sent successfully!*");
-            break;
-
-          case "3":
-            if (fileSize > 1)
-              return reply("⛔ This video is not short (<1 min).");
-            await robin.sendMessage(from, videoMsg, { quoted: mek });
-            await reply("⏱ *Short video sent!*");
-            break;
-
-          case "4":
-            await robin.sendMessage(from, docMsg, { quoted: mek });
-            await reply(
-              `📦 *Document uploaded successfully!* (${fileSize.toFixed(2)}MB)`
-            );
-            break;
-        }
-      };
-
-      // Listen for user reply
-      robin.ev.on("messages.upsert", onReply);
-
-      // Timeout after 60 seconds if no reply
-      const timeout = setTimeout(() => {
-        robin.ev.off("messages.upsert", onReply);
-        reply("⌛ Timeout. Please try the command again.");
       }, 60000);
     } catch (e) {
       console.error(e);
@@ -161,3 +110,76 @@ _Reply with 1/2/3/4 to choose option._
     }
   }
 );
+
+// Global listener for reply
+cmd.client.ev.on("messages.upsert", async ({ messages }) => {
+  const msg = messages[0];
+  if (!msg || !msg.message || msg.key.fromMe) return;
+
+  const sender = msg.key.participant || msg.key.remoteJid;
+  const session = activeSessions.get(sender);
+  if (!session) return;
+
+  const from = msg.key.remoteJid;
+  const userReply =
+    msg.message?.conversation ||
+    msg.message?.extendedTextMessage?.text ||
+    "";
+
+  const option = userReply.trim();
+
+  if (!["1", "2", "3", "4"].includes(option)) {
+    await cmd.client.sendMessage(from, { text: "❌ Invalid option. Reply with 1, 2, 3 or 4." }, { quoted: msg });
+    return;
+  }
+
+  // Clear session on valid reply
+  activeSessions.delete(sender);
+
+  const { video, music, title, quoted } = session;
+  const fileSize = await getFileSizeMB(video);
+
+  const videoMsg = {
+    video: { url: video },
+    mimetype: "video/mp4",
+    caption: "🎥 TikTok Video",
+  };
+  const docMsg = {
+    document: { url: video },
+    mimetype: "video/mp4",
+    fileName: `${title}.mp4`,
+    caption: "📁 TikTok Video (Document)",
+  };
+  const audioMsg = {
+    audio: { url: music },
+    mimetype: "audio/mpeg",
+    ptt: false,
+  };
+
+  switch (option) {
+    case "1":
+      await cmd.client.sendMessage(from, audioMsg, { quoted: quoted });
+      await cmd.client.sendMessage(from, { text: "🎵 *Audio sent successfully!*" }, { quoted: quoted });
+      break;
+    case "2":
+      await cmd.client.sendMessage(from, videoMsg, { quoted: quoted });
+      await cmd.client.sendMessage(from, { text: "🎥 *Video sent successfully!*" }, { quoted: quoted });
+      break;
+    case "3":
+      if (fileSize > 1)
+        return await cmd.client.sendMessage(from, { text: "⛔ This video is not short (<1 min)." }, { quoted: quoted });
+      await cmd.client.sendMessage(from, videoMsg, { quoted: quoted });
+      await cmd.client.sendMessage(from, { text: "⏱ *Short video sent!*" }, { quoted: quoted });
+      break;
+    case "4":
+      await cmd.client.sendMessage(from, docMsg, { quoted: quoted });
+      await cmd.client.sendMessage(
+        from,
+        {
+          text: `📦 *Document uploaded successfully!* (${fileSize.toFixed(2)}MB)`,
+        },
+        { quoted: quoted }
+      );
+      break;
+  }
+});
