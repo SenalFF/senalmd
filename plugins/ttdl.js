@@ -1,30 +1,25 @@
 const { cmd } = require("../command");
 const { ttdl } = require("ruhend-scraper");
-const axios = require("axios");
 
-const sessions = new Map();
-
-function extractTikTokUrl(text) {
-  const regex = /(https?:\/\/)?(www\.)?(vm\.tiktok\.com|vt\.tiktok\.com|tiktok\.com)\/[^\s]+/;
-  const match = text.match(regex);
-  return match ? match[0] : null;
-}
+const sessions = {};
 
 cmd(
   {
     pattern: "ttdl",
-    react: "🎬",
-    desc: "TikTok Downloader with Format Options",
+    desc: "TikTok Video Downloader",
     category: "download",
-    filename: __filename,
+    react: "🎬",
   },
-  async (robin, mek, m, { q, from, sender, reply }) => {
+  async (robin, mek, m, { q, from, reply }) => {
+    if (!q) return reply("🔍 *TikTok නමක් හෝ ලින්ක් එකක් දෙන්න...*");
+
+    const regex = /(https?:\/\/)?(www\.)?(vm\.tiktok\.com|vt\.tiktok\.com|tiktok\.com)\/[^\s]+/;
+    const match = q.match(regex);
+    const url = match ? match[0] : null;
+
+    if (!url) return reply("❌ *වලංගු TikTok ලින්ක් එකක් දාන්න!*");
+
     try {
-      if (!q) return reply("*TikTok නමක් හෝ ලින්ක් එකක් ලබාදෙන්න* 🎵");
-
-      const url = extractTikTokUrl(q);
-      if (!url) return reply("❌ *වලංගු TikTok ලින්ක් එකක් දාන්න!*");
-
       const data = await ttdl(url);
       if (!data || !data.video) return reply("❌ Couldn't fetch video details!");
 
@@ -43,38 +38,27 @@ cmd(
         cover,
       } = data;
 
-      // Get file size
-      const { data: videoBuffer } = await axios.get(video, { responseType: "arraybuffer" });
-      const fileSizeMB = (videoBuffer.length / (1024 * 1024)).toFixed(2);
-
-      // Save session
-      sessions.set(sender, {
-        step: "choose_format",
-        video,
-        music,
+      sessions[from] = {
         title,
-        size: fileSizeMB,
-      });
-
-      const caption = `
-🎬 *TikTok Video Found*
-
-📝 *Title:* ${title}
-👤 *User:* ${author} (@${username})
-📅 *Date:* ${published}
-👁️ *Views:* ${views}
-👍 *Likes:* ${like}
-💬 *Comments:* ${comment}
-📦 *File Size:* ${fileSizeMB} MB
-
-𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
-
-_➡️ Reply with:_\n1. Audio\n2. Video
-      `;
+        video,
+        audio: music,
+        cover,
+        step: "choose_format",
+        type: null,
+      };
 
       await robin.sendMessage(
         from,
-        { image: { url: cover }, caption },
+        {
+          image: { url: cover },
+          caption:
+            `*🎬 SENAL MD TikTok Downloader*\n\n` +
+            `🎵 *Title:* ${title}\n` +
+            `👤 *User:* ${author} (@${username})\n` +
+            `📅 *Date:* ${published}\n` +
+            `👁 *Views:* ${views} | 👍 ${like} | 💬 ${comment}\n\n` +
+            `📁 *File Type එක තෝරන්න:*\n1. Audio\n2. Video`,
+        },
         { quoted: mek }
       );
     } catch (e) {
@@ -84,101 +68,82 @@ _➡️ Reply with:_\n1. Audio\n2. Video
   }
 );
 
-// 🔁 Handle replies
+// Step 2: Choose Format
 cmd(
   {
-    on: "text",
-    fromMe: false,
+    pattern: "1",
+    on: "number",
+    dontAddCommandList: true,
   },
-  async (robin, mek, m, { body, sender, reply, from }) => {
-    const session = sessions.get(sender);
+  async (robin, mek, m, { from }) => {
+    const session = sessions[from];
+    if (!session || session.step !== "choose_format") return;
+
+    session.type = "audio";
+    session.step = "choose_send_type";
+
+    return robin.sendMessage(from, {
+      text: "*📦 File එක කොහොමද එවන්න?*\n1. Normal\n2. Document",
+    }, { quoted: mek });
+  }
+);
+
+cmd(
+  {
+    pattern: "2",
+    on: "number",
+    dontAddCommandList: true,
+  },
+  async (robin, mek, m, { from }) => {
+    const session = sessions[from];
     if (!session) return;
 
-    const text = body.trim();
-
     if (session.step === "choose_format") {
-      if (text === "1") {
-        session.selected = "audio";
-        session.step = "choose_type";
-        sessions.set(sender, session);
-        return reply("*🗂️ Send file type:*\n1. Normal\n2. Document");
-      }
+      session.type = "video";
+      session.step = "choose_send_type";
 
-      if (text === "2") {
-        session.selected = "video";
-        session.step = "choose_type";
-        sessions.set(sender, session);
-        return reply("*🗂️ Send file type:*\n1. Normal\n2. Document");
-      }
-
-      return reply("❌ Invalid option. Type 1 or 2.");
+      return robin.sendMessage(from, {
+        text: "*📦 File එක කොහොමද එවන්න?*\n1. Normal\n2. Document",
+      }, { quoted: mek });
     }
 
-    if (session.step === "choose_type") {
-      const isNormal = text === "1";
-      const isDoc = text === "2";
-      const type = session.selected;
-      const fileName = `${session.title}.${type === "audio" ? "mp3" : "mp4"}`;
+    if (session.step === "choose_send_type") {
+      const url = session.type === "audio" ? session.audio : session.video;
+      const mimetype = session.type === "audio" ? "audio/mp4" : "video/mp4";
+      const extension = session.type === "audio" ? "mp3" : "mp4";
 
-      if (!isNormal && !isDoc) return reply("❌ Invalid choice. Use 1 or 2.");
+      await robin.sendMessage(from, {
+        document: { url },
+        mimetype,
+        fileName: `${session.title}.${extension}`,
+        caption: "✅ 𝐅𝐢𝐥𝐞 𝐬𝐞𝐧𝐭 𝐛𝐲 𝐒𝐄𝐍𝐀𝐋 𝐌𝐃 ❤️",
+      }, { quoted: mek });
 
-      await reply(`⬇️ Uploading ${type} as ${isNormal ? "normal file" : "document"}...`);
-
-      try {
-        if (type === "audio") {
-          if (isNormal) {
-            await robin.sendMessage(
-              from,
-              {
-                audio: { url: session.music },
-                mimetype: "audio/mp4",
-                ptt: false,
-                fileName,
-              },
-              { quoted: mek }
-            );
-          } else {
-            await robin.sendMessage(
-              from,
-              {
-                document: { url: session.music },
-                mimetype: "audio/mp4",
-                fileName,
-              },
-              { quoted: mek }
-            );
-          }
-        } else {
-          if (isNormal) {
-            await robin.sendMessage(
-              from,
-              {
-                video: { url: session.video },
-                mimetype: "video/mp4",
-                caption: `🎬 ${session.title}`,
-              },
-              { quoted: mek }
-            );
-          } else {
-            await robin.sendMessage(
-              from,
-              {
-                document: { url: session.video },
-                mimetype: "video/mp4",
-                fileName,
-              },
-              { quoted: mek }
-            );
-          }
-        }
-
-        await reply("✅ File uploaded successfully!");
-      } catch (err) {
-        console.error(err);
-        await reply("❌ Upload failed.");
-      }
-
-      sessions.delete(sender); // Clear session
+      delete sessions[from];
     }
+  }
+);
+
+// Step 3: Normal File Send
+cmd(
+  {
+    pattern: "1",
+    on: "number",
+    dontAddCommandList: true,
+  },
+  async (robin, mek, m, { from }) => {
+    const session = sessions[from];
+    if (!session || session.step !== "choose_send_type") return;
+
+    const url = session.type === "audio" ? session.audio : session.video;
+    const mimetype = session.type === "audio" ? "audio/mp4" : "video/mp4";
+
+    await robin.sendMessage(from, {
+      [session.type]: { url },
+      mimetype,
+      caption: `🎧 ${session.title}`,
+    }, { quoted: mek });
+
+    delete sessions[from];
   }
 );
