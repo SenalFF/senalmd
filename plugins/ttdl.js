@@ -1,5 +1,4 @@
-// plugins/ttdl.js
-const { cmd, commands } = require("../command");
+
 const { ttdl } = require("ruhend-scraper");
 const yts = require("yt-search");
 const axios = require("axios");
@@ -16,7 +15,8 @@ module.exports = function (client) {
   async function getFileSizeMB(url) {
     try {
       const res = await axios.head(url);
-      return parseInt(res.headers["content-length"] || "0", 10) / (1024 * 1024);
+      const size = parseInt(res.headers["content-length"] || "0", 10);
+      return size / (1024 * 1024);
     } catch {
       return 0;
     }
@@ -25,7 +25,7 @@ module.exports = function (client) {
   cmd(
     {
       pattern: "tiktok",
-      desc: "TikTok Downloader with Options",
+      desc: "Download TikTok videos or audio",
       react: "🎵",
       category: "download",
       filename: __filename,
@@ -34,13 +34,21 @@ module.exports = function (client) {
       try {
         const sender = mek.key.participant || mek.key.remoteJid;
 
-        if (!q) return reply("📌 Send TikTok link or video keyword.");
+        if (!q) return reply("📌 Send a TikTok link or a keyword to search.");
+
+        if (activeSessions.has(sender)) {
+          return reply("⚠️ You already have an active TikTok session. Please reply to the previous message.");
+        }
 
         const url = normalizeTikTokUrl(q);
         let data;
 
         if (url) {
-          data = await ttdl(url);
+          try {
+            data = await ttdl(url);
+          } catch {
+            return reply("❌ Failed to fetch TikTok video. Try a different link.");
+          }
         } else {
           const search = await yts(q);
           const ytResult = search.videos.find(
@@ -48,12 +56,17 @@ module.exports = function (client) {
               v.author.name.toLowerCase().includes("tiktok") ||
               v.title.toLowerCase().includes("tiktok")
           );
-          if (!ytResult) return reply("❌ TikTok video not found.");
-          data = await ttdl(ytResult.url);
+          if (!ytResult) return reply("❌ No TikTok-related videos found.");
+          try {
+            data = await ttdl(ytResult.url);
+          } catch {
+            return reply("❌ Failed to fetch TikTok video from search.");
+          }
         }
 
-        if (!data || !data.video) return reply("❌ Failed to fetch video info.");
+        if (!data || !data.video) return reply("❌ Could not retrieve video data.");
 
+        // Destructure results properly
         const {
           title,
           author,
@@ -63,9 +76,11 @@ module.exports = function (client) {
           comment,
           share,
           views,
+          bookmark,
           video,
-          music,
           cover,
+          music,
+          profilePicture,
         } = data;
 
         const caption = `
@@ -73,16 +88,20 @@ module.exports = function (client) {
 👤 *User* : ${author} (@${username})
 📝 *Title* : ${title}
 📆 *Date* : ${published}
-👍 *Likes* : ${like} | 💬 ${comment} | 🔁 ${share} | 👀 ${views}
+👍 *Likes* : ${like}
+💬 *Comments* : ${comment}
+🔁 *Shares* : ${share}
+👀 *Views* : ${views}
+🔖 *Bookmarks* : ${bookmark}
 
-📥 *What would you like to download?*
+📥 *Choose what to download:*
 1. 🎵 Audio Only
 2. 🎥 Full Video
 3. ⏱ Short Video (<1min)
 4. 📁 Video (Document File)
 
-_Reply with 1/2/3/4 to choose option._
-`;
+_Reply with 1 / 2 / 3 / 4 to choose an option._
+        `.trim();
 
         await client.sendMessage(
           from,
@@ -101,17 +120,16 @@ _Reply with 1/2/3/4 to choose option._
         setTimeout(() => {
           if (activeSessions.has(sender)) {
             activeSessions.delete(sender);
-            client.sendMessage(from, { text: "⌛ Timeout. Please try again." }, { quoted: mek });
+            client.sendMessage(from, { text: "⌛ Session timed out. Please try again." }, { quoted: mek });
           }
         }, 60000);
       } catch (e) {
-        console.error(e);
+        console.error("❌ TikTok Error:", e);
         return reply(`❌ Error: ${e.message}`);
       }
     }
   );
 
-  // Handle follow-up user replies
   client.ev.on("messages.upsert", async ({ messages }) => {
     const msg = messages[0];
     if (!msg || !msg.message || msg.key.fromMe) return;
@@ -127,9 +145,8 @@ _Reply with 1/2/3/4 to choose option._
       "";
 
     const option = userReply.trim();
-
     if (!["1", "2", "3", "4"].includes(option)) {
-      await client.sendMessage(from, { text: "❌ Invalid option. Reply with 1, 2, 3 or 4." }, { quoted: msg });
+      await client.sendMessage(from, { text: "❌ Invalid option. Reply with 1, 2, 3, or 4." }, { quoted: msg });
       return;
     }
 
@@ -143,33 +160,40 @@ _Reply with 1/2/3/4 to choose option._
       mimetype: "video/mp4",
       caption: "🎥 TikTok Video",
     };
+
     const docMsg = {
       document: { url: video },
       mimetype: "video/mp4",
       fileName: `${title}.mp4`,
       caption: "📁 TikTok Video (Document)",
     };
+
     const audioMsg = {
       audio: { url: music },
       mimetype: "audio/mpeg",
       ptt: false,
     };
 
-    switch (option) {
-      case "1":
-        await client.sendMessage(from, audioMsg, { quoted: quoted });
-        break;
-      case "2":
-        await client.sendMessage(from, videoMsg, { quoted: quoted });
-        break;
-      case "3":
-        if (fileSize > 1)
-          return await client.sendMessage(from, { text: "⛔ This video is not short (<1 min)." }, { quoted: quoted });
-        await client.sendMessage(from, videoMsg, { quoted: quoted });
-        break;
-      case "4":
-        await client.sendMessage(from, docMsg, { quoted: quoted });
-        break;
+    try {
+      switch (option) {
+        case "1":
+          await client.sendMessage(from, audioMsg, { quoted });
+          break;
+        case "2":
+          await client.sendMessage(from, videoMsg, { quoted });
+          break;
+        case "3":
+          if (fileSize > 1)
+            return await client.sendMessage(from, { text: "⛔ This video is too long (>1min)." }, { quoted });
+          await client.sendMessage(from, videoMsg, { quoted });
+          break;
+        case "4":
+          await client.sendMessage(from, docMsg, { quoted });
+          break;
+      }
+    } catch (err) {
+      await client.sendMessage(from, { text: "❌ Failed to send media." }, { quoted });
+      console.error("Send Error:", err);
     }
   });
 };
