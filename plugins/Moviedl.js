@@ -5,7 +5,7 @@ const { PassThrough } = require("stream");
 
 cmd(
   {
-    pattern: "move ?(.*)",
+    pattern: "move",
     desc: "🎬 Sinhala Movie Downloader (Stream to WhatsApp)",
     category: "movie",
     react: "📥",
