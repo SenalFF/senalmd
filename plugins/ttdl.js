@@ -4,7 +4,7 @@ const axios = require("axios");
 
 const sessions = new Map();
 
-function normalizeTikTokUrl(text) {
+function extractTikTokUrl(text) {
   const regex = /(https?:\/\/)?(www\.)?(vm\.tiktok\.com|vt\.tiktok\.com|tiktok\.com)\/[^\s]+/;
   const match = text.match(regex);
   return match ? match[0] : null;
@@ -13,20 +13,20 @@ function normalizeTikTokUrl(text) {
 cmd(
   {
     pattern: "ttdl",
-    desc: "Download TikTok videos",
-    react: "🎵",
+    react: "🎬",
+    desc: "TikTok Downloader with Format Options",
     category: "download",
     filename: __filename,
   },
-  async (robin, mek, m, { q, reply, from, sender }) => {
+  async (robin, mek, m, { q, from, sender, reply }) => {
     try {
       if (!q) return reply("*TikTok නමක් හෝ ලින්ක් එකක් ලබාදෙන්න* 🎵");
 
-      const url = normalizeTikTokUrl(q);
+      const url = extractTikTokUrl(q);
       if (!url) return reply("❌ *වලංගු TikTok ලින්ක් එකක් දාන්න!*");
 
       const data = await ttdl(url);
-      if (!data || !data.video) return reply("❌ Video not found or failed to fetch.");
+      if (!data || !data.video) return reply("❌ Couldn't fetch video details!");
 
       const {
         title,
@@ -39,55 +39,52 @@ cmd(
         views,
         bookmark,
         video,
-        cover,
         music,
+        cover,
       } = data;
 
+      // Get file size
       const { data: videoBuffer } = await axios.get(video, { responseType: "arraybuffer" });
-      const sizeMB = (videoBuffer.length / (1024 * 1024)).toFixed(2);
+      const fileSizeMB = (videoBuffer.length / (1024 * 1024)).toFixed(2);
 
+      // Save session
       sessions.set(sender, {
-        step: "fileType",
+        step: "choose_format",
         video,
         music,
         title,
-        cover,
-        size: sizeMB,
+        size: fileSizeMB,
       });
 
       const caption = `
-*🎵 TikTok Downloader 🎵*
+🎬 *TikTok Video Found*
 
-👤 *User*     : ${author} (@${username})
-📝 *Title*    : ${title}
-📅 *Date*     : ${published}
-👍 *Likes*    : ${like}
-💬 *Comments* : ${comment}
-🔁 *Shares*   : ${share}
-👀 *Views*    : ${views}
-🔖 *Bookmarks*: ${bookmark}
-📦 *File Size*: ${sizeMB} MB
+📝 *Title:* ${title}
+👤 *User:* ${author} (@${username})
+📅 *Date:* ${published}
+👁️ *Views:* ${views}
+👍 *Likes:* ${like}
+💬 *Comments:* ${comment}
+📦 *File Size:* ${fileSizeMB} MB
 
 𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
-`;
+
+_➡️ Reply with:_\n1. Audio\n2. Video
+      `;
 
       await robin.sendMessage(
         from,
         { image: { url: cover }, caption },
         { quoted: mek }
       );
-
-      await reply(
-        `*Choose File Type:*\n1. 🎵 Audio\n2. 🎥 Video`
-      );
     } catch (e) {
-      console.error("❌ TikTok Error:", e);
+      console.error(e);
       return reply(`❌ Error: ${e.message}`);
     }
   }
 );
 
-// Handle replies (interactive flow)
+// 🔁 Handle replies
 cmd(
   {
     on: "text",
@@ -99,75 +96,89 @@ cmd(
 
     const text = body.trim();
 
-    // Step 1: Choose Audio or Video
-    if (session.step === "fileType") {
+    if (session.step === "choose_format") {
       if (text === "1") {
-        // Audio
-        await reply("⬇️ Uploading audio... Please wait!");
-        try {
-          await robin.sendMessage(
-            from,
-            {
-              audio: { url: session.music },
-              mimetype: "audio/mp4",
-              ptt: false,
-              fileName: `${session.title}.mp3`,
-            },
-            { quoted: mek }
-          );
-          await reply("✅ Audio uploaded successfully!");
-        } catch (err) {
-          console.error(err);
-          await reply("❌ Failed to upload audio.");
-        }
-        return sessions.delete(sender);
+        session.selected = "audio";
+        session.step = "choose_type";
+        sessions.set(sender, session);
+        return reply("*🗂️ Send file type:*\n1. Normal\n2. Document");
       }
 
       if (text === "2") {
-        session.step = "format";
+        session.selected = "video";
+        session.step = "choose_type";
         sessions.set(sender, session);
-        return reply("*Send Format:*\n1. 📽️ Normal Video\n2. 📁 Document");
+        return reply("*🗂️ Send file type:*\n1. Normal\n2. Document");
       }
 
-      return reply("❌ Invalid choice. Please type 1 or 2.");
+      return reply("❌ Invalid option. Type 1 or 2.");
     }
 
-    // Step 2: Choose Video Format
-    if (session.step === "format") {
-      await reply("⬇️ Uploading video... Please wait!");
+    if (session.step === "choose_type") {
+      const isNormal = text === "1";
+      const isDoc = text === "2";
+      const type = session.selected;
+      const fileName = `${session.title}.${type === "audio" ? "mp3" : "mp4"}`;
+
+      if (!isNormal && !isDoc) return reply("❌ Invalid choice. Use 1 or 2.");
+
+      await reply(`⬇️ Uploading ${type} as ${isNormal ? "normal file" : "document"}...`);
+
       try {
-        if (text === "1") {
-          await robin.sendMessage(
-            from,
-            {
-              video: { url: session.video },
-              mimetype: "video/mp4",
-              caption: `🎬 ${session.title}`,
-            },
-            { quoted: mek }
-          );
-        } else if (text === "2") {
-          await robin.sendMessage(
-            from,
-            {
-              document: { url: session.video },
-              mimetype: "video/mp4",
-              fileName: `${session.title}.mp4`,
-              caption: "📁 TikTok video by MR SENAL",
-            },
-            { quoted: mek }
-          );
+        if (type === "audio") {
+          if (isNormal) {
+            await robin.sendMessage(
+              from,
+              {
+                audio: { url: session.music },
+                mimetype: "audio/mp4",
+                ptt: false,
+                fileName,
+              },
+              { quoted: mek }
+            );
+          } else {
+            await robin.sendMessage(
+              from,
+              {
+                document: { url: session.music },
+                mimetype: "audio/mp4",
+                fileName,
+              },
+              { quoted: mek }
+            );
+          }
         } else {
-          return reply("❌ Invalid format option. Please send 1 or 2.");
+          if (isNormal) {
+            await robin.sendMessage(
+              from,
+              {
+                video: { url: session.video },
+                mimetype: "video/mp4",
+                caption: `🎬 ${session.title}`,
+              },
+              { quoted: mek }
+            );
+          } else {
+            await robin.sendMessage(
+              from,
+              {
+                document: { url: session.video },
+                mimetype: "video/mp4",
+                fileName,
+              },
+              { quoted: mek }
+            );
+          }
         }
 
-        await reply("✅ Video uploaded successfully!");
-        sessions.delete(sender);
+        await reply("✅ File uploaded successfully!");
       } catch (err) {
         console.error(err);
-        sessions.delete(sender);
-        return reply("❌ Upload failed.");
+        await reply("❌ Upload failed.");
       }
+
+      sessions.delete(sender); // Clear session
     }
   }
 );
