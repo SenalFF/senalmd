@@ -1,4 +1,4 @@
-const { cmd } = require('../command'); // adjust path
+ // adjust path
 
 cmd({
     pattern: '1',
