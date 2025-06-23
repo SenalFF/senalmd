@@ -1,4 +1,4 @@
-
+const { cmd } = require("../command");
 const { ttdl } = require("ruhend-scraper");
 const yts = require("yt-search");
 const axios = require("axios");
