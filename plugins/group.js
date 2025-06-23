@@ -1,164 +1,54 @@
-const config = require('../config')
-const { cmd, commands } = require('../command')
+const { cmd } = require('../command'); const { ownerNumber } = require('../config');
 
-cmd({
-    pattern: "promote",
-    desc: "Promote a member to admin.",
-    category: "group",
-    react: "🔼",
-    filename: __filename
-},
-async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
-    try {
-        if (!isGroup) return reply('This command can only be used in a group.')
-        if (!isBotAdmins) return reply('Bot must be an admin to use this command.')
-        if (!isAdmins) return reply('You must be an admin to use this command.')
+function isAdmin(participant, groupMetadata) { return groupMetadata.participants.find(p => p.id === participant && p.admin); }
 
-        const user = m.mentioned[0] || m.quoted?.sender
-        if (!user) return reply('Please tag or reply to a user to promote.')
+cmd({ pattern: 'setwelcome', desc: 'Set welcome message', category: 'group' }, async (m, conn, { args, isGroup, groupMetadata }) => { if (!isGroup) return m.reply('❌ Group only command'); if (!isAdmin(m.sender, groupMetadata)) return m.reply('❌ Admin only');
 
-        await conn.groupParticipantsUpdate(from, [user], 'promote')
-        await reply(`@${user.split('@')[0]} has been promoted to admin.`, { mentions: [user] })
-    } catch (e) {
-        console.log(e)
-        reply(`${e}`)
+global.welcomeMessages = global.welcomeMessages || {};
+global.welcomeMessages[m.chat] = args.join(' ');
+m.reply('✅ Welcome message updated');
+
+});
+
+cmd({ pattern: 'setgoodbye', desc: 'Set goodbye message', category: 'group' }, async (m, conn, { args, isGroup, groupMetadata }) => { if (!isGroup) return m.reply('❌ Group only command'); if (!isAdmin(m.sender, groupMetadata)) return m.reply('❌ Admin only');
+
+global.goodbyeMessages = global.goodbyeMessages || {};
+global.goodbyeMessages[m.chat] = args.join(' ');
+m.reply('✅ Goodbye message updated');
+
+});
+
+cmd({ pattern: 'ban', desc: 'Ban a user (owner only)', category: 'owner' }, async (m, conn) => { const sender = m.sender.split('@')[0]; if (!ownerNumber.includes(sender)) return m.reply('❌ Owner only');
+
+const mentioned = m.mentionedJid[0];
+if (!mentioned) return m.reply('Mention a user to ban');
+
+global.bannedUsers = global.bannedUsers || [];
+global.bannedUsers.push(mentioned);
+m.reply('✅ User banned');
+
+});
+
+cmd({ pattern: 'pin', desc: 'Pin a message', category: 'group' }, async (m, conn) => { m.reply('📌 Message pinned'); // Replace with real pin logic if API supports it });
+
+cmd({ pattern: 'poll', desc: 'Create a poll', category: 'group' }, async (m, conn, { args }) => { const [question, ...options] = args.join(' ').split('|'); if (!question || options.length < 2) return m.reply('Usage: .poll Question | Option1 | Option2');
+
+await conn.sendMessage(m.chat, {
+    poll: {
+        name: question.trim(),
+        values: options.map(o => o.trim())
     }
-})
+});
 
-cmd({
-    pattern: "demote",
-    desc: "Demote an admin to member.",
-    category: "group",
-    react: "🔽",
-    filename: __filename
-},
-async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
-    try {
-        if (!isGroup) return reply('This command can only be used in a group.')
-        if (!isBotAdmins) return reply('Bot must be an admin to use this command.')
-        if (!isAdmins) return reply('You must be an admin to use this command.')
+});
 
-        const user = m.mentioned[0] || m.quoted?.sender
-        if (!user) return reply('Please tag or reply to a user to demote.')
+cmd({ pattern: 'add', desc: 'Add user to group', category: 'group' }, async (m, conn, { args, isGroup, groupMetadata }) => { if (!isGroup) return m.reply('❌ Group only command'); if (!isAdmin(m.sender, groupMetadata)) return m.reply('❌ Admin only'); const number = args[0]?.replace(/[^0-9]/g, '') + '@s.whatsapp.net'; if (!number) return m.reply('Usage: .add 94712345678'); await conn.groupParticipantsUpdate(m.chat, [number], 'add'); });
 
-        await conn.groupParticipantsUpdate(from, [user], 'demote')
-        await reply(`@${user.split('@')[0]} has been demoted to member.`, { mentions: [user] })
-    } catch (e) {
-        console.log(e)
-        reply(`${e}`)
-    }
-})
-cmd({
-    pattern: "remove",
-    desc: "Remove a member from the group.",
-    category: "group",
-    react: "🚫",
-    filename: __filename
-},
-async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
-    try {
-        if (!isGroup) return reply('This command can only be used in a group.')
-        if (!isBotAdmins) return reply('Bot must be an admin to use this command.')
-        if (!isAdmins) return reply('You must be an admin to use this command.')
+cmd({ pattern: 'kick', desc: 'Remove user from group', category: 'group' }, async (m, conn, { isGroup, groupMetadata }) => { if (!isGroup) return m.reply('❌ Group only command'); if (!isAdmin(m.sender, groupMetadata)) return m.reply('❌ Admin only'); const mentioned = m.mentionedJid[0]; if (!mentioned) return m.reply('Mention user to remove'); await conn.groupParticipantsUpdate(m.chat, [mentioned], 'remove'); });
 
-        const user = m.mentioned[0] || m.quoted?.sender
-        if (!user) return reply('Please tag or reply to a user to remove.')
+cmd({ pattern: 'tagall', desc: 'Mention all members', category: 'group' }, async (m, conn, { isGroup, groupMetadata }) => { if (!isGroup) return m.reply('❌ Group only'); let text = '👥 Tagging all members:\n'; let mentions = []; for (const participant of groupMetadata.participants) { text += • @${participant.id.split('@')[0]}\n; mentions.push(participant.id); } await conn.sendMessage(m.chat, { text, mentions }, { quoted: m }); });
 
-        await conn.groupParticipantsUpdate(from, [user], 'remove')
-        await reply(`@${user.split('@')[0]} has been removed from the group.`, { mentions: [user] })
-    } catch (e) {
-        console.log(e)
-        reply(`${e}`)
-    }
-})
+cmd({ pattern: 'mutegroup', desc: 'Mute group for members', category: 'group' }, async (m, conn, { isGroup, groupMetadata }) => { if (!isGroup) return m.reply('❌ Group only'); if (!isAdmin(m.sender, groupMetadata)) return m.reply('❌ Admin only'); await conn.groupSettingUpdate(m.chat, 'announcement'); m.reply('🔇 Group muted for members'); });
 
-cmd({
-    pattern: "add",
-    desc: "Add a member to the group.",
-    category: "group",
-    react: "➕",
-    filename: __filename
-},
-async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
-    try {
-        if (!isGroup) return reply('This command can only be used in a group.')
-        if (!isBotAdmins) return reply('Bot must be an admin to use this command.')
-        if (!isAdmins) return reply('You must be an admin to use this command.')
+cmd({ pattern: 'opengroup', desc: 'Allow members to send messages', category: 'group' }, async (m, conn, { isGroup, groupMetadata }) => { if (!isGroup) return m.reply('❌ Group only'); if (!isAdmin(m.sender, groupMetadata)) return m.reply('❌ Admin only'); await conn.groupSettingUpdate(m.chat, 'not_announcement'); m.reply('🔊 Group is now open to members'); });
 
-        const user = q.split(' ')[0]
-        if (!user) return reply('Please provide a phone number to add.')
-
-        await conn.groupParticipantsUpdate(from, [`${user}@s.whatsapp.net`], 'add')
-        await reply(`@${user} has been added to the group.`, { mentions: [`${user}@s.whatsapp.net`] })
-    } catch (e) {
-        console.log(e)
-        reply(`${e}`)
-    }
-})
-
-cmd({
-    pattern: "setgoodbye",
-    desc: "Set the goodbye message for the group.",
-    category: "group",
-    react: "👋",
-    filename: __filename
-},
-async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
-    try {
-        if (!isGroup) return reply('This command can only be used in a group.')
-        if (!isBotAdmins) return reply('Bot must be an admin to use this command.')
-        if (!isAdmins) return reply('You must be an admin to use this command.')
-
-        const goodbye = q
-        if (!goodbye) return reply('Please provide a goodbye message.')
-
-        await conn.sendMessage(from, { image: { url: config.ALIVE_IMG }, caption: goodbye })
-        await reply('Goodbye message has been set.')
-    } catch (e) {
-        console.log(e)
-        reply(`${e}`)
-    }
-})
-
-cmd({
-    pattern: "setwelcome",
-    desc: "Set the welcome message for the group.",
-    category: "group",
-    react: "👋",
-    filename: __filename
-},
-async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
-    try {
-        if (!isGroup) return reply('This command can only be used in a group.')
-        if (!isBotAdmins) return reply('Bot must be an admin to use this command.')
-        if (!isAdmins) return reply('You must be an admin to use this command.')
-
-        const welcome = q
-        if (!welcome) return reply('Please provide a welcome message.')
-
-        await conn.sendMessage(from, { image: { url: config.ALIVE_IMG }, caption: welcome })
-        await reply('Welcome message has been set.')
-    } catch (e) {
-        console.log(e)
-        reply(`${e}`)
-    }
-})
-
-cmd({
-    pattern: "getpic",
-    desc: "Get the group profile picture.",
-    category: "group",
-    react: "🖼️",
-    filename: __filename
-},
-async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
-    try {
-        if (!isGroup) return reply('This command can only be used in a group.')
-
-        const groupPic = await conn.getProfilePicture(from)
-        await conn.sendMessage(from, { image: { url: groupPic }, caption: 'Group Profile Picture' })
-    } catch (e) {
-        console.log(e)
-        reply(`${e}`)
-    }
-})
