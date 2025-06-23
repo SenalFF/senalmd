@@ -3,6 +3,7 @@ const { ttdl } = require("ruhend-scraper");
 
 const sessions = {};
 
+// 🎬 Step 1: TikTok URL input
 cmd(
   {
     pattern: "ttdl",
@@ -11,7 +12,7 @@ cmd(
     react: "🎬",
   },
   async (robin, mek, m, { q, from, reply }) => {
-    if (!q) return reply("🔍 *TikTok නමක් හෝ ලින්ක් එකක් දෙන්න...*");
+    if (!q) return reply("🔍 *TikTok ලින්ක් එකක් හෝ නමක් දෙන්න...*");
 
     const regex = /(https?:\/\/)?(www\.)?(vm\.tiktok\.com|vt\.tiktok\.com|tiktok\.com)\/[^\s]+/;
     const match = q.match(regex);
@@ -21,7 +22,7 @@ cmd(
 
     try {
       const data = await ttdl(url);
-      if (!data || !data.video) return reply("❌ Couldn't fetch video details!");
+      if (!data || !data.video) return reply("❌ Couldn't fetch video info!");
 
       const {
         title,
@@ -68,7 +69,7 @@ cmd(
   }
 );
 
-// Step 2: Choose Format
+// 🥁 Step 2: Choose Audio or Video
 cmd(
   {
     pattern: "1",
@@ -124,7 +125,7 @@ cmd(
   }
 );
 
-// Step 3: Normal File Send
+// ✅ Step 3: Send Normal File (video or audio)
 cmd(
   {
     pattern: "1",
@@ -138,11 +139,15 @@ cmd(
     const url = session.type === "audio" ? session.audio : session.video;
     const mimetype = session.type === "audio" ? "audio/mp4" : "video/mp4";
 
-    await robin.sendMessage(from, {
-      [session.type]: { url },
-      mimetype,
-      caption: `🎧 ${session.title}`,
-    }, { quoted: mek });
+    await robin.sendMessage(
+      from,
+      {
+        [session.type]: { url }, // ✅ sends as normal video/audio, NOT document
+        mimetype,
+        caption: `🎧 ${session.title}`,
+      },
+      { quoted: mek }
+    );
 
     delete sessions[from];
   }
