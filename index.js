@@ -81,21 +81,26 @@ async function connectToWA() {
         mek = mek.messages[0];
         if (!mek.message) return;
         mek.message = (getContentType(mek.message) === 'ephemeralMessage') ? mek.message.ephemeralMessage.message : mek.message;
+
         if (mek.key && mek.key.remoteJid === 'status@broadcast' && config.AUTO_READ_STATUS === "true") {
             await conn.readMessages([mek.key]);
         }
+
         const m = sms(conn, mek);
         const type = getContentType(mek.message);
-        const content = JSON.stringify(mek.message);
         const from = mek.key.remoteJid;
-        const quoted = type == 'extendedTextMessage' && mek.message.extendedTextMessage.contextInfo != null ? mek.message.extendedTextMessage.contextInfo.quotedMessage || [] : [];
+        const quoted = (type == 'extendedTextMessage' && mek.message.extendedTextMessage.contextInfo) 
+            ? mek.message.extendedTextMessage.contextInfo.quotedMessage || [] 
+            : [];
+
         const body = (type === 'conversation') ? mek.message.conversation : 
                      (type === 'extendedTextMessage') ? mek.message.extendedTextMessage.text : 
-                     (type == 'imageMessage') && mek.message.imageMessage.caption ? mek.message.imageMessage.caption : 
-                     (type == 'videoMessage') && mek.message.videoMessage.caption ? mek.message.videoMessage.caption : '';
+                     (type === 'imageMessage') && mek.message.imageMessage.caption ? mek.message.imageMessage.caption : 
+                     (type === 'videoMessage') && mek.message.videoMessage.caption ? mek.message.videoMessage.caption : '';
+
         const isCmd = body.startsWith(prefix);
-        const command = isCmd ? body.slice(prefix.length).trim().split(' ').shift().toLowerCase() : '';
-        const args = body.trim().split(/ +/).slice(1);
+        const commandText = isCmd ? body.slice(prefix.length).trim().split(' ').shift().toLowerCase() : '';
+        const args = body.trim().split(/ +/).slice(isCmd ? 1 : 0);
         const q = args.join(' ');
         const isGroup = from.endsWith('@g.us');
         const sender = mek.key.fromMe ? (conn.user.id.split(':')[0] + '@s.whatsapp.net' || conn.user.id) : (mek.key.participant || mek.key.remoteJid);
@@ -105,34 +110,61 @@ async function connectToWA() {
         const isMe = botNumber.includes(senderNumber);
         const isOwner = ownerNumber.includes(senderNumber) || isMe;
         const botNumber2 = await jidNormalizedUser(conn.user.id);
-        const groupMetadata = isGroup ? await conn.groupMetadata(from).catch(e => { }) : '';
+        const groupMetadata = isGroup ? await conn.groupMetadata(from).catch(() => {}) : '';
         const groupName = isGroup ? groupMetadata.subject : '';
         const participants = isGroup ? await groupMetadata.participants : '';
         const groupAdmins = isGroup ? await getGroupAdmins(participants) : '';
         const isBotAdmins = isGroup ? groupAdmins.includes(botNumber2) : false;
         const isAdmins = isGroup ? groupAdmins.includes(sender) : false;
-        const reply = (teks) => {
-            conn.sendMessage(from, { text: teks }, { quoted: mek });
+
+        // Reply helper
+        const reply = (text, extra = {}) => {
+            return conn.sendMessage(from, { text, ...extra }, { quoted: mek });
         };
 
-        //=================== Commands =========================
+        // Load commands module
         const events = require('./command');
-        const cmdName = isCmd ? body.slice(1).trim().split(" ")[0].toLowerCase() : false;
-        if (isCmd) {
-            const cmd = events.commands.find((cmd) => cmd.pattern === (cmdName)) || events.commands.find((cmd) => cmd.alias && cmd.alias.includes(cmdName));
-            if (cmd) {
-                if (cmd.react) conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
+        // Find command by command text
+        const cmd = isCmd 
+            ? (events.commands.find(c => c.pattern === commandText) || events.commands.find(c => c.alias && c.alias.includes(commandText))) 
+            : null;
 
-                try {
-                    cmd.function(conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
-                } catch (e) {
-                    console.error("[PLUGIN ERROR] " + e);
-                }
+        // Number command logic: commands triggered by exact number text (like "1", "2", etc)
+        const numberCmd = events.commands.find(c => c.on === 'number' && c.pattern === body);
+
+        // Handle command (prefix commands)
+        if (cmd) {
+            if (cmd.react) {
+                await conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
             }
+            try {
+                await cmd.function(conn, mek, m, { from, quoted, body, isCmd, command: commandText, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
+            } catch (e) {
+                console.error("[PLUGIN ERROR] " + e);
+                reply("⚠️ An error occurred while executing the command.");
+            }
+            return; // Command handled, exit
         }
+
+        // Handle number command (no prefix, exact message number)
+        if (numberCmd) {
+            try {
+                await numberCmd.function(conn, mek, m, { from, quoted, body, isCmd: false, command: numberCmd.pattern, args: [], q: '', isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
+            } catch (e) {
+                console.error("[NUMBER CMD ERROR] " + e);
+                reply("⚠️ An error occurred while executing the number command.");
+            }
+            return; // Number command handled, exit
+        }
+
+        // Handle "body" type commands (commands triggered by matching body in any message)
         events.commands.map(async (command) => {
             if (body && command.on === "body") {
-                command.function(conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
+                try {
+                    await command.function(conn, mek, m, { from, quoted, body, isCmd, command: command.pattern, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
+                } catch (e) {
+                    console.error("[BODY CMD ERROR] " + e);
+                }
             }
         });
     });
