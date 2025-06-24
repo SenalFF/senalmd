@@ -1,12 +1,19 @@
-# Use Node.js LTS with Debian Buster
-FROM node:lts-buster
+# Use Debian Buster base image (without node)
+FROM debian:buster
 
-# Install system-level dependencies
+# Install system-level dependencies and latest Node.js + npm
 RUN apt-get update && \
   apt-get install -y \
+  curl \
   ffmpeg \
   imagemagick \
-  webp && \
+  webp \
+  python3 \
+  python3-pip && \
+  # Add NodeSource repo for latest Node.js
+  curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
+  apt-get install -y nodejs && \
+  npm install -g npm@latest && \
   apt-get upgrade -y && \
   rm -rf /var/lib/apt/lists/*
 
@@ -14,7 +21,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Copy package metadata and install dependencies
-COPY package.json ./
+COPY package.json package-lock.json* ./
 
 # Install Node.js dependencies and global tools
 RUN npm install && \
