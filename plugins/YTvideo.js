@@ -2,14 +2,45 @@ const { cmd } = require("../command");
 const yts = require("yt-search");
 const youtubedl = require("youtube-dl-exec");
 
-// ✅ YouTube URL normalizer
+// ✅ YouTube URL Normalizer
 function normalizeYouTubeUrl(input) {
   const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
   const match = input.match(regex);
   return match ? `https://www.youtube.com/watch?v=${match[1]}` : null;
 }
 
-// ✅ Define command
+// ✅ YouTube Video Info Downloader using youtube-dl
+async function ytmp4(url) {
+  try {
+    const output = await youtubedl(url, {
+      dumpSingleJson: true,
+      noWarnings: true,
+      noCallHome: true,
+      preferFreeFormats: true,
+      youtubeSkipDashManifest: true,
+    });
+
+    return {
+      title: output.title,
+      duration: formatDuration(output.duration), // in seconds → mm:ss
+      views: output.view_count,
+      upload: output.upload_date,
+      thumbnail: output.thumbnail,
+      video: output.url, // Direct URL
+    };
+  } catch (error) {
+    throw new Error("Failed to fetch video info!");
+  }
+}
+
+// ✅ Format seconds to mm:ss
+function formatDuration(seconds) {
+  const min = Math.floor(seconds / 60);
+  const sec = seconds % 60;
+  return `${min}:${sec < 10 ? "0" : ""}${sec}`;
+}
+
+// ✅ Main Bot Command
 cmd(
   {
     pattern: "video",
@@ -22,7 +53,6 @@ cmd(
     try {
       if (!q) return reply("නමක් හරි ලින්ක් එකක් හරි දෙන්න 🌚❤️");
 
-      // Normalize or search YouTube link
       let videoUrl = "";
       let videoInfo = {};
       const normalizedUrl = normalizeYouTubeUrl(q);
@@ -34,17 +64,15 @@ cmd(
         const search = await yts(q);
         const result = search.videos[0];
         if (!result) return reply("❌ Video not found, try another name.");
-
         videoUrl = result.url;
         videoInfo = await ytmp4(videoUrl);
       }
 
-      // Check duration limit (30 mins)
-      const [min, sec = 0] = videoInfo.duration.split(":").map(Number);
-      const totalSeconds = min * 60 + sec;
-      if (totalSeconds > 1800) return reply("⏱️ Video limit is 30 minutes!");
+      const [min, sec] = videoInfo.duration.split(":").map(Number);
+      const totalSeconds = min * 60 + (sec || 0);
+      if (totalSeconds > 1800)
+        return reply("⏱️ Video limit is 30 minutes!");
 
-      // Caption
       const caption = `
 ❤️ SENAL MD Video Downloader 😚
 
@@ -57,14 +85,12 @@ cmd(
 𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
 `;
 
-      // Send thumbnail with caption
       await robin.sendMessage(
         from,
         { image: { url: videoInfo.thumbnail }, caption },
         { quoted: mek }
       );
 
-      // Send video
       await robin.sendMessage(
         from,
         {
@@ -75,7 +101,6 @@ cmd(
         { quoted: mek }
       );
 
-      // Send document version
       await robin.sendMessage(
         from,
         {
