@@ -1,16 +1,17 @@
-# Use Debian Buster base image (without node)
+# Use Debian Buster base image
 FROM debian:buster
 
-# Install system-level dependencies and latest Node.js + npm
+# Install system-level dependencies including Git
 RUN apt-get update && \
   apt-get install -y \
   curl \
+  git \
   ffmpeg \
   imagemagick \
   webp \
   python3 \
   python3-pip && \
-  # Add NodeSource repo for latest Node.js
+  # Add NodeSource repo for latest Node.js LTS
   curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
   apt-get install -y nodejs && \
   npm install -g npm@latest && \
