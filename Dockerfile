@@ -1,39 +1,37 @@
-# Use Debian Buster base image
-FROM debian:buster
+# Use latest Node.js and Debian base
+FROM node:lts-bookworm
 
-# Install system-level dependencies including Git, Python, and create python symlink
+# Install Python 3.10+, ffmpeg, imagemagick, webp, git
 RUN apt-get update && \
   apt-get install -y \
-  curl \
-  git \
   ffmpeg \
   imagemagick \
   webp \
   python3 \
-  python3-pip && \
-  ln -s /usr/bin/python3 /usr/bin/python && \
-  # Add NodeSource repo for latest Node.js LTS
-  curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
-  apt-get install -y nodejs && \
-  npm install -g npm@latest && \
-  apt-get upgrade -y && \
+  python3-pip \
+  python-is-python3 \
+  git && \
+  apt-get clean && \
   rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
-# Copy package metadata and install dependencies
-COPY package.json package-lock.json* ./
+# Copy package.json & install deps
+COPY package.json ./
 
-# Install Node.js dependencies and global tools
-RUN npm install && \
-    npm install -g qrcode-terminal pm2
+# Set env to skip preinstall Python check and auto-updates
+ENV YOUTUBE_DL_SKIP_PYTHON_CHECK=1
+ENV YTDL_NO_UPDATE=1
 
-# Copy all source code
+# Install Node.js deps
+RUN npm install && npm install -g qrcode-terminal pm2
+
+# Copy the source code
 COPY . .
 
-# Expose port for the app
+# Expose the port your app uses
 EXPOSE 3000
 
-# Run the app using PM2 runtime
+# Start the app using PM2
 CMD ["pm2-runtime", "start", "index.js"]
