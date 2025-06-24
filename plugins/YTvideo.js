@@ -1,15 +1,9 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
-const { ytmp4 } = require("ruhend-scraper");
+const axios = require("axios");
 
-// Dynamic import for fetch (ESM)
-const fetch = (...args) =>
-  import("node-fetch").then(({ default: fetch }) => fetch(...args));
-
-// ✅ Normalize YouTube URL
 function normalizeYouTubeUrl(input) {
-  const regex =
-    /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+  const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
   const match = input.match(regex);
   return match ? `https://www.youtube.com/watch?v=${match[1]}` : null;
 }
@@ -22,105 +16,81 @@ cmd(
     category: "download",
     filename: __filename,
   },
-  async (robin, mek, m, { from, q, reply, isCreator }) => {
+  async (robin, mek, m, { from, q, reply }) => {
     try {
-      if (!q) return reply("🔍 *කරුණාකර නමක් හෝ YouTube ලින්ක් එකක් දෙන්න!*");
+      if (!q) return reply("🎬 *කරුණාකර වීඩියෝ නමක් හෝ YouTube ලින්ක් එකක් දාන්න!*");
 
-      // Normalize or search
       let videoUrl = "";
       let videoInfo = {};
       const normalizedUrl = normalizeYouTubeUrl(q);
 
       if (normalizedUrl) {
         videoUrl = normalizedUrl;
-        videoInfo = await ytmp4(videoUrl);
       } else {
         const search = await yts(q);
         const result = search.videos[0];
-        if (!result) return reply("❌ *වීඩියෝවක් හමු නොවීය. වෙනත් නමක් උත්සාහ කරන්න!*");
-
+        if (!result) return reply("❌ වීඩියෝවක් හමු නොවීය. වෙනත් නමක් දාන්න.");
         videoUrl = result.url;
-        videoInfo = await ytmp4(videoUrl);
       }
 
-      // 📏 Get file size
-      const res = await fetch(videoInfo.video, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36",
-        },
-      });
+      const res = await axios.get(`https://youtube-video-api.vercel.app/api/info?url=${videoUrl}`);
+      if (!res.data || res.data.error) return reply("❌ Video data not found or blocked!");
 
-      const sizeMB = res.headers.get("content-length")
-        ? `${(parseInt(res.headers.get("content-length")) / 1048576).toFixed(2)} MB`
-        : "Unknown";
-
+      const video = res.data;
       const caption = `
-🎬 *Video Downloader by SENAL MD* 🎬
+🎞️ *SENAL MD - Video Downloader*
 
-📌 *Title*     : ${videoInfo.title}
-⏱️ *Duration*  : ${videoInfo.duration}
-👁️ *Views*     : ${videoInfo.views}
-📤 *Uploaded*  : ${videoInfo.upload}
-💾 *File Size* : ${sizeMB}
-🔗 *Link*      : ${videoUrl}
+🎧 *Title:* ${video.title}
+⏱️ *Duration:* ${video.duration}
+📥 *Size:* ${video.formats[0].size}
+👀 *Views:* ${video.views}
+📅 *Uploaded:* ${video.uploaded}
+🔗 *URL:* ${videoUrl}
 
-ℹ️ *ඔබට අවශ්‍ය විදිහට වීඩියෝව එවන්න*:
+🧩 *Reply with:* 
+1️⃣ = Send as Video  
+2️⃣ = Send as Document
 
-*1*. 📹 *Video (MP4)*
-*2*. 📄 *Document (MP4)*
+╰─ _𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇_
+      `;
 
-_ඔබේ උත්තරය 1 හෝ 2 ලෙස යවන්න_
-`;
-
-      // Send thumbnail and ask for format
       await robin.sendMessage(
         from,
-        { image: { url: videoInfo.thumbnail }, caption },
+        { image: { url: video.thumbnail }, caption },
         { quoted: mek }
       );
 
-      // 👂 Listen for reply
-      const filter = (msg) =>
-        msg.key.fromMe ||
-        (msg.key.remoteJid === from &&
-          msg.message?.conversation?.trim().match(/^(1|2)$/));
-      const collected = await robin
-        .waitForMessage(from, filter, { quoted: mek, timeout: 60_000 })
-        .catch(() => null);
+      // Await reply
+      const filter = (msg) => msg.key.remoteJid === from && msg.message?.conversation;
+      const collected = await robin.awaitMessages(filter, { max: 1, time: 30000 });
 
-      if (!collected) return reply("⏰ *වීඩියෝව යැවීම අවලංගු විය!*");
+      const choice = collected?.messages?.[0]?.message?.conversation?.trim();
 
-      const choice = collected.message.conversation.trim();
-      reply("📥 *වීඩියෝව අප්ලෝඩ් වෙමින් පවතී...*");
+      if (choice !== "1" && choice !== "2") return reply("❌ *Invalid choice. Please reply with 1 or 2.*");
+
+      await reply("📤 *Video Uploading... Please wait* ⚙️");
+
+      const sendOptions = {
+        mimetype: "video/mp4",
+        caption: `🎬 ${video.title}`,
+        quoted: mek,
+      };
 
       if (choice === "1") {
-        await robin.sendMessage(
-          from,
-          {
-            video: { url: videoInfo.video },
-            mimetype: "video/mp4",
-            caption: `🎬 *${videoInfo.title}*`,
-          },
-          { quoted: mek }
-        );
+        await robin.sendMessage(from, { video: { url: video.formats[0].url }, ...sendOptions });
       } else {
-        await robin.sendMessage(
-          from,
-          {
-            document: { url: videoInfo.video },
-            mimetype: "video/mp4",
-            fileName: `${videoInfo.title}.mp4`,
-            caption: "📄 *Video sent as document by SENAL MD*",
-          },
-          { quoted: mek }
-        );
+        await robin.sendMessage(from, {
+          document: { url: video.formats[0].url },
+          fileName: `${video.title}.mp4`,
+          mimetype: "video/mp4",
+          caption: "🎞️ *SENAL MD Bot - Your Video is Ready!*",
+        }, { quoted: mek });
       }
 
-      return reply("✅ *අවසන්යි! වීඩියෝව යවා අවසන්.* 🎉");
+      return reply("✅ *Successfully Sent!* 🎉");
     } catch (e) {
       console.error(e);
-      return reply(`❌ *Error*: ${e.message}`);
+      return reply(`❌ Error: ${e.message}`);
     }
   }
 );
