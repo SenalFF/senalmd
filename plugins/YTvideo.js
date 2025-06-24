@@ -1,103 +1,103 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
-const fs = require("fs");
-const ytdl = require("ytdl-core");
+const youtubedl = require('youtube-dl-exec')
 
+// ✅ YouTube URL normalizer
 function normalizeYouTubeUrl(input) {
-  const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
-  const match = input.match(regex);
-  return match ? `https://www.youtube.com/watch?v=${match[1]}` : null;
+const regex = /(?:https?://)?(?:www.)?(?:youtube.com/(?:watch?v=|shorts/)|youtu.be/)([a-zA-Z0-9_-]{11})/;
+const match = input.match(regex);
+return match ? https://www.youtube.com/watch?v=${match[1]} : null;
 }
 
 cmd(
-  {
-    pattern: "video",
-    react: "🎥",
-    desc: "Download YouTube Video",
-    category: "download",
-    filename: __filename,
-  },
-  async (robin, mek, m, { from, q, reply }) => {
-    try {
-      if (!q) return reply("*නමක් හරි ලින්ක් එකක් හරි දෙන්න* 🌚❤️");
+{
+pattern: "video",
+react: "🎥",
+desc: "Download YouTube Video",
+category: "download",
+filename: __filename,
+},
+async (
+robin,
+mek,
+m,
+{ from, q, reply }
+) => {
+try {
+if (!q) return reply("නමක් හරි ලින්ක් එකක් හරි දෙන්න 🌚❤️");
 
-      let videoUrl = "";
-      let info;
+// Check and normalize YouTube URL  
+  let videoUrl = "";  
+  let videoInfo = {};  
+  const normalizedUrl = normalizeYouTubeUrl(q);  
 
-      const normalizedUrl = normalizeYouTubeUrl(q);
+  if (normalizedUrl) {  
+    videoUrl = normalizedUrl;  
+    videoInfo = await ytmp4(videoUrl);  
+  } else {  
+    // Search if not a link  
+    const search = await yts(q);  
+    const result = search.videos[0];  
+    if (!result) return reply("❌ Video not found, try another name.");  
 
-      if (normalizedUrl) {
-        videoUrl = normalizedUrl;
-        info = await ytdl.getInfo(videoUrl);
-      } else {
-        const search = await yts(q);
-        const result = search.videos[0];
-        if (!result) return reply("❌ Video not found, try another name.");
+    videoUrl = result.url;  
+    videoInfo = await ytmp4(videoUrl);  
+  }  
 
-        videoUrl = result.url;
-        info = await ytdl.getInfo(videoUrl);
-      }
+  // Duration check (max 30 mins)  
+  const [min, sec = 0] = videoInfo.duration.split(":").map(Number);  
+  const totalSeconds = min * 60 + sec;  
+  if (totalSeconds > 1800) return reply("⏱️ Video limit is 30 minutes!");  
 
-      const title = info.videoDetails.title;
-      const durationSeconds = parseInt(info.videoDetails.lengthSeconds, 10);
-      if (durationSeconds > 1800) return reply("⏱️ Video limit is 30 minutes!");
+  const caption = `
 
-      const views = info.videoDetails.viewCount;
-      const upload = info.videoDetails.publishDate;
-      const thumbnail = info.videoDetails.thumbnails.pop().url;
+❤️ SENAL MD Video Downloader 😚
 
-      const caption = `
-*❤️ SENAL MD Video Downloader 😚*
-
-👑 *Title*     : ${title}
-⏱️ *Duration*  : ${Math.floor(durationSeconds / 60)}:${durationSeconds % 60}
-👀 *Views*     : ${views}
-📤 *Uploaded*  : ${upload}
-🔗 *URL*       : ${videoUrl}
+👑 Title     : ${videoInfo.title}
+⏱️ Duration  : ${videoInfo.duration}
+👀 Views     : ${videoInfo.views}
+📤 Uploaded  : ${videoInfo.upload}
+🔗 URL       : ${videoUrl}
 
 𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
 `;
 
-      await robin.sendMessage(from, { image: { url: thumbnail }, caption }, { quoted: mek });
+// Thumbnail  
+  await robin.sendMessage(  
+    from,  
+    { image: { url: videoInfo.thumbnail }, caption },  
+    { quoted: mek }  
+  );  
 
-      const stream = ytdl(videoUrl, { quality: "18" });
-      const tmpFile = `/tmp/${Date.now()}.mp4`;
-      const file = fs.createWriteStream(tmpFile);
+  // Send video  
+  await robin.sendMessage(  
+    from,  
+    {  
+      video: { url: videoInfo.video },  
+      mimetype: "video/mp4",  
+      caption: `🎬 ${videoInfo.title}`,  
+    },  
+    { quoted: mek }  
+  );  
 
-      stream.pipe(file);
+  // Optional: Document  
+  await robin.sendMessage(  
+    from,  
+    {  
+      document: { url: videoInfo.video },  
+      mimetype: "video/mp4",  
+      fileName: `${videoInfo.title}.mp4`,  
+      caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝙎𝙀𝙉𝘼𝙇",  
+    },  
+    { quoted: mek }  
+  );  
 
-      file.on("finish", async () => {
-        await robin.sendMessage(
-          from,
-          {
-            video: { url: tmpFile },
-            mimetype: "video/mp4",
-            caption: `🎬 ${title}`,
-          },
-          { quoted: mek }
-        );
+  return reply("*✅ Video sent successfully!* 🌚❤️");  
+} catch (e) {  
+  console.error(e);  
+  return reply(`❌ Error: ${e.message}`);  
+}
 
-        await robin.sendMessage(
-          from,
-          {
-            document: { url: tmpFile },
-            mimetype: "video/mp4",
-            fileName: `${title}.mp4`,
-            caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝙎𝙀𝙉𝘼𝙇",
-          },
-          { quoted: mek }
-        );
-
-        return reply("*✅ Video sent successfully!* 🌚❤️");
-      });
-
-      stream.on("error", (err) => {
-        console.error(err);
-        return reply(`❌ Error: ${err.message}`);
-      });
-    } catch (e) {
-      console.error(e);
-      return reply(`❌ Error: ${e.message}`);
-    }
-  }
+}
 );
+
