@@ -11,8 +11,8 @@ function normalizeYouTubeUrl(input) {
 cmd(
   {
     pattern: "video",
-    react: "🎥",
-    desc: "Download YouTube Video",
+    react: "📽️",
+    desc: "Download YouTube Video 🎬",
     category: "download",
     filename: __filename,
   },
@@ -27,70 +27,84 @@ cmd(
         videoUrl = normalizedUrl;
       } else {
         const search = await yts(q);
-        const result = search.videos[0];
-        if (!result) return reply("❌ වීඩියෝවක් හමු නොවීය. වෙනත් නමක් දාන්න.");
+        const result = search.videos?.[0];
+        if (!result) return reply("❌ වීඩියෝවක් හමු නොවීය. වෙනත් නමක් උත්සහ කරන්න.");
         videoUrl = result.url;
       }
 
       const res = await axios.get(`https://youtube-video-api.vercel.app/api/info?url=${videoUrl}`);
       const video = res.data;
 
-      if (!video || !video.formats || !video.formats.length) {
-        return reply("❌ Video data not found or blocked by YouTube.");
+      // Check for format safety
+      if (!video?.formats || video.formats.length === 0) {
+        return reply("❌ Failed to get video formats. Try another video.");
       }
 
-      const format = video.formats[0]; // Safe to access now
+      const format = video.formats.find(f => f.url && f.mimeType?.includes("video/mp4")) || video.formats[0];
+
       const caption = `
 🎞️ *SENAL MD - Video Downloader*
 
 🎧 *Title:* ${video.title}
 ⏱️ *Duration:* ${video.duration || "Unknown"}
-📥 *Size:* ${format.size || "Unknown"}
-👀 *Views:* ${video.views}
+📦 *Size:* ${format.size || "Unknown"}
+👀 *Views:* ${video.views || "Unknown"}
 📅 *Uploaded:* ${video.uploaded || "Unknown"}
 🔗 *URL:* ${videoUrl}
 
-🧩 *Reply with:* 
+📩 *Reply with:* 
 1️⃣ = Send as Video  
 2️⃣ = Send as Document
 
 ╰─ _𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇_
       `;
 
+      // Send thumbnail + caption
       await robin.sendMessage(
         from,
         { image: { url: video.thumbnail }, caption },
         { quoted: mek }
       );
 
-      // Await reply
-      const filter = (msg) => msg.key.remoteJid === from && msg.message?.conversation;
-      const collected = await robin.awaitMessages(filter, { max: 1, time: 30000 });
+      // Await user choice
+      const choice = await new Promise((resolve) => {
+        const handler = (msg) => {
+          const content = msg.message?.conversation?.trim();
+          if (msg.key.remoteJid === from && (content === "1" || content === "2")) {
+            robin.off("messages.upsert", handler);
+            resolve(content);
+          }
+        };
+        robin.on("messages.upsert", handler);
+        setTimeout(() => {
+          robin.off("messages.upsert", handler);
+          resolve(null);
+        }, 30000);
+      });
 
-      const choice = collected?.messages?.[0]?.message?.conversation?.trim();
-      if (choice !== "1" && choice !== "2") return reply("❌ *Invalid choice. Please reply with 1 or 2.*");
+      if (!choice) return reply("❌ *Time out or invalid reply. Please send 1 or 2 within 30s.*");
 
-      await reply("📤 *Video Uploading... Please wait* ⚙️");
+      await reply("📤 *Uploading Video... Please wait!*");
 
       if (choice === "1") {
         await robin.sendMessage(from, {
           video: { url: format.url },
           mimetype: "video/mp4",
           caption: `🎬 ${video.title}`,
-          quoted: mek,
-        });
-      } else {
+        }, { quoted: mek });
+      } else if (choice === "2") {
         await robin.sendMessage(from, {
           document: { url: format.url },
           fileName: `${video.title}.mp4`,
           mimetype: "video/mp4",
-          caption: "🎞️ *SENAL MD Bot - Your Video is Ready!*",
+          caption: "📂 *Here is your file!*",
         }, { quoted: mek });
       }
 
       return reply("✅ *Successfully Sent!* 🎉");
+
     } catch (e) {
-      console.error(e);
+      console.error("YT VIDEO ERROR:", e);
       return reply(`❌ Error: ${e.message}`);
     }
   }
