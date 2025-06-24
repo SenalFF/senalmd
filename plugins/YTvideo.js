@@ -21,7 +21,6 @@ cmd(
       if (!q) return reply("🎬 *කරුණාකර වීඩියෝ නමක් හෝ YouTube ලින්ක් එකක් දාන්න!*");
 
       let videoUrl = "";
-      let videoInfo = {};
       const normalizedUrl = normalizeYouTubeUrl(q);
 
       if (normalizedUrl) {
@@ -34,17 +33,21 @@ cmd(
       }
 
       const res = await axios.get(`https://youtube-video-api.vercel.app/api/info?url=${videoUrl}`);
-      if (!res.data || res.data.error) return reply("❌ Video data not found or blocked!");
-
       const video = res.data;
+
+      if (!video || !video.formats || !video.formats.length) {
+        return reply("❌ Video data not found or blocked by YouTube.");
+      }
+
+      const format = video.formats[0]; // Safe to access now
       const caption = `
 🎞️ *SENAL MD - Video Downloader*
 
 🎧 *Title:* ${video.title}
-⏱️ *Duration:* ${video.duration}
-📥 *Size:* ${video.formats[0].size}
+⏱️ *Duration:* ${video.duration || "Unknown"}
+📥 *Size:* ${format.size || "Unknown"}
 👀 *Views:* ${video.views}
-📅 *Uploaded:* ${video.uploaded}
+📅 *Uploaded:* ${video.uploaded || "Unknown"}
 🔗 *URL:* ${videoUrl}
 
 🧩 *Reply with:* 
@@ -65,22 +68,20 @@ cmd(
       const collected = await robin.awaitMessages(filter, { max: 1, time: 30000 });
 
       const choice = collected?.messages?.[0]?.message?.conversation?.trim();
-
       if (choice !== "1" && choice !== "2") return reply("❌ *Invalid choice. Please reply with 1 or 2.*");
 
       await reply("📤 *Video Uploading... Please wait* ⚙️");
 
-      const sendOptions = {
-        mimetype: "video/mp4",
-        caption: `🎬 ${video.title}`,
-        quoted: mek,
-      };
-
       if (choice === "1") {
-        await robin.sendMessage(from, { video: { url: video.formats[0].url }, ...sendOptions });
+        await robin.sendMessage(from, {
+          video: { url: format.url },
+          mimetype: "video/mp4",
+          caption: `🎬 ${video.title}`,
+          quoted: mek,
+        });
       } else {
         await robin.sendMessage(from, {
-          document: { url: video.formats[0].url },
+          document: { url: format.url },
           fileName: `${video.title}.mp4`,
           mimetype: "video/mp4",
           caption: "🎞️ *SENAL MD Bot - Your Video is Ready!*",
