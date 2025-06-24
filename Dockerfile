@@ -1,7 +1,7 @@
 # Use Debian Buster base image
 FROM debian:buster
 
-# Install system-level dependencies including Git
+# Install system-level dependencies including Git, Python, and create python symlink
 RUN apt-get update && \
   apt-get install -y \
   curl \
@@ -11,6 +11,7 @@ RUN apt-get update && \
   webp \
   python3 \
   python3-pip && \
+  ln -s /usr/bin/python3 /usr/bin/python && \
   # Add NodeSource repo for latest Node.js LTS
   curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
   apt-get install -y nodejs && \
