@@ -3,7 +3,6 @@ const yts = require("yt-search");
 const fs = require("fs");
 const ytdl = require("ytdl-core");
 
-// ✅ YouTube URL normalizer
 function normalizeYouTubeUrl(input) {
   const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
   const match = input.match(regex);
@@ -41,8 +40,7 @@ cmd(
 
       const title = info.videoDetails.title;
       const durationSeconds = parseInt(info.videoDetails.lengthSeconds, 10);
-      if (durationSeconds > 1800)
-        return reply("⏱️ Video limit is 30 minutes!");
+      if (durationSeconds > 1800) return reply("⏱️ Video limit is 30 minutes!");
 
       const views = info.videoDetails.viewCount;
       const upload = info.videoDetails.publishDate;
@@ -60,14 +58,9 @@ cmd(
 𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
 `;
 
-      await robin.sendMessage(
-        from,
-        { image: { url: thumbnail }, caption },
-        { quoted: mek }
-      );
+      await robin.sendMessage(from, { image: { url: thumbnail }, caption }, { quoted: mek });
 
-      // Stream the video (low quality for smaller size)
-      const stream = ytdl(videoUrl, { quality: "18" }); // quality 18 = 360p mp4
+      const stream = ytdl(videoUrl, { quality: "18" });
       const tmpFile = `/tmp/${Date.now()}.mp4`;
       const file = fs.createWriteStream(tmpFile);
 
@@ -98,4 +91,13 @@ cmd(
         return reply("*✅ Video sent successfully!* 🌚❤️");
       });
 
-      stream.on("error", (err
+      stream.on("error", (err) => {
+        console.error(err);
+        return reply(`❌ Error: ${err.message}`);
+      });
+    } catch (e) {
+      console.error(e);
+      return reply(`❌ Error: ${e.message}`);
+    }
+  }
+);
