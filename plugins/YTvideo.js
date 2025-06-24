@@ -1,11 +1,27 @@
 const { cmd } = require("../command");
+const ytdl = require("ytdl-core");
 const yts = require("yt-search");
-const axios = require("axios");
 
 function normalizeYouTubeUrl(input) {
   const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
   const match = input.match(regex);
   return match ? `https://www.youtube.com/watch?v=${match[1]}` : null;
+}
+
+function formatBytes(bytes) {
+  if (!bytes || isNaN(bytes)) return "Unknown";
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+}
+
+async function streamToBuffer(stream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on("data", (chunk) => chunks.push(chunk));
+    stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("error", reject);
+  });
 }
 
 cmd(
@@ -18,7 +34,7 @@ cmd(
   },
   async (robin, mek, m, { from, q, reply }) => {
     try {
-      if (!q) return reply("🎬 *කරුණාකර වීඩියෝ නමක් හෝ YouTube ලින්ක් එකක් දාන්න!*");
+      if (!q) return reply("🔍 *කරුණාකර වීඩියෝ නමක් හෝ YouTube ලින්ක් එකක් යවන්න!*");
 
       let videoUrl = "";
       const normalizedUrl = normalizeYouTubeUrl(q);
@@ -28,45 +44,44 @@ cmd(
       } else {
         const search = await yts(q);
         const result = search.videos?.[0];
-        if (!result) return reply("❌ වීඩියෝවක් හමු නොවීය. වෙනත් නමක් උත්සහ කරන්න.");
+        if (!result) return reply("❌ *වීඩියෝවක් හමු නොවීය. වෙනත් නමක් උත්සහ කරන්න.*");
         videoUrl = result.url;
       }
 
-      const res = await axios.get(`https://youtube-video-api.vercel.app/api/info?url=${videoUrl}`);
-      const video = res.data;
+      const info = await ytdl.getInfo(videoUrl);
+      const format = ytdl.chooseFormat(info.formats, {
+        quality: "18",
+        filter: (f) => f.container === "mp4" && f.hasVideo && f.hasAudio,
+      });
 
-      // Check for format safety
-      if (!video?.formats || video.formats.length === 0) {
-        return reply("❌ Failed to get video formats. Try another video.");
-      }
+      if (!format || !format.url) return reply("❌ *වීඩියෝ විශේෂාංග ලබා ගැනීමට අසමත් විය.*");
 
-      const format = video.formats.find(f => f.url && f.mimeType?.includes("video/mp4")) || video.formats[0];
+      const fileSize = format.contentLength ? formatBytes(parseInt(format.contentLength)) : "Unknown";
 
       const caption = `
 🎞️ *SENAL MD - Video Downloader*
 
-🎧 *Title:* ${video.title}
-⏱️ *Duration:* ${video.duration || "Unknown"}
-📦 *Size:* ${format.size || "Unknown"}
-👀 *Views:* ${video.views || "Unknown"}
-📅 *Uploaded:* ${video.uploaded || "Unknown"}
+🎧 *Title:* ${info.videoDetails.title}
+⏱️ *Duration:* ${info.videoDetails.lengthSeconds}s
+📦 *Size:* ${fileSize}
+👀 *Views:* ${info.videoDetails.viewCount}
+📅 *Uploaded:* ${info.videoDetails.publishDate}
 🔗 *URL:* ${videoUrl}
 
-📩 *Reply with:* 
-1️⃣ = Send as Video  
-2️⃣ = Send as Document
+📩 *Reply with:*  
+1️⃣ = Send as *Video*  
+2️⃣ = Send as *Document*
 
-╰─ _𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇_
-      `;
+╰─ _𝙈𝙧 𝙎𝙚𝙣𝙖𝙡 𝘽𝙤𝙩_ 🎧
+`;
 
-      // Send thumbnail + caption
       await robin.sendMessage(
         from,
-        { image: { url: video.thumbnail }, caption },
+        { image: { url: info.videoDetails.thumbnails.pop()?.url }, caption },
         { quoted: mek }
       );
 
-      // Await user choice
+      // Await user reply
       const choice = await new Promise((resolve) => {
         const handler = (msg) => {
           const content = msg.message?.conversation?.trim();
@@ -82,22 +97,25 @@ cmd(
         }, 30000);
       });
 
-      if (!choice) return reply("❌ *Time out or invalid reply. Please send 1 or 2 within 30s.*");
+      if (!choice) return reply("❌ *Time out! Please reply with 1 or 2 within 30 seconds.*");
 
       await reply("📤 *Uploading Video... Please wait!*");
 
+      // Download video to buffer
+      const buffer = await streamToBuffer(ytdl(videoUrl, { format }));
+
       if (choice === "1") {
         await robin.sendMessage(from, {
-          video: { url: format.url },
+          video: buffer,
           mimetype: "video/mp4",
-          caption: `🎬 ${video.title}`,
+          caption: `🎬 ${info.videoDetails.title}`,
         }, { quoted: mek });
       } else if (choice === "2") {
         await robin.sendMessage(from, {
-          document: { url: format.url },
-          fileName: `${video.title}.mp4`,
+          document: buffer,
           mimetype: "video/mp4",
-          caption: "📂 *Here is your file!*",
+          fileName: `${info.videoDetails.title}.mp4`,
+          caption: "📂 *Here is your video as a document!*",
         }, { quoted: mek });
       }
 
@@ -105,7 +123,7 @@ cmd(
 
     } catch (e) {
       console.error("YT VIDEO ERROR:", e);
-      return reply(`❌ Error: ${e.message}`);
+      return reply(`❌ *Error:* ${e.message}`);
     }
   }
 );
