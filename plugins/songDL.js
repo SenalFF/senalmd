@@ -7,7 +7,7 @@ const SIZE_LIMIT = 16 * 1024 * 1024; // 16MB
 
 cmd(
   {
-    pattern: "play",
+    pattern: "py",
     desc: "YouTube Music Downloader (audio + doc)",
     category: "download",
     react: "🎵",
