@@ -1,145 +1,91 @@
 const { cmd } = require("../command");
-const { search, playmp3 } = require("@kelvdra/scraper");
+const yts = require("yt-search");
+const { ytmp3 } = require("@kelvdra/scraper");
 
-const sessions = {};
-
-const SIZE_LIMIT = 16 * 1024 * 1024; // 16MB
+function normalizeYouTubeUrl(input) {
+  const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+  const match = input.match(regex);
+  return match ? `https://www.youtube.com/watch?v=${match[1]}` : null;
+}
 
 cmd(
   {
-    pattern: "py",
-    desc: "YouTube Music Downloader (audio + doc)",
+    pattern: "song",
+    react: "🎧",
+    desc: "Download YouTube Music Audio",
     category: "download",
-    react: "🎵",
+    filename: __filename,
   },
-  async (robin, mek, m, { q, from, reply }) => {
-    if (!q) return reply("🔍 *YouTube ගීත නමක් හෝ ලින්ක් එකක් දාන්න...*");
-
+  async (robin, mek, m, { from, q, reply }) => {
     try {
-      await robin.sendMessage(from, { text: "⏳ *Searching... Please wait...*" }, { quoted: mek });
+      if (!q) return reply("*නමක් හරි ලින්ක් එකක් හරි දෙන්න* 🌚❤️");
 
-      // 1. Search YouTube
-      const results = await search(q);
-      if (!results || !results.length) return reply("❌ *No results found for your query.*");
+      let videoUrl = "";
+      const normalizedUrl = normalizeYouTubeUrl(q);
 
-      const video = results[0]; // first search result
-
-      // 2. Get mp3 info and URL
-      const audioData = await playmp3(video.url);
-      if (!audioData || !audioData.url) return reply("❌ *Audio download failed.*");
-
-      // Store session info
-      sessions[from] = {
-        title: video.title,
-        url: audioData.url,
-        filesize: audioData.filesize || 0,
-        duration: video.duration,
-        step: "choose_send_type",
-      };
-
-      // Format filesize human readable
-      function formatBytes(bytes) {
-        if (bytes === 0) return "0 Bytes";
-        const k = 1024,
-          sizes = ["Bytes", "KB", "MB", "GB"];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-      }
-
-      // 3. Send details + filesize
-      const detailsMsg =
-        `🎵 *Title:* ${video.title}\n` +
-        `⏰ *Duration:* ${video.duration}\n` +
-        `📦 *File Size:* ${formatBytes(sessions[from].filesize)}\n\n` +
-        `📩 *Reply with:*\n` +
-        `1️⃣ Audio (Play on WhatsApp)\n` +
-        `2️⃣ Document (Full audio file)`;
-
-      await robin.sendMessage(from, { text: detailsMsg }, { quoted: mek });
-    } catch (e) {
-      console.error(e);
-      reply("❌ *Error occurred, please try again later.*");
-    }
-  }
-);
-
-// Reply handler for options "1" or "2"
-cmd(
-  {
-    pattern: "1",
-    on: "number",
-    dontAddCommandList: true,
-  },
-  async (robin, mek, m, { from, reply }) => {
-    const session = sessions[from];
-    if (!session || session.step !== "choose_send_type") return;
-
-    try {
-      // Check filesize under limit for audio preview
-      if (session.filesize > SIZE_LIMIT) {
-        // Too big, send as document + warn
-        await robin.sendMessage(
-          from,
-          {
-            document: { url: session.url },
-            mimetype: "audio/mpeg",
-            fileName: `${session.title}.mp3`,
-            caption:
-              "⚠️ *This file is too big to preview on WhatsApp.*\n" +
-              "Sending as document instead.",
-          },
-          { quoted: mek }
-        );
+      if (normalizedUrl) {
+        videoUrl = normalizedUrl;
       } else {
-        // Send as audio (preview)
+        const search = await yts(q);
+        const result = search.videos?.[0];
+        if (!result) return reply("❌ Song not found, try another keyword.");
+        videoUrl = result.url;
+      }
+
+      const audioInfo = await ytmp3(videoUrl, 'mp3');
+
+      if (!audioInfo || !audioInfo.audio) {
+        return reply("❌ Failed to fetch audio data.");
+      }
+
+      const caption = `
+*❤️ SENAL MD Song Downloader 😍*
+
+🎶 *Title*     : ${audioInfo.title || "Unknown Title"}
+⏱️ *Duration*  : ${audioInfo.duration || "N/A"}
+🎧 *Quality*   : MP3
+📤 *Uploaded*  : ${audioInfo.uploadDate || "Unknown"}
+🔗 *URL*       : ${videoUrl}
+
+𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
+`;
+
+      // 🖼 Thumbnail + Info
+      if (audioInfo.thumbnail) {
         await robin.sendMessage(
           from,
-          {
-            audio: { url: session.url },
-            mimetype: "audio/mpeg",
-            fileName: `${session.title}.mp3`,
-            ptt: false,
-            caption: `🎧 ${session.title}`,
-          },
+          { image: { url: audioInfo.thumbnail }, caption },
           { quoted: mek }
         );
       }
 
-      delete sessions[from];
-    } catch (e) {
-      console.error(e);
-      reply("❌ *Failed to send audio.*");
-    }
-  }
-);
-
-cmd(
-  {
-    pattern: "2",
-    on: "number",
-    dontAddCommandList: true,
-  },
-  async (robin, mek, m, { from, reply }) => {
-    const session = sessions[from];
-    if (!session || session.step !== "choose_send_type") return;
-
-    try {
-      // Send as document (no size limit)
+      // 🎵 Send Audio
       await robin.sendMessage(
         from,
         {
-          document: { url: session.url },
+          audio: { url: audioInfo.audio },
           mimetype: "audio/mpeg",
-          fileName: `${session.title}.mp3`,
-          caption: "📁 Full audio file (document)",
+          fileName: `${audioInfo.title || "song"}.mp3`,
         },
         { quoted: mek }
       );
 
-      delete sessions[from];
+      // 📄 Send as Document
+      await robin.sendMessage(
+        from,
+        {
+          document: { url: audioInfo.audio },
+          mimetype: "audio/mpeg",
+          fileName: `${audioInfo.title || "song"}.mp3`,
+          caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇 🎧",
+        },
+        { quoted: mek }
+      );
+
+      return reply("*✅ Song sent as audio and document!* 🌚❤️");
     } catch (e) {
       console.error(e);
-      reply("❌ *Failed to send document.*");
+      return reply(`❌ Error: ${e.message}`);
     }
   }
 );
