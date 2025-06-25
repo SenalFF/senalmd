@@ -2,7 +2,6 @@ const { cmd } = require("../command");
 const yts = require("yt-search");
 const { ytmp3 } = require("@vreden/youtube_scraper");
 const axios = require("axios");
-const fs = require("fs");
 
 cmd(
   {
@@ -16,97 +15,77 @@ cmd(
     robin,
     mek,
     m,
-    {
-      from,
-      quoted,
-      q,
-      reply,
-    }
+    { from, q, quoted, reply }
   ) => {
     try {
       if (!q) return reply("*නමක් හරි ලින්ක් එකක් හරි දෙන්න* 🌚❤️");
 
-      // Search YouTube
+      await reply("🔍 Searching your song...");
+
       const search = await yts(q);
       const data = search.videos[0];
-      const url = data.url;
 
-      // Create song details message
+      if (!data || !data.videoId) return reply("❌ Video not found");
+
+      const shortUrl = `https://youtu.be/${data.videoId}`;
+
       const desc = `
-*❤️SENAL MD SONG DOWNLOADER😚*
+*❤️ SENAL MD SONG DOWNLOADER 😚*
 
-👻 *title* : ${data.title}
-👻 *description* : ${data.description}
-👻 *time* : ${data.timestamp}
-👻 *ago* : ${data.ago}
-👻 *views* : ${data.views}
-👻 *url* : ${data.url}
+🎧 *Title:* ${data.title}
+🕒 *Duration:* ${data.timestamp}
+👁️ *Views:* ${data.views}
+📎 *URL:* ${shortUrl}
 
-𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
+_𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇_
 `;
 
-      // Send video thumbnail and details
+      // Send metadata + thumbnail
       await robin.sendMessage(
         from,
         { image: { url: data.thumbnail }, caption: desc },
         { quoted: mek }
       );
 
-      // Download audio
-      const quality = "128";
-      const songData = await ytmp3(url, quality);
+      await reply("⬇️ Downloading MP3...");
 
-      // Validate duration
-      let durationParts = data.timestamp.split(":").map(Number);
-      let totalSeconds =
-        durationParts.length === 3
-          ? durationParts[0] * 3600 + durationParts[1] * 60 + durationParts[2]
-          : durationParts[0] * 60 + durationParts[1];
+      const song = await ytmp3(shortUrl, "mp3");
 
-      if (totalSeconds > 1800) {
-        return reply("⏱️ Audio limit is 30 minutes");
-      }
-
-      // Fetch audio file as buffer
-      const audioRes = await axios.get(songData.download.url, {
-        responseType: "arraybuffer",
-      });
-      const audioBuffer = Buffer.from(audioRes.data);
-
-      // Get file size (in MB)
+      // Download MP3 buffer
+      const res = await axios.get(song.download.url, { responseType: "arraybuffer" });
+      const audioBuffer = Buffer.from(res.data);
       const fileSizeMB = (audioBuffer.length / (1024 * 1024)).toFixed(2);
 
-      // Send details before sending file
-      await reply(`🎧 *Sending...*\n\n📁 *Title:* ${data.title}\n📦 *Size:* ${fileSizeMB} MB`);
+      await reply(`📤 Uploading file... (${fileSizeMB} MB)`);
 
-      // Send audio as voice message
+      // Send as audio message
       await robin.sendMessage(
         from,
         {
           audio: audioBuffer,
           mimetype: "audio/mpeg",
-          ptt: false,
           fileName: `${data.title}.mp3`,
+          ptt: false,
         },
         { quoted: mek }
       );
 
-      // Also send as document (optional)
+      // Send also as document
       await robin.sendMessage(
         from,
         {
           document: audioBuffer,
           mimetype: "audio/mpeg",
           fileName: `${data.title}.mp3`,
-          caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝙎𝙀𝙉𝘼𝙇",
+          caption: "📦 MP3 as Document\n_𝙈𝙖𝙙𝙚 𝙗𝙮 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇_",
         },
         { quoted: mek }
       );
 
-      return reply("*✅ Sent successfully* 🌚❤️");
+      await reply("✅ *Done! Enjoy your song.* 🎶");
 
     } catch (e) {
-      console.error("❌ ERROR in .song:", e);
+      console.error("❌ Error in song command:", e);
       reply(`❌ Error: ${e.message}`);
     }
   }
