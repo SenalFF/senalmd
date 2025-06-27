@@ -38,6 +38,7 @@
     "yt-search": "^2.13.1",
     "@vreden/youtube_scraper": "^1.2.7",
     "@kelvdra/scraper": "^1.0.13",
-    "@dark-yasiya/yt-dl.js": "1.0.5"
+    "@dark-yasiya/yt-dl.js": "^1.0.5",
+    "y2mate-dl": "^1.0.4"
   }
 }
