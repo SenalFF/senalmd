@@ -1,6 +1,6 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
-const { ytmp3 } = require("@kelvdra/scraper");
+const { ytmp3 } = require('y2mate-dl');
 
 // ✅ Normalize YouTube URL
 function normalizeYouTubeUrl(input) {
