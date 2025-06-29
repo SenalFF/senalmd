@@ -1,5 +1,5 @@
 const { cmd } = require("../command");
-const { ttdl } = require("ruhend-scraper");
+
 
 const sessions = {};
 
