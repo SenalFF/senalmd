@@ -39,6 +39,7 @@
     "@vreden/youtube_scraper": "^1.2.7",
     "@kelvdra/scraper": "^1.0.13",
     "@dark-yasiya/yt-dl.js": "^1.0.5",
-    "y2mate-dl": "^1.0.4"
+    "y2mate-dl": "^1.0.4",
+    "@blackamda/song_video_dl": "^1.1.0"
   }
 }
