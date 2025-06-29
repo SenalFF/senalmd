@@ -1,6 +1,6 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
-const svdl = require("@blackamda/song_video_dl")
+const svdl = require("@blackamda/song_video_dl");
 
 // ✅ Normalize YouTube URL
 function normalizeYouTubeUrl(input) {
@@ -9,6 +9,7 @@ function normalizeYouTubeUrl(input) {
   return match ? `https://www.youtube.com/watch?v=${match[1]}` : null;
 }
 
+// 🎧 .play command (MP3)
 cmd(
   {
     pattern: "play",
@@ -19,10 +20,9 @@ cmd(
   },
   async (robin, mek, m, { from, q, reply }) => {
     try {
-      if (!q) return reply("*නමක් හරි ලින්ක් එකක් හරි දෙන්න* 🌚❤️");
+      if (!q) return reply("*🔎 නමක් හරි ලින්ක් එකක් හරි දෙන්න*");
 
       let videoUrl = "";
-      let audioInfo = {};
       const normalizedUrl = normalizeYouTubeUrl(q);
 
       if (normalizedUrl) {
@@ -30,56 +30,112 @@ cmd(
       } else {
         const search = await yts(q);
         const result = search.videos[0];
-        if (!result) return reply("❌ Song not found, try another keyword.");
+        if (!result) return reply("❌ ගීතය හමු නොවීය.");
         videoUrl = result.url;
       }
 
-      // 🔽 Download Audio (MP3)
-      audioInfo = await ytmp3(videoUrl, 'mp3');
+      const config = {
+        type: "audio",
+        quality: 128,
+        server: "en68",
+      };
+
+      const audioInfo = await svdl.download(videoUrl, config);
 
       const caption = `
 *❤️ SENAL MD Song Downloader 😍*
 
 🎶 *Title*     : ${audioInfo.title}
-⏱️ *Duration*  : ${audioInfo.duration}
+📦 *Size*      : ${audioInfo.size}
 🎧 *Quality*   : MP3
-📤 *Uploaded*  : ${audioInfo.uploadDate}
 🔗 *URL*       : ${videoUrl}
 
-𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
-`;
+𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇 🎧`;
 
-      // 🖼 Thumbnail + Info
       await robin.sendMessage(
         from,
-        { image: { url: audioInfo.thumbnail }, caption },
+        { image: { url: audioInfo.thumb }, caption },
         { quoted: mek }
       );
 
-      // 🎵 Send Audio
       await robin.sendMessage(
         from,
         {
-          audio: { url: audioInfo.audio },
+          audio: { url: audioInfo.link },
           mimetype: "audio/mpeg",
           fileName: `${audioInfo.title}.mp3`,
         },
         { quoted: mek }
       );
 
-      // 📄 Send as Document
+      return reply("✅ *Song sent successfully!*");
+    } catch (e) {
+      console.error(e);
+      return reply(`❌ Error: ${e.message}`);
+    }
+  }
+);
+
+// 📽️ .video command (MP4)
+cmd(
+  {
+    pattern: "video2",
+    react: "📽️",
+    desc: "Download YouTube Video",
+    category: "download",
+    filename: __filename,
+  },
+  async (robin, mek, m, { from, q, reply }) => {
+    try {
+      if (!q) return reply("*🔎 නමක් හරි ලින්ක් එකක් හරි දෙන්න*");
+
+      let videoUrl = "";
+      const normalizedUrl = normalizeYouTubeUrl(q);
+
+      if (normalizedUrl) {
+        videoUrl = normalizedUrl;
+      } else {
+        const search = await yts(q);
+        const result = search.videos[0];
+        if (!result) return reply("❌ වීඩියෝව හමු නොවීය.");
+        videoUrl = result.url;
+      }
+
+      const config = {
+        type: "video",
+        quality: 360,
+        server: "en68",
+      };
+
+      const videoInfo = await svdl.download(videoUrl, config);
+
+      const caption = `
+*🎬 SENAL MD Video Downloader 📽️*
+
+🎞️ *Title*     : ${videoInfo.title}
+📦 *Size*      : ${videoInfo.size}
+🎥 *Quality*   : 360p
+🔗 *URL*       : ${videoUrl}
+
+𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇 🎧`;
+
+      await robin.sendMessage(
+        from,
+        { image: { url: videoInfo.thumb }, caption },
+        { quoted: mek }
+      );
+
       await robin.sendMessage(
         from,
         {
-          document: { url: audioInfo.audio },
-          mimetype: "audio/mpeg",
-          fileName: `${audioInfo.title}.mp3`,
-          caption: "𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇 🎧",
+          video: { url: videoInfo.link },
+          mimetype: "video/mp4",
+          fileName: `${videoInfo.title}.mp4`,
         },
         { quoted: mek }
       );
 
-      return reply("*✅ Song sent as audio and document!* 🌚❤️");
+      return reply("✅ *Video sent successfully!*");
     } catch (e) {
       console.error(e);
       return reply(`❌ Error: ${e.message}`);
