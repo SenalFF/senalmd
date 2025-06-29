@@ -32,14 +32,12 @@
     "pm2": "^6.0.8",
     "qrcode-terminal": "^0.12.0",
     "util": "^0.12.5",
-    "ruhend-scraper": "^9.0.1",
     "wa-sticker-formatter": "^4.4.4",
     "vm": "^0.1.0",
     "yt-search": "^2.13.1",
     "@vreden/youtube_scraper": "^1.2.7",
     "@kelvdra/scraper": "^1.0.13",
-    "@dark-yasiya/yt-dl.js": "^1.0.5",
-    "y2mate-dl": "^1.0.4",
+    "ytdl-core": "^4.11.5",
     "@blackamda/song_video_dl": "^1.1.0"
   }
 }
