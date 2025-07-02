@@ -20,31 +20,37 @@ cmd(
 
       const videoUrl = video.url;
 
-      // Fetch audio download details using youtube-downloader-cc-api
+      // ✅ Fetch download link from youtube-downloader-cc-api
       const response = await getDownloadDetails(videoUrl, "mp3", "stream");
+      if (!response || !response.download) {
+        return reply("❌ Download link එක ලබා ගත නොහැක. වෙනත් ගීතයක් උත්සාහ කරන්න.");
+      }
 
       const caption = `
 *❤️ SENAL MD Song Downloader 😍*
 
-🎶 *Title*     : ${video.title}
+🎶 *Title*     : ${response.title || video.title}
 ⏱️ *Duration*  : ${video.timestamp}
 👁️ *Views*     : ${video.views}
 📤 *Uploaded*  : ${video.ago}
-🔗 *URL*       : ${videoUrl}
+🔗 *URL*       : ${video.url}
 
 🔊 *Type:* Audio (.mp3)
 
 𝐌𝐚𝐝𝐞 𝐛𝐲 𝙈𝙍 𝙎𝙀𝙉𝘼𝙇
 `;
 
-      // 🖼 Thumbnail + Info
+      // 🖼 Send thumbnail + caption
       await robin.sendMessage(
         from,
-        { image: { url: video.thumbnail }, caption },
+        {
+          image: { url: video.thumbnail },
+          caption,
+        },
         { quoted: mek }
       );
 
-      // 🎧 Send Audio
+      // 🎧 Send audio stream directly
       await robin.sendMessage(
         from,
         {
