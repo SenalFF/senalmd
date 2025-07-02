@@ -1,6 +1,6 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
-const ytdl = require("ytdl-core");
+const { getDownloadDetails } = require("youtube-downloader-cc-api");
 
 cmd(
   {
@@ -20,11 +20,8 @@ cmd(
 
       const videoUrl = video.url;
 
-      const info = await ytdl.getInfo(videoUrl);
-      const format = ytdl.chooseFormat(info.formats, {
-        quality: "highestaudio",
-        filter: "audioonly",
-      });
+      // Fetch audio download details using youtube-downloader-cc-api
+      const response = await getDownloadDetails(videoUrl, "mp3", "stream");
 
       const caption = `
 *❤️ SENAL MD Song Downloader 😍*
@@ -51,7 +48,7 @@ cmd(
       await robin.sendMessage(
         from,
         {
-          audio: { url: format.url },
+          audio: { url: response.download },
           mimetype: "audio/mpeg",
           fileName: `${video.title}.mp3`,
         },
