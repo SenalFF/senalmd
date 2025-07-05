@@ -1,6 +1,6 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
-const { getDownloadDetails } = require("youtube-downloader-cc-api");
+const { ytmp3, ytmp4, search, ttdl, playmp3, playmp4, pindl } = require('@kelvdra/scraper');
 
 cmd(
   {
