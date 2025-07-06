@@ -37,10 +37,11 @@ async function sendDocument(robin, from, mek, buffer, title) {
   );
 }
 
+// VIDEO CMD
 cmd(
   {
     pattern: "video",
-    desc: "📽️ YouTube Video Downloader (choose quality)",
+    desc: "🎬 Download YouTube Video with quality options",
     category: "download",
     react: "🎬",
   },
@@ -59,7 +60,7 @@ cmd(
         step: "choose_quality",
       };
 
-      const info = `
+      const caption = `
 🎬 *SENAL MD Video Downloader*
 
 🎞️ *Title:* ${video.title}
@@ -69,48 +70,48 @@ cmd(
 🔗 *URL:* ${video.url}
 
 📺 *Choose your quality:*
-🟢 Reply with:
-- *sd* = 360p (smaller file)
-- *hd* = 720p (higher quality)
-
-⚠️ _Videos larger than 50MB will be sent as document._
 `;
 
       await robin.sendMessage(
         from,
         {
           image: { url: video.thumbnail },
-          caption: info,
+          caption,
+          buttons: [
+            { buttonId: "video_sd", buttonText: { displayText: "📥 SD (360p)" }, type: 1 },
+            { buttonId: "video_hd", buttonText: { displayText: "📺 HD (720p)" }, type: 1 },
+          ],
+          footer: "Powered by SENAL MD",
         },
         { quoted: mek }
       );
     } catch (e) {
-      console.error("Video Command Error:", e);
+      console.error("Video Cmd Error:", e);
       return reply(`❌ *Error:* ${e.message}`);
     }
   }
 );
 
-// Handler for 'sd' or 'hd' reply
-const handleVideoDownload = (quality) =>
+// BUTTON HANDLER
+const handleButton = (quality) =>
   cmd(
     {
-      pattern: quality,
-      on: "text",
-      dontAddCommandList: true,
+      pattern: `video_${quality}`,
     },
     async (robin, mek, m, { from, reply }) => {
       const session = sessions[from];
-      if (!session || session.step !== "choose_quality") return;
+      if (!session || session.step !== "choose_quality") {
+        return reply("⚠️ *No active video session found.* Try `.video` again.");
+      }
 
       const video = session.video;
       session.step = "downloading";
 
       try {
-        await reply(`📥 Downloading video in *${quality.toUpperCase()}*...`);
+        await reply(`📥 Downloading *${quality.toUpperCase()}* video...`);
 
         const result = await ytmp4(video.url, quality === "hd" ? "720" : "360");
-        if (!result?.download?.url) return reply("❌ *Download link not available. Try another video.*");
+        if (!result?.download?.url) return reply("❌ *Download link failed.* Try again.");
 
         const buffer = await downloadFile(result.download.url);
         const filesize = buffer.length;
@@ -125,14 +126,14 @@ const handleVideoDownload = (quality) =>
 
         await reply("✅ *Done!*");
       } catch (e) {
-        console.error(`Video (${quality}) error:`, e);
-        await reply("❌ *Failed to send video. Try again later.*");
+        console.error("Download/send error:", e);
+        await reply("❌ *Download failed.* Please try again later.");
       }
 
       delete sessions[from];
     }
   );
 
-// Register both sd and hd commands
-handleVideoDownload("sd");
-handleVideoDownload("hd");
+// Register both button replies
+handleButton("sd");
+handleButton("hd");
