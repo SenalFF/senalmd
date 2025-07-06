@@ -3,7 +3,7 @@ const yts = require("yt-search");
 const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
 
-const MAX_VIDEO_SIZE = 16 * 1024 * 1024; // 16 MB WhatsApp normal video limit
+const MAX_VIDEO_SIZE = 16 * 1024 * 1024; // 16MB WhatsApp normal video limit
 const sessions = {};
 
 const QUALITY_MAP = {
@@ -103,17 +103,18 @@ cmd(
 cmd(
   {
     pattern: "1",
-    on: "number",
+    on: "text",
     dontAddCommandList: true,
   },
   async (robin, mek, m, { from, reply }) => {
     const session = sessions[from];
+    console.log("[Format Selection] session:", session);
     if (!session || session.step !== "choose_format") return;
 
     session.format = "video";
     session.step = "choose_quality";
 
-    const qualityMsg = `
+    await reply(`
 📺 *Select video quality:*
 A. 144p
 B. 240p
@@ -123,25 +124,25 @@ E. 720p
 F. 1080p
 
 ✍️ _Please reply with A-F_
-`;
-    await reply(qualityMsg);
+`);
   }
 );
 
 cmd(
   {
     pattern: "2",
-    on: "number",
+    on: "text",
     dontAddCommandList: true,
   },
   async (robin, mek, m, { from, reply }) => {
     const session = sessions[from];
+    console.log("[Format Selection] session:", session);
     if (!session || session.step !== "choose_format") return;
 
     session.format = "document";
     session.step = "choose_quality";
 
-    const qualityMsg = `
+    await reply(`
 📺 *Select video quality:*
 A. 144p
 B. 240p
@@ -151,14 +152,13 @@ E. 720p
 F. 1080p
 
 ✍️ _Please reply with A-F_
-`;
-    await reply(qualityMsg);
+`);
   }
 );
 
 cmd(
   {
-    pattern: "^[A-Fa-f]{1}$",
+    pattern: "^[A-Fa-f]$",
     on: "text",
     dontAddCommandList: true,
   },
