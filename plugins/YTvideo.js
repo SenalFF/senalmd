@@ -3,53 +3,32 @@ const yts = require("yt-search");
 const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
 
-const MAX_VIDEO_SIZE = 16 * 1024 * 1024; // 16MB WhatsApp normal video limit
-const sessions = {};
-
 const QUALITY_MAP = {
-  A: "144",
-  B: "240",
-  C: "360",
-  D: "480",
-  E: "720",
-  F: "1080",
+  1: "144",
+  2: "240",
+  3: "360",
+  4: "480",
+  5: "720",
+  6: "1080",
 };
 
-async function downloadFile(url) {
-  const res = await axios.get(url, { responseType: "arraybuffer" });
-  return Buffer.from(res.data);
-}
+const sessions = {};
 
-async function sendVideo(robin, from, mek, buffer, title) {
-  await robin.sendMessage(
-    from,
-    {
-      video: buffer,
-      mimetype: "video/mp4",
-      fileName: `${title.slice(0, 30)}.mp4`,
-      caption: title,
-    },
-    { quoted: mek }
-  );
-}
-
-async function sendDocument(robin, from, mek, buffer, title) {
-  await robin.sendMessage(
-    from,
-    {
-      document: buffer,
-      mimetype: "video/mp4",
-      fileName: `${title.slice(0, 30)}.mp4`,
-      caption: "✅ *Document sent by SENAL MD* ❤️",
-    },
-    { quoted: mek }
-  );
+async function getFileSizeMB(url) {
+  try {
+    const response = await axios.head(url);
+    const length = response.headers['content-length'];
+    if (!length) return null;
+    return (parseInt(length) / (1024 * 1024)).toFixed(2);
+  } catch {
+    return null;
+  }
 }
 
 cmd(
   {
     pattern: "playvideo",
-    desc: "🎥 YouTube Video Downloader with format & quality choice",
+    desc: "🎥 YouTube Video Downloader with quality & filesize info",
     category: "download",
     react: "🎥",
   },
@@ -63,11 +42,15 @@ cmd(
       const video = searchResult.videos[0];
       if (!video) return reply("❌ *Sorry, no video found. Try another keyword!*");
 
-      // Save video meta in session, await format choice
-      sessions[from] = {
-        video,
-        step: "choose_format",
-      };
+      // Get a sample download URL at default quality (360p) for size check
+      const tempQuality = "360";
+      const result = await ytmp4(video.url, tempQuality);
+      let fileSizeMB = null;
+      if (result?.download?.url) {
+        fileSizeMB = await getFileSizeMB(result.download.url);
+      }
+
+      let sizeText = fileSizeMB ? `${fileSizeMB} MB (approx at 360p)` : "Unknown";
 
       const info = `
 🎥 *SENAL MD Video Downloader*
@@ -76,14 +59,27 @@ cmd(
 ⏱️ *Duration:* ${video.timestamp}
 👁️ *Views:* ${video.views.toLocaleString()}
 📤 *Uploaded:* ${video.ago}
+📦 *Approx File Size:* ${sizeText}
 🔗 *URL:* ${video.url}
 
-📁 *Select the format you want to receive:*
-1️⃣ Normal Video
-2️⃣ Document (File)
+📁 *Select the video quality you want (send the number):*
 
-✍️ _Please reply with 1 or 2_
+1️⃣ 144p
+2️⃣ 240p
+3️⃣ 360p
+4️⃣ 480p
+5️⃣ 720p
+6️⃣ 1080p
+
+✍️ _Please reply with 1-6_
+
+⚠️ _The video will always be sent as a document._
 `;
+
+      sessions[from] = {
+        video,
+        step: "choose_quality",
+      };
 
       await robin.sendMessage(
         from,
@@ -102,63 +98,7 @@ cmd(
 
 cmd(
   {
-    pattern: "1",
-    on: "text",
-    dontAddCommandList: true,
-  },
-  async (robin, mek, m, { from, reply }) => {
-    const session = sessions[from];
-    console.log("[Format Selection] session:", session);
-    if (!session || session.step !== "choose_format") return;
-
-    session.format = "video";
-    session.step = "choose_quality";
-
-    await reply(`
-📺 *Select video quality:*
-A. 144p
-B. 240p
-C. 360p
-D. 480p
-E. 720p
-F. 1080p
-
-✍️ _Please reply with A-F_
-`);
-  }
-);
-
-cmd(
-  {
-    pattern: "2",
-    on: "text",
-    dontAddCommandList: true,
-  },
-  async (robin, mek, m, { from, reply }) => {
-    const session = sessions[from];
-    console.log("[Format Selection] session:", session);
-    if (!session || session.step !== "choose_format") return;
-
-    session.format = "document";
-    session.step = "choose_quality";
-
-    await reply(`
-📺 *Select video quality:*
-A. 144p
-B. 240p
-C. 360p
-D. 480p
-E. 720p
-F. 1080p
-
-✍️ _Please reply with A-F_
-`);
-  }
-);
-
-cmd(
-  {
-    pattern: "^[A-Fa-f]$",
+    pattern: "^[1-6]{1}$",
     on: "text",
     dontAddCommandList: true,
   },
@@ -166,41 +106,32 @@ cmd(
     const session = sessions[from];
     if (!session || session.step !== "choose_quality") return;
 
-    const choice = text.toUpperCase();
+    const choice = text.trim();
     const quality = QUALITY_MAP[choice];
-    if (!quality) return reply("❌ *Invalid choice, please reply with A-F.*");
+    if (!quality) return reply("❌ *Invalid choice. Please reply with a number 1 to 6.*");
 
     await reply(`⬇️ Fetching video at *${quality}p* quality... ⏳`);
 
     try {
-      // Get video download link & info from kelvdra scraper
       const result = await ytmp4(session.video.url, quality);
       if (!result?.download?.url) return reply("⚠️ *Could not fetch the download link. Try again later.*");
 
-      const buffer = await downloadFile(result.download.url);
-      const filesize = buffer.length;
-      const filesizeMB = (filesize / (1024 * 1024)).toFixed(2);
+      const videoUrl = result.download.url;
 
-      session.buffer = buffer;
-      session.filesize = filesize;
+      await reply("⏳ Uploading video as document...");
 
-      // WhatsApp size limit check (normal video limit)
-      if (session.format === "video" && filesize > MAX_VIDEO_SIZE) {
-        await reply(
-          `⚠️ *File size ${filesizeMB} MB exceeds WhatsApp normal video limit (16MB). Sending as document instead.*`
-        );
-        session.format = "document"; // fallback
-      }
+      await robin.sendMessage(
+        from,
+        {
+          document: { url: videoUrl },
+          mimetype: "video/mp4",
+          fileName: `${session.video.title.slice(0, 30)}.mp4`,
+          caption: "✅ *Document sent by SENAL MD* ❤️",
+        },
+        { quoted: mek }
+      );
 
-      if (session.format === "video") {
-        await reply("⏳ Uploading video...");
-        await sendVideo(robin, from, mek, buffer, session.video.title);
-        await reply("✅ *Video sent successfully!* 🎥");
-      } else {
-        await reply("⏳ Uploading video as document...");
-        await sendDocument(robin, from, mek, buffer, session.video.title);
-        await reply("✅ *Document sent successfully!* 📄");
-      }
+      await reply("✅ *Document sent successfully!* 📄");
     } catch (e) {
       console.error("Video send error:", e);
       await reply("❌ *Failed to send video/document. Please try again later.*");
