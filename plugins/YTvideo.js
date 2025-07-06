@@ -3,13 +3,31 @@ const yts = require("yt-search");
 const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
 
-const WHATSAPP_MAX_VIDEO_SIZE = 16 * 1024 * 1024; // 16 MB
+const WHATSAPP_MAX_VIDEO_SIZE = 16 * 1024 * 1024; // 16 MB max for normal video
 const sessions = {};
+
+const QUALITY = "360"; // default quality 360p
+
+async function sendProgressBar(robin, from, baseText = "🔄 Processing", steps = 5, delay = 600) {
+  const frames = [
+    "[          ] 0%",
+    "[##        ] 20%",
+    "[####      ] 40%",
+    "[######    ] 60%",
+    "[########  ] 80%",
+    "[##########] 100%",
+  ];
+
+  for (let i = 0; i < steps && i < frames.length; i++) {
+    await robin.sendMessage(from, { text: `${baseText} ${frames[i]}` });
+    await new Promise((r) => setTimeout(r, delay));
+  }
+}
 
 async function getFileSize(url) {
   try {
     const head = await axios.head(url);
-    const length = head.headers['content-length'];
+    const length = head.headers["content-length"];
     return length ? parseInt(length) : null;
   } catch {
     return null;
@@ -19,7 +37,7 @@ async function getFileSize(url) {
 cmd(
   {
     pattern: "playvideo",
-    desc: "🎥 YouTube Video Downloader (HD 720p) with send option",
+    desc: "🎥 YouTube Video Downloader (360p) with animated progress & file size",
     category: "download",
     react: "🎥",
   },
@@ -27,24 +45,26 @@ cmd(
     try {
       if (!q) return reply("🔍 *කරුණාකර වීඩියෝ නමක් හෝ YouTube ලින්ක් එකක් ලබාදෙන්න*");
 
-      await reply("🔎 Searching for your video... 🎬");
+      // Animated searching progress
+      await sendProgressBar(robin, from, "🔎 Searching video");
 
       const searchResult = await yts(q);
       const video = searchResult.videos[0];
       if (!video) return reply("❌ *Sorry, no video found. Try another keyword!*");
 
-      await reply("⬇️ Fetching 720p video info... ⏳");
+      // Animated fetching info progress
+      await sendProgressBar(robin, from, "⬇️ Fetching video info");
 
-      const quality = "720";
-      const result = await ytmp4(video.url, quality);
-      if (!result?.download?.url) return reply("⚠️ *Could not fetch the 720p video download link. Try again later.*");
+      const result = await ytmp4(video.url, QUALITY);
+      if (!result?.download?.url)
+        return reply("⚠️ *Could not fetch the 360p video download link. Try again later.*");
 
       const videoUrl = result.download.url;
       const fileSize = await getFileSize(videoUrl);
       const fileSizeMB = fileSize ? (fileSize / (1024 * 1024)).toFixed(2) : "Unknown";
 
       const info = `
-🎥 *SENAL MD Video Downloader (HD 720p)*
+🎥 *SENAL MD Video Downloader (360p)*
 
 🎬 *Title:* ${video.title}
 ⏱️ *Duration:* ${video.timestamp}
@@ -96,12 +116,16 @@ cmd(
 
     const choice = text.trim();
 
+    // Animated uploading progress
+    await sendProgressBar(robin, from, "⏳ Uploading video");
+
     if (choice === "1") {
-      // Normal video
+      // Normal video send if size ok
       if (session.fileSize && session.fileSize > WHATSAPP_MAX_VIDEO_SIZE) {
-        await reply("⚠️ *File too big for normal video sending! Sending as document instead.*");
+        await reply(
+          "⚠️ *File too big for normal video sending! Sending as document instead.*"
+        );
       } else {
-        await reply("⏳ Uploading video as normal video...");
         try {
           await robin.sendMessage(
             from,
@@ -123,8 +147,7 @@ cmd(
       }
     }
 
-    // For choice "2" or fallback for big files or failed normal send
-    await reply("⏳ Uploading video as document...");
+    // Send as document fallback or if user chose 2
     try {
       await robin.sendMessage(
         from,
