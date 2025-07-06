@@ -3,10 +3,10 @@ const yts = require("yt-search");
 const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
 
-const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_SIZE = 50 * 1024 * 1024; // 50MB max inline video size
 const sessions = {};
 
-// Helper to download buffer from URL
+// Download buffer helper
 async function fetchBuffer(url) {
   const res = await axios.get(url, { responseType: "arraybuffer" });
   return Buffer.from(res.data);
@@ -14,7 +14,7 @@ async function fetchBuffer(url) {
 
 // Send inline video
 async function sendVideo(sock, from, mek, buffer, title) {
-  return await sock.sendMessage(
+  await sock.sendMessage(
     from,
     {
       video: buffer,
@@ -28,7 +28,7 @@ async function sendVideo(sock, from, mek, buffer, title) {
 
 // Send video as document
 async function sendDocument(sock, from, mek, buffer, title) {
-  return await sock.sendMessage(
+  await sock.sendMessage(
     from,
     {
       document: buffer,
@@ -40,11 +40,11 @@ async function sendDocument(sock, from, mek, buffer, title) {
   );
 }
 
-// .video command
+// .video command: search, download & ask format
 cmd(
   {
     pattern: "video",
-    desc: "🎥 YouTube Video Downloader (no save, select type)",
+    desc: "🎥 YouTube Video Downloader (select file type)",
     category: "download",
     react: "🎞️",
   },
@@ -52,7 +52,7 @@ cmd(
     try {
       if (!q) return reply("🔍 කරුණාකර YouTube වීඩියෝ නමක් හෝ ලින්ක් එකක් ලබාදෙන්න.");
 
-      await reply("🔎 Searching...");
+      await reply("🔎 Searching YouTube...");
 
       const results = await yts(q);
       const video = results.videos[0];
@@ -61,12 +61,14 @@ cmd(
       await reply("⏬ Getting download link...");
 
       const result = await ytmp4(video.url, "360");
-      if (!result?.download?.url) return reply("❌ Couldn't get video download URL.");
+      console.log("ytmp4 result:", result);
 
-      const buffer = await fetchBuffer(result.download.url);
+      if (!result?.url) return reply("❌ Couldn't get video download URL.");
+
+      const buffer = await fetchBuffer(result.url);
       const sizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
 
-      // Save session temporarily
+      // Save session for user reply
       sessions[from] = {
         video,
         buffer,
@@ -105,7 +107,7 @@ cmd(
   }
 );
 
-// 1️⃣ Send as video
+// User replies '1' to send inline video
 cmd(
   {
     pattern: "1",
@@ -116,10 +118,11 @@ cmd(
     const session = sessions[from];
     if (!session || session.step !== "file_type_select") return;
 
-    const { video, buffer, sizeMB } = session;
     session.step = "sending";
 
     try {
+      const { video, buffer, sizeMB } = session;
+
       if (buffer.length > MAX_SIZE) {
         await reply(`⚠️ Video is ${sizeMB} MB — too large for inline video.\nSending as document...`);
         await sendDocument(sock, from, mek, buffer, video.title);
@@ -127,6 +130,7 @@ cmd(
         await reply("📤 Sending video...");
         await sendVideo(sock, from, mek, buffer, video.title);
       }
+
       await reply("✅ Done!");
     } catch (err) {
       console.error("Send video error:", err);
@@ -137,7 +141,7 @@ cmd(
   }
 );
 
-// 2️⃣ Send as document
+// User replies '2' to send as document
 cmd(
   {
     pattern: "2",
@@ -148,10 +152,11 @@ cmd(
     const session = sessions[from];
     if (!session || session.step !== "file_type_select") return;
 
-    const { video, buffer } = session;
     session.step = "sending";
 
     try {
+      const { video, buffer } = session;
+
       await reply("📤 Sending document...");
       await sendDocument(sock, from, mek, buffer, video.title);
       await reply("✅ Done!");
