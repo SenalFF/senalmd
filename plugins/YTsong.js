@@ -3,13 +3,13 @@ const yts = require("yt-search");
 const { ytmp3 } = require("@kelvdra/scraper");
 const axios = require("axios");
 
-global.pendingFormat = {}; // For tracking button selections
+global.pendingFormat = {}; // 🔁 Store pending users temporarily
 
 cmd(
   {
     pattern: "play",
     react: "🎧",
-    desc: "Search YouTube and choose format",
+    desc: "Search YouTube & choose format",
     category: "download",
     filename: __filename,
   },
@@ -24,14 +24,7 @@ cmd(
       const result = await ytmp3(video.url, "mp3");
       if (!result?.download?.url) return reply("⚠️ ගීතය බාගත කළ නොහැක.");
 
-      // Save data to global pending format store
-      global.pendingFormat[from] = {
-        video,
-        downloadUrl: result.download.url,
-        title: video.title,
-      };
-
-      const caption = `
+      const info = `
 🎧 *SENAL MD Song Downloader*
 
 🎶 *Title:* ${video.title}
@@ -40,21 +33,24 @@ cmd(
 📤 *Uploaded:* ${video.ago}
 🔗 *URL:* ${video.url}
 
-📥 *Select Format Below*
+🎵 *Choose Format*:
+1. Audio (voice type)
+2. Document (file type)
+
+_✍️ Reply with number 1 or 2_
 `;
 
-      // Send message with buttons
+      // Save pending format request for this user
+      global.pendingFormat[from] = {
+        video,
+        downloadUrl: result.download.url,
+      };
+
       await robin.sendMessage(
         from,
         {
           image: { url: video.thumbnail },
-          caption,
-          footer: "Powered by Mr Senal",
-          buttons: [
-            { buttonId: "audio", buttonText: { displayText: "🎧 Audio" }, type: 1 },
-            { buttonId: "doc", buttonText: { displayText: "📄 Document" }, type: 1 },
-          ],
-          headerType: 4,
+          caption: info,
         },
         { quoted: mek }
       );
@@ -65,25 +61,25 @@ cmd(
   }
 );
 
-// Handle button reply
+// 🧠 Listener for number reply (1 or 2)
 cmd(
   {
-    pattern: "^(audio|doc)$",
+    pattern: "^([1-2])$",
     only: "text",
     filename: __filename,
   },
   async (robin, mek, m, { from, body, reply }) => {
     const pending = global.pendingFormat[from];
-    if (!pending) return reply("❌ No pending song. Use `.play <song name>` first.");
+    if (!pending) return; // No pending format request
 
-    const { downloadUrl, title } = pending;
+    const { video, downloadUrl } = pending;
 
     try {
       const res = await axios.get(downloadUrl, { responseType: "arraybuffer" });
       const buffer = Buffer.from(res.data);
-      const fileName = `${title.slice(0, 30)}.mp3`;
+      const fileName = `${video.title.slice(0, 30)}.mp3`;
 
-      if (body === "audio") {
+      if (body === "1") {
         await robin.sendMessage(
           from,
           {
@@ -94,7 +90,7 @@ cmd(
           { quoted: mek }
         );
         reply("✅ *Audio sent!*");
-      } else if (body === "doc") {
+      } else if (body === "2") {
         await robin.sendMessage(
           from,
           {
@@ -107,7 +103,7 @@ cmd(
         reply("✅ *Document sent!*");
       }
 
-      delete global.pendingFormat[from]; // Cleanup
+      delete global.pendingFormat[from]; // Clean up
     } catch (err) {
       console.error("Send Error:", err);
       reply("❌ Error sending the file.");
