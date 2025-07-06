@@ -3,16 +3,14 @@ const yts = require("yt-search");
 const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
 
-const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB limit
 const sessions = {};
 
-// Download file buffer
 async function downloadFile(url) {
   const res = await axios.get(url, { responseType: "arraybuffer" });
   return Buffer.from(res.data);
 }
 
-// Send video inline
 async function sendVideo(sock, from, mek, buffer, title) {
   await sock.sendMessage(
     from,
@@ -26,7 +24,6 @@ async function sendVideo(sock, from, mek, buffer, title) {
   );
 }
 
-// Send as document
 async function sendDocument(sock, from, mek, buffer, title) {
   await sock.sendMessage(
     from,
@@ -40,11 +37,11 @@ async function sendDocument(sock, from, mek, buffer, title) {
   );
 }
 
-// .video command
+// Main .video command
 cmd(
   {
     pattern: "video",
-    desc: "🎬 Download YouTube Video with SD/HD choice",
+    desc: "🎬 Download YouTube Video with Quality Buttons",
     category: "download",
     react: "🎥",
   },
@@ -54,24 +51,24 @@ cmd(
 
       await reply("🔎 Searching on YouTube...");
 
-      const searchResult = await yts(q);
-      const video = searchResult.videos[0];
+      const result = await yts(q);
+      const video = result.videos[0];
       if (!video) return reply("❌ *Video not found. Try a different keyword.*");
 
-      // Download image buffer
+      // Download thumbnail buffer
       const thumbRes = await axios.get(video.thumbnail, { responseType: "arraybuffer" });
       const imageBuffer = Buffer.from(thumbRes.data);
 
+      // Save session
       sessions[from] = {
         video,
         step: "choose_quality",
       };
 
-      // Button message template
+      // Prepare button message
       const buttonMsg = {
         templateMessage: {
           hydratedTemplate: {
-            image: { jpegThumbnail: imageBuffer },
             hydratedContentText: `
 🎬 *SENAL MD Video Downloader*
 
@@ -84,6 +81,7 @@ cmd(
 📺 *Select video quality below:*
             `.trim(),
             hydratedFooterText: "Powered by SENAL MD ❤️",
+            jpegThumbnail: imageBuffer, // ✅ Correct field
             hydratedButtons: [
               {
                 quickReplyButton: {
@@ -110,7 +108,7 @@ cmd(
   }
 );
 
-// Button Handlers: SD & HD
+// SD / HD reply handlers
 ["sd", "hd"].forEach((quality) => {
   cmd(
     {
