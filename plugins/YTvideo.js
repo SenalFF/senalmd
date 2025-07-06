@@ -3,7 +3,7 @@ const yts = require("yt-search");
 const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
 
-const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB limit
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
 const sessions = {};
 
 async function downloadFile(url) {
@@ -37,11 +37,11 @@ async function sendDocument(sock, from, mek, buffer, title) {
   );
 }
 
-// Main .video command
+// .video command with normal buttons
 cmd(
   {
     pattern: "video",
-    desc: "🎬 Download YouTube Video with Quality Buttons",
+    desc: "🎬 Download YouTube Video (with button quality)",
     category: "download",
     react: "🎥",
   },
@@ -49,66 +49,50 @@ cmd(
     try {
       if (!q) return reply("🔍 කරුණාකර YouTube වීඩියෝ නමක් හෝ ලින්ක් එකක් ලබාදෙන්න.");
 
-      await reply("🔎 Searching on YouTube...");
+      await reply("🔎 Searching...");
 
       const result = await yts(q);
       const video = result.videos[0];
-      if (!video) return reply("❌ *Video not found. Try a different keyword.*");
+      if (!video) return reply("❌ Video not found.");
 
-      // Download thumbnail buffer
-      const thumbRes = await axios.get(video.thumbnail, { responseType: "arraybuffer" });
-      const imageBuffer = Buffer.from(thumbRes.data);
-
-      // Save session
       sessions[from] = {
         video,
         step: "choose_quality",
       };
 
-      // Prepare button message
-      const buttonMsg = {
-        templateMessage: {
-          hydratedTemplate: {
-            hydratedContentText: `
+      const text = `
 🎬 *SENAL MD Video Downloader*
 
 🎞️ *Title:* ${video.title}
-⏱️ *Duration:* ${video.timestamp}
-👁️ *Views:* ${video.views.toLocaleString()}
-📤 *Uploaded:* ${video.ago}
-🔗 *URL:* ${video.url}
+⏱️ Duration: ${video.timestamp}
+👁️ Views: ${video.views.toLocaleString()}
+📤 Uploaded: ${video.ago}
+🔗 URL: ${video.url}
 
 📺 *Select video quality below:*
-            `.trim(),
-            hydratedFooterText: "Powered by SENAL MD ❤️",
-            jpegThumbnail: imageBuffer, // ✅ Correct field
-            hydratedButtons: [
-              {
-                quickReplyButton: {
-                  displayText: "📥 SD (360p)",
-                  id: "video_sd",
-                },
-              },
-              {
-                quickReplyButton: {
-                  displayText: "📺 HD (720p)",
-                  id: "video_hd",
-                },
-              },
-            ],
-          },
-        },
+      `.trim();
+
+      const buttons = [
+        { buttonId: 'video_sd', buttonText: { displayText: '📥 SD (360p)' }, type: 1 },
+        { buttonId: 'video_hd', buttonText: { displayText: '📺 HD (720p)' }, type: 1 },
+      ];
+
+      const buttonMsg = {
+        text,
+        footer: 'Powered by SENAL MD ❤️',
+        buttons,
+        headerType: 1,
       };
 
       await sock.sendMessage(from, buttonMsg, { quoted: mek });
     } catch (err) {
       console.error("YT Video Search Error:", err);
-      await reply("❌ *Error while searching or preparing the video.*");
+      await reply("❌ Error while preparing video buttons.");
     }
   }
 );
 
-// SD / HD reply handlers
+// Video download (button click)
 ["sd", "hd"].forEach((quality) => {
   cmd(
     {
@@ -117,7 +101,7 @@ cmd(
     async (sock, mek, m, { from, reply }) => {
       const session = sessions[from];
       if (!session || session.step !== "choose_quality") {
-        return reply("❌ *No active video session. Use `.video <name>` first.*");
+        return reply("❌ No active video session. Use `.video <name>` first.");
       }
 
       const video = session.video;
@@ -127,22 +111,22 @@ cmd(
         await reply(`📥 Downloading *${resolution}p*...`);
 
         const res = await ytmp4(video.url, resolution);
-        if (!res?.download?.url) return reply("❌ *Could not fetch download link.*");
+        if (!res?.download?.url) return reply("❌ Couldn't get download link.");
 
         const buffer = await downloadFile(res.download.url);
         const sizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
 
         if (buffer.length > MAX_VIDEO_SIZE) {
-          await reply(`⚠️ *Video is ${sizeMB} MB. Sending as document...*`);
+          await reply(`⚠️ Video is ${sizeMB} MB. Sending as document...`);
           await sendDocument(sock, from, mek, buffer, video.title);
         } else {
           await sendVideo(sock, from, mek, buffer, video.title);
         }
 
-        await reply("✅ *Video sent successfully!* 🎉");
+        await reply("✅ Video sent!");
       } catch (err) {
-        console.error("YT Video Download Error:", err);
-        await reply("❌ *Failed to download or send the video.*");
+        console.error("Download/send error:", err);
+        await reply("❌ Error sending video.");
       }
 
       delete sessions[from];
