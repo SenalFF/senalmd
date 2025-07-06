@@ -6,11 +6,13 @@ const axios = require("axios");
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
 const sessions = {};
 
+// Download file buffer
 async function downloadFile(url) {
   const res = await axios.get(url, { responseType: "arraybuffer" });
   return Buffer.from(res.data);
 }
 
+// Send video inline
 async function sendVideo(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -24,6 +26,7 @@ async function sendVideo(robin, from, mek, buffer, title) {
   );
 }
 
+// Send as document
 async function sendDocument(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -37,13 +40,13 @@ async function sendDocument(robin, from, mek, buffer, title) {
   );
 }
 
-// VIDEO CMD
+// Main video command
 cmd(
   {
     pattern: "video",
-    desc: "🎬 Download YouTube Video with quality options",
+    desc: "🎬 YouTube Video Downloader with HD or SD",
     category: "download",
-    react: "🎬",
+    react: "🎥",
   },
   async (robin, mek, m, { from, q, reply }) => {
     try {
@@ -55,54 +58,53 @@ cmd(
       const video = searchResult.videos[0];
       if (!video) return reply("❌ *No video found. Try another keyword.*");
 
+      // Save session
       sessions[from] = {
         video,
         step: "choose_quality",
       };
 
-      const caption = `
+      // Buttons
+      const buttons = [
+        { buttonId: "video_sd", buttonText: { displayText: "📥 SD (360p)" }, type: 1 },
+        { buttonId: "video_hd", buttonText: { displayText: "📺 HD (720p)" }, type: 1 }
+      ];
+
+      const buttonMessage = {
+        image: { url: video.thumbnail },
+        caption: `
 🎬 *SENAL MD Video Downloader*
 
 🎞️ *Title:* ${video.title}
-⏱️ *Duration:* ${video.timestamp}
+📺 *Duration:* ${video.timestamp}
 👁️ *Views:* ${video.views.toLocaleString()}
 📤 *Uploaded:* ${video.ago}
-🔗 *URL:* ${video.url}
 
-📺 *Choose your quality:*
-`;
+📦 *Choose Quality:*
+        `,
+        footer: "Reply using the buttons below",
+        buttons,
+        headerType: 4,
+        viewOnce: true
+      };
 
-      await robin.sendMessage(
-        from,
-        {
-          image: { url: video.thumbnail },
-          caption,
-          buttons: [
-            { buttonId: "video_sd", buttonText: { displayText: "📥 SD (360p)" }, type: 1 },
-            { buttonId: "video_hd", buttonText: { displayText: "📺 HD (720p)" }, type: 1 },
-          ],
-          footer: "Powered by SENAL MD",
-        },
-        { quoted: mek }
-      );
+      await robin.sendMessage(from, buttonMessage, { quoted: mek });
     } catch (e) {
-      console.error("Video Cmd Error:", e);
-      return reply(`❌ *Error:* ${e.message}`);
+      console.error("Video command error:", e);
+      await reply("❌ *Error occurred. Please try again later.*");
     }
   }
 );
 
-// BUTTON HANDLER
-const handleButton = (quality) =>
+// Button handler function
+const handleQuality = (quality) =>
   cmd(
     {
       pattern: `video_${quality}`,
     },
     async (robin, mek, m, { from, reply }) => {
       const session = sessions[from];
-      if (!session || session.step !== "choose_quality") {
-        return reply("⚠️ *No active video session found.* Try `.video` again.");
-      }
+      if (!session || session.step !== "choose_quality") return;
 
       const video = session.video;
       session.step = "downloading";
@@ -111,29 +113,29 @@ const handleButton = (quality) =>
         await reply(`📥 Downloading *${quality.toUpperCase()}* video...`);
 
         const result = await ytmp4(video.url, quality === "hd" ? "720" : "360");
-        if (!result?.download?.url) return reply("❌ *Download link failed.* Try again.");
+        if (!result?.download?.url) return reply("❌ *Download link not available. Try again later.*");
 
         const buffer = await downloadFile(result.download.url);
-        const filesize = buffer.length;
+        const sizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
 
-        if (filesize > MAX_VIDEO_SIZE) {
-          await reply(`⚠️ *Video is ${(filesize / (1024 * 1024)).toFixed(2)} MB. Sending as document...*`);
+        if (buffer.length > MAX_VIDEO_SIZE) {
+          await reply(`⚠️ *Video is ${sizeMB} MB. Sending as document...*`);
           await sendDocument(robin, from, mek, buffer, video.title);
         } else {
-          await reply("⏳ Uploading video...");
+          await reply("⏳ Uploading...");
           await sendVideo(robin, from, mek, buffer, video.title);
         }
 
         await reply("✅ *Done!*");
       } catch (e) {
-        console.error("Download/send error:", e);
-        await reply("❌ *Download failed.* Please try again later.");
+        console.error("Video send error:", e);
+        await reply("❌ *Error while sending video.*");
       }
 
       delete sessions[from];
     }
   );
 
-// Register both button replies
-handleButton("sd");
-handleButton("hd");
+// Register button handlers
+handleQuality("sd");
+handleQuality("hd");
