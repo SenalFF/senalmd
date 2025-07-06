@@ -12,7 +12,7 @@ async function downloadFile(url) {
   return Buffer.from(res.data);
 }
 
-// Send video inline
+// Send video
 async function sendVideo(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -20,13 +20,13 @@ async function sendVideo(robin, from, mek, buffer, title) {
       video: buffer,
       mimetype: "video/mp4",
       fileName: `${title.slice(0, 30)}.mp4`,
-      caption: "🎬 *Video sent by SENAL MD* 🎥",
+      caption: `🎬 *${title}*`,
     },
     { quoted: mek }
   );
 }
 
-// Send as document
+// Send document
 async function sendDocument(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -40,102 +40,107 @@ async function sendDocument(robin, from, mek, buffer, title) {
   );
 }
 
-// Main video command
+// Main .video command
 cmd(
   {
     pattern: "video",
-    desc: "🎬 YouTube Video Downloader with HD or SD",
+    desc: "🎬 Download YouTube Video with Quality",
     category: "download",
     react: "🎥",
   },
   async (robin, mek, m, { from, q, reply }) => {
     try {
-      if (!q) return reply("🔍 *කරුණාකර වීඩියෝ නමක් හෝ YouTube ලින්ක් එකක් ලබාදෙන්න*");
+      if (!q) return reply("🔍 කරුණාකර YouTube වීඩියෝ නමක් හෝ ලින්ක් එකක් දාන්න.");
 
-      await reply("🔎 Searching YouTube...");
+      await reply("🔎 Searching...");
 
-      const searchResult = await yts(q);
-      const video = searchResult.videos[0];
-      if (!video) return reply("❌ *No video found. Try another keyword.*");
+      const result = await yts(q);
+      const video = result.videos[0];
+      if (!video) return reply("❌ Video not found.");
 
-      // Save session
       sessions[from] = {
         video,
         step: "choose_quality",
       };
 
-      // Buttons
-      const buttons = [
-        { buttonId: "video_sd", buttonText: { displayText: "📥 SD (360p)" }, type: 1 },
-        { buttonId: "video_hd", buttonText: { displayText: "📺 HD (720p)" }, type: 1 }
-      ];
-
-      const buttonMessage = {
-        image: { url: video.thumbnail },
-        caption: `
+      const buttonsMessage = {
+        templateMessage: {
+          hydratedTemplate: {
+            image: { url: video.thumbnail },
+            hydratedContentText: `
 🎬 *SENAL MD Video Downloader*
 
 🎞️ *Title:* ${video.title}
-📺 *Duration:* ${video.timestamp}
-👁️ *Views:* ${video.views.toLocaleString()}
-📤 *Uploaded:* ${video.ago}
+⏱️ Duration: ${video.timestamp}
+👁️ Views: ${video.views.toLocaleString()}
+📤 Uploaded: ${video.ago}
+🔗 URL: ${video.url}
 
-📦 *Choose Quality:*
-        `,
-        footer: "Reply using the buttons below",
-        buttons,
-        headerType: 4,
-        viewOnce: true
+📺 Select your video quality:
+            `.trim(),
+            hydratedFooterText: "Powered by SENAL MD",
+            hydratedButtons: [
+              {
+                quickReplyButton: {
+                  displayText: "📥 SD (360p)",
+                  id: "video_sd",
+                },
+              },
+              {
+                quickReplyButton: {
+                  displayText: "📺 HD (720p)",
+                  id: "video_hd",
+                },
+              },
+            ],
+          },
+        },
       };
 
-      await robin.sendMessage(from, buttonMessage, { quoted: mek });
-    } catch (e) {
-      console.error("Video command error:", e);
-      await reply("❌ *Error occurred. Please try again later.*");
+      await robin.sendMessage(from, buttonsMessage, { quoted: mek });
+    } catch (err) {
+      console.error("Video search error:", err);
+      await reply("❌ Error while processing video.");
     }
   }
 );
 
-// Button handler function
-const handleQuality = (quality) =>
+// Button reply handler
+["sd", "hd"].forEach((quality) => {
   cmd(
     {
       pattern: `video_${quality}`,
     },
     async (robin, mek, m, { from, reply }) => {
       const session = sessions[from];
-      if (!session || session.step !== "choose_quality") return;
+      if (!session || session.step !== "choose_quality") return reply("❌ No active video session.");
 
       const video = session.video;
-      session.step = "downloading";
+      const resolution = quality === "hd" ? "720" : "360";
 
       try {
-        await reply(`📥 Downloading *${quality.toUpperCase()}* video...`);
+        await reply(`📥 Downloading ${resolution}p...`);
 
-        const result = await ytmp4(video.url, quality === "hd" ? "720" : "360");
-        if (!result?.download?.url) return reply("❌ *Download link not available. Try again later.*");
+        const res = await ytmp4(video.url, resolution);
+        if (!res?.download?.url) return reply("❌ Failed to get download URL.");
 
-        const buffer = await downloadFile(result.download.url);
+        const buffer = await downloadFile(res.download.url);
         const sizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
 
         if (buffer.length > MAX_VIDEO_SIZE) {
-          await reply(`⚠️ *Video is ${sizeMB} MB. Sending as document...*`);
+          await reply(`⚠️ File is ${sizeMB} MB. Sending as document...`);
           await sendDocument(robin, from, mek, buffer, video.title);
         } else {
-          await reply("⏳ Uploading...");
           await sendVideo(robin, from, mek, buffer, video.title);
         }
 
-        await reply("✅ *Done!*");
-      } catch (e) {
-        console.error("Video send error:", e);
-        await reply("❌ *Error while sending video.*");
+        await reply("✅ Done!");
+      } catch (err) {
+        console.error("Download/send error:", err);
+        await reply("❌ Failed to send video.");
       }
 
       delete sessions[from];
     }
   );
-
-// Register button handlers
-handleQuality("sd");
-handleQuality("hd");
+});
