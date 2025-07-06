@@ -4,6 +4,8 @@ const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
 
 const MAX_VIDEO_SIZE = 16 * 1024 * 1024; // 16 MB WhatsApp normal video limit
+const sessions = {};
+
 const QUALITY_MAP = {
   A: "144",
   B: "240",
@@ -12,7 +14,6 @@ const QUALITY_MAP = {
   E: "720",
   F: "1080",
 };
-const sessions = {};
 
 async function downloadFile(url) {
   const res = await axios.get(url, { responseType: "arraybuffer" });
@@ -62,6 +63,7 @@ cmd(
       const video = searchResult.videos[0];
       if (!video) return reply("❌ *Sorry, no video found. Try another keyword!*");
 
+      // Save video meta in session, await format choice
       sessions[from] = {
         video,
         step: "choose_format",
@@ -108,18 +110,21 @@ cmd(
     const session = sessions[from];
     if (!session || session.step !== "choose_format") return;
 
-    session.format = "normal";
+    session.format = "video";
     session.step = "choose_quality";
 
-    await robin.sendMessage(
-      from,
-      {
-        text: `📊 *Choose Quality:*\n
-A 144p\nB 240p\nC 360p\nD 480p\nE 720p\nF 1080p\n
-✍️ _Please reply with A, B, C, D, E or F_`,
-      },
-      { quoted: mek }
-    );
+    const qualityMsg = `
+📺 *Select video quality:*
+A. 144p
+B. 240p
+C. 360p
+D. 480p
+E. 720p
+F. 1080p
+
+✍️ _Please reply with A-F_
+`;
+    await reply(qualityMsg);
   }
 );
 
@@ -136,54 +141,58 @@ cmd(
     session.format = "document";
     session.step = "choose_quality";
 
-    await robin.sendMessage(
-      from,
-      {
-        text: `📊 *Choose Quality:*\n
-A 144p\nB 240p\nC 360p\nD 480p\nE 720p\nF 1080p\n
-✍️ _Please reply with A, B, C, D, E or F_`,
-      },
-      { quoted: mek }
-    );
+    const qualityMsg = `
+📺 *Select video quality:*
+A. 144p
+B. 240p
+C. 360p
+D. 480p
+E. 720p
+F. 1080p
+
+✍️ _Please reply with A-F_
+`;
+    await reply(qualityMsg);
   }
 );
 
 cmd(
   {
-    pattern: "^[A-Fa-f]$",
+    pattern: "^[A-Fa-f]{1}$",
     on: "text",
     dontAddCommandList: true,
   },
-  async (robin, mek, m, { from, reply, text }) => {
+  async (robin, mek, m, { from, text, reply }) => {
     const session = sessions[from];
     if (!session || session.step !== "choose_quality") return;
 
-    const qualityKey = text.toUpperCase();
-    const quality = QUALITY_MAP[qualityKey];
+    const choice = text.toUpperCase();
+    const quality = QUALITY_MAP[choice];
+    if (!quality) return reply("❌ *Invalid choice, please reply with A-F.*");
 
-    if (!quality) return reply("❌ *Invalid quality option. Reply A to F.*");
-
-    session.step = "sending";
-
-    await reply(`⬇️ Fetching video at ${quality}p quality... Please wait ⏳`);
+    await reply(`⬇️ Fetching video at *${quality}p* quality... ⏳`);
 
     try {
+      // Get video download link & info from kelvdra scraper
       const result = await ytmp4(session.video.url, quality);
-      if (!result?.download?.url) return reply("⚠️ *Could not fetch download link. Try again later.*");
+      if (!result?.download?.url) return reply("⚠️ *Could not fetch the download link. Try again later.*");
 
       const buffer = await downloadFile(result.download.url);
       const filesize = buffer.length;
       const filesizeMB = (filesize / (1024 * 1024)).toFixed(2);
 
-      // WhatsApp size limit check for normal video
-      if (session.format === "normal" && filesize > MAX_VIDEO_SIZE) {
+      session.buffer = buffer;
+      session.filesize = filesize;
+
+      // WhatsApp size limit check (normal video limit)
+      if (session.format === "video" && filesize > MAX_VIDEO_SIZE) {
         await reply(
-          `⚠️ *Video size (${filesizeMB} MB) is too large for normal video sending.*\n` +
-            `Sending as document instead...`
+          `⚠️ *File size ${filesizeMB} MB exceeds WhatsApp normal video limit (16MB). Sending as document instead.*`
         );
-        await sendDocument(robin, from, mek, buffer, session.video.title);
-        await reply("✅ *Document sent successfully!* 📄");
-      } else if (session.format === "normal") {
+        session.format = "document"; // fallback
+      }
+
+      if (session.format === "video") {
         await reply("⏳ Uploading video...");
         await sendVideo(robin, from, mek, buffer, session.video.title);
         await reply("✅ *Video sent successfully!* 🎥");
