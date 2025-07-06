@@ -3,8 +3,38 @@ const yts = require("yt-search");
 const { ytmp3 } = require("@kelvdra/scraper");
 const axios = require("axios");
 
-const MAX_AUDIO_SIZE = 16 * 1024 * 1024; // 16 MB WhatsApp limit for audio files
+const MAX_AUDIO_SIZE = 16 * 1024 * 1024; // 16 MB WhatsApp audio limit
 const sessions = {};
+
+async function downloadFile(url) {
+  const res = await axios.get(url, { responseType: "arraybuffer" });
+  return Buffer.from(res.data);
+}
+
+async function sendAudio(robin, from, mek, buffer, title) {
+  await robin.sendMessage(
+    from,
+    {
+      audio: buffer,
+      mimetype: "audio/mpeg",
+      fileName: `${title.slice(0, 30)}.mp3`,
+    },
+    { quoted: mek }
+  );
+}
+
+async function sendDocument(robin, from, mek, buffer, title) {
+  await robin.sendMessage(
+    from,
+    {
+      document: buffer,
+      mimetype: "audio/mpeg",
+      fileName: `${title.slice(0, 30)}.mp3`,
+      caption: "✅ *Document sent by SENAL MD* ❤️",
+    },
+    { quoted: mek }
+  );
+}
 
 cmd(
   {
@@ -28,19 +58,21 @@ cmd(
       const result = await ytmp3(video.url, "mp3");
       if (!result?.download?.url) return reply("⚠️ *Could not fetch the download link. Try again later.*");
 
-      // Get file size in bytes, fallback if unavailable
+      // Get filesize (bytes) fallback 0
       let filesize = result.filesize || result.filesizeRaw || 0;
       if (typeof filesize === "string") filesize = parseInt(filesize);
 
-      // Convert bytes to MB for display
-      const filesizeMB = (filesize / (1024 * 1024)).toFixed(2);
+      // Download file once, buffer cache
+      const buffer = await downloadFile(result.download.url);
 
       sessions[from] = {
         video,
-        downloadUrl: result.download.url,
+        buffer,
         filesize,
         step: "choose_format",
       };
+
+      const filesizeMB = (filesize / (1024 * 1024)).toFixed(2);
 
       const info = `
 🎧 *SENAL MD Song Downloader*
@@ -61,7 +93,6 @@ cmd(
 ⚠️ _Note: Audio voice notes have a max size of 16 MB on WhatsApp._
 `;
 
-      // Send thumbnail + info + format request
       await robin.sendMessage(
         from,
         {
@@ -77,7 +108,6 @@ cmd(
   }
 );
 
-// Handle user reply: choose audio or document
 cmd(
   {
     pattern: "1",
@@ -88,39 +118,19 @@ cmd(
     const session = sessions[from];
     if (!session || session.step !== "choose_format") return;
 
+    session.step = "sending";
+
     try {
-      // If file size exceeds limit, force sending as document instead of audio
       if (session.filesize > MAX_AUDIO_SIZE) {
         await reply(
           `⚠️ *Audio file is too large (${(session.filesize / (1024 * 1024)).toFixed(2)} MB) for voice note.*\n` +
             `Sending as document instead...`
         );
-
-        await robin.sendMessage(
-          from,
-          {
-            document: { url: session.downloadUrl },
-            mimetype: "audio/mpeg",
-            fileName: `${session.video.title.slice(0, 30)}.mp3`,
-            caption: "✅ *Document sent by SENAL MD* ❤️",
-          },
-          { quoted: mek }
-        );
+        await sendDocument(robin, from, mek, session.buffer, session.video.title);
         await reply("✅ *Document sent successfully!* 📄");
       } else {
         await reply("⏳ Uploading audio as voice note...");
-        const res = await axios.get(session.downloadUrl, { responseType: "arraybuffer" });
-        const buffer = Buffer.from(res.data);
-
-        await robin.sendMessage(
-          from,
-          {
-            audio: buffer,
-            mimetype: "audio/mpeg",
-            fileName: `${session.video.title.slice(0, 30)}.mp3`,
-          },
-          { quoted: mek }
-        );
+        await sendAudio(robin, from, mek, session.buffer, session.video.title);
         await reply("✅ *Audio sent successfully!* 🎧");
       }
     } catch (e) {
@@ -142,20 +152,11 @@ cmd(
     const session = sessions[from];
     if (!session || session.step !== "choose_format") return;
 
+    session.step = "sending";
+
     try {
       await reply("⏳ Uploading audio as document...");
-
-      await robin.sendMessage(
-        from,
-        {
-          document: { url: session.downloadUrl },
-          mimetype: "audio/mpeg",
-          fileName: `${session.video.title.slice(0, 30)}.mp3`,
-          caption: "✅ *Document sent by SENAL MD* ❤️",
-        },
-        { quoted: mek }
-      );
-
+      await sendDocument(robin, from, mek, session.buffer, session.video.title);
       await reply("✅ *Document sent successfully!* 📄");
     } catch (e) {
       console.error("Document send error:", e);
