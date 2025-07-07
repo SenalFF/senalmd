@@ -1,18 +1,18 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
-const { ytmp4 } = require("hydra_scraper");
+const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
 
-const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB for inline video
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // WhatsApp inline video max ~50MB
 const sessions = {};
 
-// 📥 Download from direct URL
+// 📥 Download file from URL
 async function downloadFile(url) {
   const res = await axios.get(url, { responseType: "arraybuffer" });
   return Buffer.from(res.data);
 }
 
-// 📹 Send as inline video
+// 🎥 Send as inline video
 async function sendVideo(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -40,7 +40,7 @@ async function sendDocument(robin, from, mek, buffer, title) {
   );
 }
 
-// 🎬 Main command
+// 🔍 Main video command
 cmd(
   {
     pattern: "video",
@@ -58,17 +58,14 @@ cmd(
       const video = searchResult.videos[0];
       if (!video) return reply("❌ *Couldn't find video. Try another keyword.*");
 
-      const url = video.url;
-      const quality = "360";
+      await reply("⏬ Fetching download link...");
 
-      await reply("🔗 Getting video link...");
-
-      const result = await ytmp4(url, quality);
-      if (!result?.status || !result.download) {
-        return reply("❌ Couldn't get video download URL.");
+      const result = await ytmp4(video.url);
+      if (!result?.download?.url) {
+        return reply("❌ *Couldn't get video download URL.*");
       }
 
-      const buffer = await downloadFile(result.download);
+      const buffer = await downloadFile(result.download.url);
       const filesize = buffer.length;
       const filesizeMB = (filesize / 1024 / 1024).toFixed(2);
 
@@ -84,17 +81,17 @@ cmd(
 
 🎞️ *Title:* ${video.title}
 ⏱️ *Duration:* ${video.timestamp}
-📦 *File Size:* ${filesizeMB} MB
+📦 *Size:* ${filesizeMB} MB
 👁️ *Views:* ${video.views.toLocaleString()}
-🔗 *URL:* ${url}
+🔗 *URL:* ${video.url}
 
-📁 *Choose the format:*
-1️⃣ Video
-2️⃣ Document
+📁 *Choose format:*
+1️⃣ Video (Play)
+2️⃣ Document (File)
 
 ✍️ _Reply with 1 or 2_
 
-⚠️ _WhatsApp max inline video: 50MB_
+⚠️ _Max size for inline video: 50MB_
 `;
 
       await robin.sendMessage(
@@ -107,7 +104,7 @@ cmd(
       );
     } catch (err) {
       console.error("YT VIDEO ERROR:", err);
-      return reply("❌ *An error occurred while processing the video.*");
+      return reply("❌ *Error getting video. Try again later.*");
     }
   }
 );
@@ -129,12 +126,11 @@ cmd(
       if (session.filesize > MAX_VIDEO_SIZE) {
         await reply(`⚠️ *Video too large (${(session.filesize / 1024 / 1024).toFixed(2)}MB). Sending as document...*`);
         await sendDocument(robin, from, mek, session.buffer, session.video.title);
-        await reply("✅ *Document sent successfully!* 📄");
       } else {
         await reply("📤 Sending video...");
         await sendVideo(robin, from, mek, session.buffer, session.video.title);
-        await reply("✅ *Video sent successfully!* 🎥");
       }
+      await reply("✅ *Video sent successfully!*");
     } catch (err) {
       console.error("Inline send error:", err);
       await reply("❌ *Failed to send video.*");
