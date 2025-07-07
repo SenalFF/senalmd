@@ -3,17 +3,18 @@ const yts = require("yt-search");
 const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
 
-const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // WhatsApp inline video max ~50MB
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB for inline video
 const sessions = {};
 
-// 📥 Download file from URL
+// 📥 Download file
 async function downloadFile(url) {
   const res = await axios.get(url, { responseType: "arraybuffer" });
   return Buffer.from(res.data);
 }
 
-// 🎥 Send as inline video
+// 🎞️ Send as video
 async function sendVideo(robin, from, mek, buffer, title) {
+  await robin.ws.refreshMediaConn(true); // Fix timeout
   await robin.sendMessage(
     from,
     {
@@ -28,25 +29,26 @@ async function sendVideo(robin, from, mek, buffer, title) {
 
 // 📄 Send as document
 async function sendDocument(robin, from, mek, buffer, title) {
+  await robin.ws.refreshMediaConn(true); // Fix timeout
   await robin.sendMessage(
     from,
     {
       document: buffer,
       mimetype: "video/mp4",
       fileName: `${title.slice(0, 30)}.mp4`,
-      caption: "✅ *Sent by SENAL MD* 🎥",
+      caption: "✅ *Document sent by SENAL MD* 🎥",
     },
     { quoted: mek }
   );
 }
 
-// 🔍 Main video command
+// 🔍 Main download command
 cmd(
   {
     pattern: "video",
-    desc: "📥 Download YouTube Video (MP4)",
+    desc: "📥 Download YouTube Video",
     category: "download",
-    react: "🎞️",
+    react: "📹",
   },
   async (robin, mek, m, { from, q, reply }) => {
     try {
@@ -60,10 +62,8 @@ cmd(
 
       await reply("⏬ Fetching download link...");
 
-      const result = await ytmp4(video.url);
-      if (!result?.download?.url) {
-        return reply("❌ *Couldn't get video download URL.*");
-      }
+      const result = await ytmp4(video.url); // Default 360p
+      if (!result?.download?.url) return reply("❌ Couldn't get video download URL.");
 
       const buffer = await downloadFile(result.download.url);
       const filesize = buffer.length;
@@ -90,8 +90,6 @@ cmd(
 2️⃣ Document (File)
 
 ✍️ _Reply with 1 or 2_
-
-⚠️ _Max size for inline video: 50MB_
 `;
 
       await robin.sendMessage(
@@ -103,8 +101,8 @@ cmd(
         { quoted: mek }
       );
     } catch (err) {
-      console.error("YT VIDEO ERROR:", err);
-      return reply("❌ *Error getting video. Try again later.*");
+      console.error("YT Video Error:", err);
+      return reply("❌ *Error downloading video. Try again later.*");
     }
   }
 );
@@ -127,12 +125,12 @@ cmd(
         await reply(`⚠️ *Video too large (${(session.filesize / 1024 / 1024).toFixed(2)}MB). Sending as document...*`);
         await sendDocument(robin, from, mek, session.buffer, session.video.title);
       } else {
-        await reply("📤 Sending video...");
+        await reply("📤 Uploading video...");
         await sendVideo(robin, from, mek, session.buffer, session.video.title);
       }
       await reply("✅ *Video sent successfully!*");
     } catch (err) {
-      console.error("Inline send error:", err);
+      console.error("Send video error:", err);
       await reply("❌ *Failed to send video.*");
     }
 
@@ -154,14 +152,14 @@ cmd(
     session.step = "sending";
 
     try {
-      await reply("📤 Sending as document...");
+      await reply("📤 Uploading document...");
       await sendDocument(robin, from, mek, session.buffer, session.video.title);
       await reply("✅ *Document sent successfully!* 📄");
     } catch (err) {
-      console.error("Document send error:", err);
-      await reply("❌ *Failed to send video.*");
+      console.error("Send doc error:", err);
+      await reply("❌ *Failed to send document.*");
     }
 
     delete sessions[from];
   }
-);
+)
