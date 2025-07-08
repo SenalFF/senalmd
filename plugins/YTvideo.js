@@ -3,16 +3,16 @@ const yts = require("yt-search");
 const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
 
-const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB limit
 const sessions = {};
 
-// 🔽 Download video
+// Download video
 async function downloadFile(url) {
   const res = await axios.get(url, { responseType: "arraybuffer" });
   return Buffer.from(res.data);
 }
 
-// 🎥 Send as inline video
+// Send video inline
 async function sendVideo(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -26,7 +26,7 @@ async function sendVideo(robin, from, mek, buffer, title) {
   );
 }
 
-// 📄 Send as document
+// Send as document
 async function sendDocument(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -40,14 +40,13 @@ async function sendDocument(robin, from, mek, buffer, title) {
   );
 }
 
-// ▶️ Main command
+// ▶️ .video command
 cmd(
   {
     pattern: "video",
     desc: "📥 YouTube Video Downloader",
     category: "download",
     react: "📹",
-    filename: __filename,
   },
   async (robin, mek, m, { q, reply }) => {
     const from = mek.key.remoteJid;
@@ -55,17 +54,16 @@ cmd(
     if (!q) return reply("🔍 *කරුණාකර වීඩියෝ නමක් හෝ YouTube ලින්ක් එකක් ලබාදෙන්න*");
 
     try {
-      await reply("🔎 Searching YouTube...");
+      await reply("🔎 Searching for your video...");
 
       const searchResult = await yts(q);
       const video = searchResult.videos[0];
-      if (!video) return reply("❌ *Video not found!*");
+      if (!video) return reply("❌ *Video not found. Try again.*");
 
-      const filesizeMB = video.seconds > 600 ? "⚠️ *Warning: Long video, size may exceed limits.*" : "";
-
+      // Save session
       sessions[from] = {
-        step: "waiting_reply",
         video,
+        step: "choose_format",
       };
 
       const info = `
@@ -76,13 +74,12 @@ cmd(
 👁️ *Views:* ${video.views.toLocaleString()}
 📤 *Uploaded:* ${video.ago}
 🔗 *URL:* ${video.url}
-${filesizeMB}
 
 📁 *Choose file type:*
-1️⃣ Video (Play Inline)
-2️⃣ Document (File Download)
+🔹 *video1* - Send as Video
+🔹 *video2* - Send as Document
 
-✍️ _Reply with 1 or 2_
+✍️ _Reply with *video1* or *video2*_
 `;
 
       await robin.sendMessage(
@@ -94,44 +91,45 @@ ${filesizeMB}
         { quoted: mek }
       );
     } catch (err) {
-      console.error("Video cmd error:", err);
-      reply("❌ *Error occurred, try again later.*");
+      console.error("YT Video Error:", err);
+      return reply("❌ *Error while searching video. Try again later.*");
     }
   }
 );
 
-// 🔁 Reply with 1 (Video)
+// 📽️ video1: send inline video
 cmd(
   {
-    pattern: "1",
-    on: "number",
+    pattern: "video1",
+    desc: "Send YouTube video inline",
     dontAddCommandList: true,
   },
   async (robin, mek, m, { reply }) => {
     const from = mek.key.remoteJid;
     const session = sessions[from];
+    if (!session || session.step !== "choose_format") return;
 
-    if (!session || session.step !== "waiting_reply") return;
+    session.step = "sending";
 
     try {
-      await reply("⏬ Downloading video...");
+      await reply("⏬ Fetching video download link...");
+      const result = await ytmp4(session.video.url, "360");
+      if (!result?.download?.url) return reply("❌ Couldn't get video download URL.");
 
-      const res = await ytmp4(session.video.url, "360");
-      if (!res?.download?.url) return reply("❌ Couldn't get video download URL.");
+      const buffer = await downloadFile(result.download.url);
+      const filesize = buffer.length;
 
-      const buffer = await downloadFile(res.download.url);
-      const size = buffer.length;
-
-      if (size > MAX_VIDEO_SIZE) {
-        await reply("⚠️ *File too big for inline play. Sending as document...*");
+      if (filesize > MAX_VIDEO_SIZE) {
+        await reply(`⚠️ *File is ${(filesize / 1024 / 1024).toFixed(2)} MB — sending as document instead.*`);
         await sendDocument(robin, from, mek, buffer, session.video.title);
       } else {
+        await reply("📤 Uploading inline video...");
         await sendVideo(robin, from, mek, buffer, session.video.title);
       }
 
-      await reply("✅ *Sent successfully!*");
-    } catch (e) {
-      console.error("Video1 send error:", e);
+      await reply("✅ *Video sent successfully!*");
+    } catch (err) {
+      console.error("Video1 send error:", err);
       await reply("❌ *Failed to send video.*");
     }
 
@@ -139,31 +137,32 @@ cmd(
   }
 );
 
-// 🔁 Reply with 2 (Document)
+// 📁 video2: send as document
 cmd(
   {
-    pattern: "2",
-    on: "number",
+    pattern: "video2",
+    desc: "Send YouTube video as document",
     dontAddCommandList: true,
   },
   async (robin, mek, m, { reply }) => {
     const from = mek.key.remoteJid;
     const session = sessions[from];
+    if (!session || session.step !== "choose_format") return;
 
-    if (!session || session.step !== "waiting_reply") return;
+    session.step = "sending";
 
     try {
-      await reply("⏬ Downloading video as document...");
+      await reply("⏬ Fetching video download link...");
+      const result = await ytmp4(session.video.url, "360");
+      if (!result?.download?.url) return reply("❌ Couldn't get video download URL.");
 
-      const res = await ytmp4(session.video.url, "360");
-      if (!res?.download?.url) return reply("❌ Couldn't get video download URL.");
-
-      const buffer = await downloadFile(res.download.url);
+      const buffer = await downloadFile(result.download.url);
+      await reply("📤 Uploading document...");
       await sendDocument(robin, from, mek, buffer, session.video.title);
 
-      await reply("✅ *Document sent!*");
-    } catch (e) {
-      console.error("Video2 send error:", e);
+      await reply("✅ *Document sent successfully!*");
+    } catch (err) {
+      console.error("Video2 send error:", err);
       await reply("❌ *Failed to send document.*");
     }
 
