@@ -1,9 +1,8 @@
 const { cmd } = require("../command");
 const axios = require("axios");
-const { tiktokdl } = require("ruhend-scraper"); // For TikTok
-const { instagramdl } = require("ruhend-scraper"); // For Instagram
+const { TiktokDL } = require("@nekochii/scraper");
 
-const MAX_INLINE_SIZE = 16 * 1024 * 1024; // 16 MB
+const MAX_INLINE = 16 * 1024 * 1024;
 const sessions = {};
 
 // Download buffer from URL
@@ -13,7 +12,7 @@ async function downloadBuffer(url) {
 }
 
 // Send inline video
-async function sendInlineVideo(robin, from, mek, buffer, title) {
+async function sendInline(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
     {
@@ -27,44 +26,47 @@ async function sendInlineVideo(robin, from, mek, buffer, title) {
 }
 
 // Send as document
-async function sendDocumentVideo(robin, from, mek, buffer, title) {
+async function sendDocument(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
     {
       document: buffer,
       mimetype: "video/mp4",
       fileName: `${title.slice(0, 30)}.mp4`,
-      caption: "📁 *Sent by SENAL MD*",
+      caption: "✅ *TikTok video sent by SENAL MD*",
     },
     { quoted: mek }
   );
 }
 
-// ========== TikTok Downloader ==========
+// ⏬ Main TikTok Command
 cmd(
   {
     pattern: "tt",
-    desc: "📥 Download TikTok Video",
+    desc: "📥 Download TikTok video",
     category: "download",
     react: "🎵",
   },
   async (robin, mek, m, { q, reply }) => {
     const from = mek.key.remoteJid;
-    if (!q || !q.includes("tiktok.com")) return reply("🔗 *Please provide a valid TikTok video link.*");
+    if (!q || !q.includes("tiktok.com")) return reply("🔗 *Please send a valid TikTok link.*");
 
     try {
-      await reply("🔍 Fetching TikTok video info...");
-      const data = await tiktokdl(q);
-      const result = data?.data[0];
-      if (!result?.url) return reply("❌ *Failed to get TikTok download link.*");
+      await reply("🔍 Fetching TikTok video...");
 
-      const buffer = await downloadBuffer(result.url);
-      const filesizeMB = (buffer.length / 1024 / 1024).toFixed(2);
+      const result = await TiktokDL(q);
+      const dl = result?.result?.nowm;
+      const thumbnail = result?.result?.thumbnail || "https://i.imgur.com/8fKQF1U.jpg";
+      const title = result?.result?.description || "TikTok_Video";
+
+      if (!dl) return reply("❌ *Failed to get download link.*");
+
+      const buffer = await downloadBuffer(dl);
+      const sizeMB = (buffer.length / 1024 / 1024).toFixed(2);
 
       sessions[from] = {
-        type: "tiktok",
-        url: result.url,
-        title: "TikTok_Video",
+        title,
+        url: dl,
         buffer,
         size: buffer.length,
         step: "await_reply",
@@ -73,64 +75,19 @@ cmd(
       await robin.sendMessage(
         from,
         {
-          image: { url: result.cover || "https://i.imgur.com/8fKQF1U.jpg" },
-          caption: `🎵 *TikTok Video Downloader*\n\n📦 *Size:* ${filesizeMB} MB\n\nReply:\n1️⃣ Inline Video (max 16MB)\n2️⃣ Document`,
+          image: { url: thumbnail },
+          caption: `🎵 *TikTok Downloader*\n\n📄 *Title:* ${title}\n📦 *Size:* ${sizeMB} MB\n\nChoose how to send:\n1️⃣ Inline Video\n2️⃣ Document\n\n_Reply with 1 or 2_`,
         },
         { quoted: mek }
       );
     } catch (err) {
-      console.error("TikTok error:", err);
-      return reply("❌ *Error downloading TikTok video.*");
+      console.error("TT error:", err);
+      reply("❌ *Error downloading TikTok video. Try again later.*");
     }
   }
 );
 
-// ========== Instagram Downloader ==========
-cmd(
-  {
-    pattern: "ig",
-    desc: "📥 Download Instagram Video",
-    category: "download",
-    react: "📸",
-  },
-  async (robin, mek, m, { q, reply }) => {
-    const from = mek.key.remoteJid;
-    if (!q || !q.includes("instagram.com")) return reply("🔗 *Please provide a valid Instagram video link.*");
-
-    try {
-      await reply("🔍 Fetching Instagram video info...");
-      const data = await instagramdl(q);
-      const result = data?.data[0];
-      if (!result?.url) return reply("❌ *Failed to get Instagram video link.*");
-
-      const buffer = await downloadBuffer(result.url);
-      const filesizeMB = (buffer.length / 1024 / 1024).toFixed(2);
-
-      sessions[from] = {
-        type: "instagram",
-        url: result.url,
-        title: "Instagram_Video",
-        buffer,
-        size: buffer.length,
-        step: "await_reply",
-      };
-
-      await robin.sendMessage(
-        from,
-        {
-          image: { url: result.thumbnail || "https://i.imgur.com/8fKQF1U.jpg" },
-          caption: `📸 *Instagram Video Downloader*\n\n📦 *Size:* ${filesizeMB} MB\n\nReply:\n1️⃣ Inline Video (max 16MB)\n2️⃣ Document`,
-        },
-        { quoted: mek }
-      );
-    } catch (err) {
-      console.error("Instagram error:", err);
-      return reply("❌ *Error downloading Instagram video.*");
-    }
-  }
-);
-
-// ========== Handle Reply: 1 ==========
+// 🧾 Handle reply 1 (Inline)
 cmd(
   {
     pattern: "1",
@@ -142,26 +99,25 @@ cmd(
     const session = sessions[from];
     if (!session || session.step !== "await_reply") return;
 
-    session.step = "sending";
-
     try {
-      if (session.size <= MAX_INLINE_SIZE) {
-        await reply("📤 Sending as inline video...");
-        await sendInlineVideo(robin, from, mek, session.buffer, session.title);
+      if (session.size > MAX_INLINE) {
+        await reply(`⚠️ Video is too large (${(session.size / 1024 / 1024).toFixed(2)} MB), sending as document...`);
+        await sendDocument(robin, from, mek, session.buffer, session.title);
       } else {
-        await reply("⚠️ Too large for inline. Sending as document...");
-        await sendDocumentVideo(robin, from, mek, session.buffer, session.title);
+        await reply("📤 Sending as inline video...");
+        await sendInline(robin, from, mek, session.buffer, session.title);
       }
+      await reply("✅ *Sent successfully!*");
     } catch (err) {
-      console.error("Reply 1 error:", err);
-      await reply("❌ Failed to send video.");
+      console.error("Inline error:", err);
+      await reply("❌ *Failed to send video.*");
     }
 
     delete sessions[from];
   }
 );
 
-// ========== Handle Reply: 2 ==========
+// 📁 Handle reply 2 (Document)
 cmd(
   {
     pattern: "2",
@@ -173,16 +129,15 @@ cmd(
     const session = sessions[from];
     if (!session || session.step !== "await_reply") return;
 
-    session.step = "sending";
-
     try {
       await reply("📤 Sending as document...");
-      await sendDocumentVideo(robin, from, mek, session.buffer, session.title);
+      await sendDocument(robin, from, mek, session.buffer, session.title);
+      await reply("✅ *Document sent!*");
     } catch (err) {
-      console.error("Reply 2 error:", err);
-      await reply("❌ Failed to send document.");
+      console.error("Doc error:", err);
+      await reply("❌ *Failed to send document.*");
     }
 
     delete sessions[from];
   }
-)
+);
