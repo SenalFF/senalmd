@@ -42,7 +42,7 @@ async function sendDocument(robin, from, mek, buffer, title) {
 // ⏬ Main TikTok Command
 cmd(
   {
-    pattern: "tt",
+    pattern: "tt2",
     desc: "📥 Download TikTok video",
     category: "download",
     react: "🎵",
