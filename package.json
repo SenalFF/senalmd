@@ -40,7 +40,7 @@
     "@kelvdra/scraper": "^1.0.27",
     "@nekochii/scraper": "^1.0.2",
     "hydra_scraper": "^1.0.18",
-    "ytdl-core": "^4.11.5",
+    "@mrnima/tiktok-downloader": "^1.0.0",
     "follow-redirects": "^1.15.9",
     "@blackamda/song_video_dl": "^1.1.0"
   }
