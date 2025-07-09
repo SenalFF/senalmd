@@ -1,17 +1,17 @@
 const { cmd } = require("../command");
-const { tiktokdl, tiktoks } = require("@kelvdra/scraper");
+const { ttdl, tiktoks } = require("@kelvdra/scraper");
 const axios = require("axios");
 
 const MAX_INLINE_SIZE = 16 * 1024 * 1024; // 16 MB
 const sessions = {};
 
-// 🔁 Download file to Buffer
+// 🧲 Download file
 async function downloadFile(url) {
   const res = await axios.get(url, { responseType: "arraybuffer" });
   return Buffer.from(res.data);
 }
 
-// ▶️ .tt command - Search & ask file type
+// 🎬 .tt command — TikTok video handler
 cmd(
   {
     pattern: "tiktok",
@@ -22,40 +22,38 @@ cmd(
   async (robin, mek, m, { q, reply }) => {
     const from = mek.key.remoteJid;
 
-    if (!q) return reply("🔍 *Please enter a TikTok link or search term*");
+    if (!q) return reply("❗ *Please enter a TikTok link or search keyword*");
 
     let link = q;
     if (!q.includes("tiktok.com")) {
-      // Search by keyword
       const results = await tiktoks(q);
-      if (!results || !results[0]) return reply("❌ *No TikTok found.*");
-
+      if (!results || !results[0]?.url) return reply("❌ *No results found.*");
       link = results[0].url;
     }
 
     try {
-      const res = await tiktokdl(link);
-      if (!res?.video?.url) return reply("❌ *Failed to get download link.*");
+      const res = await ttdl(link);
+      if (!res?.video?.url) return reply("❌ *Failed to get download URL.*");
 
       sessions[from] = {
         url: res.video.url,
-        thumb: res.thumbnail,
         title: res.description || "TikTok Video",
+        thumb: res.thumbnail,
         step: "choose_format",
       };
 
       const info = `
-🎬 *TIKTOK VIDEO DOWNLOADER*
+🎬 *TikTok Video Downloader*
 
 📝 *Title:* ${res.description || "N/A"}
-📺 *Quality:* HD
-🎧 *Audio Available:* ${res.audio?.url ? "Yes" : "No"}
+🎧 *Audio:* ${res.audio?.url ? "Available" : "Not Available"}
+📦 *Quality:* HD
 
 📁 *Choose file type to receive:*
-1️⃣ Video (Inline)
-2️⃣ Document (File)
+1️⃣ Inline Video
+2️⃣ Document
 
-✍️ _Please reply with 1 or 2_
+✍️ _Reply with 1 or 2_
 `;
 
       await robin.sendMessage(
@@ -68,12 +66,12 @@ cmd(
       );
     } catch (e) {
       console.error("TikTok error:", e);
-      reply("❌ *Error downloading TikTok video.*");
+      return reply("❌ *Error downloading TikTok video.*");
     }
   }
 );
 
-// 1️⃣ Inline video
+// 1️⃣ Send as inline
 cmd(
   {
     pattern: "1",
@@ -85,25 +83,24 @@ cmd(
     const session = sessions[from];
     if (!session || session.step !== "choose_format") return;
 
-    session.step = "sending";
-
     try {
       const buffer = await downloadFile(session.url);
+      const size = buffer.length;
 
-      if (buffer.length > MAX_INLINE_SIZE) {
-        await reply("⚠️ *Video too large for inline. Sending as document...*");
+      if (size > MAX_INLINE_SIZE) {
+        await reply(`⚠️ File is ${(size / 1024 / 1024).toFixed(2)}MB. Sending as document...`);
         await robin.sendMessage(
           from,
           {
             document: buffer,
             mimetype: "video/mp4",
             fileName: `${session.title.slice(0, 30)}.mp4`,
-            caption: "🎥 *Sent by SENAL MD*",
+            caption: "📄 *Sent by SENAL MD*",
           },
           { quoted: mek }
         );
       } else {
-        await reply("📤 *Uploading video...*");
+        await reply("📤 Uploading video...");
         await robin.sendMessage(
           from,
           {
@@ -116,17 +113,17 @@ cmd(
         );
       }
 
-      await reply("✅ *Video sent successfully!*");
+      await reply("✅ *Sent successfully!*");
     } catch (e) {
-      console.error("Inline send error:", e);
-      reply("❌ *Failed to send video.*");
+      console.error("Inline video error:", e);
+      return reply("❌ *Failed to send video.*");
     }
 
     delete sessions[from];
   }
 );
 
-// 2️⃣ Document
+// 2️⃣ Send as document
 cmd(
   {
     pattern: "2",
@@ -138,12 +135,10 @@ cmd(
     const session = sessions[from];
     if (!session || session.step !== "choose_format") return;
 
-    session.step = "sending";
-
     try {
       const buffer = await downloadFile(session.url);
+      await reply("📤 Uploading as document...");
 
-      await reply("📤 *Uploading document...*");
       await robin.sendMessage(
         from,
         {
@@ -157,8 +152,8 @@ cmd(
 
       await reply("✅ *Document sent successfully!*");
     } catch (e) {
-      console.error("Doc send error:", e);
-      reply("❌ *Failed to send document.*");
+      console.error("Document send error:", e);
+      return reply("❌ *Failed to send document.*");
     }
 
     delete sessions[from];
