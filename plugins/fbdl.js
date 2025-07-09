@@ -1,5 +1,5 @@
 const { cmd } = require("../command");
-const { fbdl } = require("ruhend-scraper");
+
 const axios = require("axios");
 
 const sessions = {};
