@@ -41,6 +41,7 @@
     "@nekochii/scraper": "^1.0.2",
     "hydra_scraper": "^1.0.18",
     "ytdl-core": "^4.11.5",
+    "follow-redirects": "^1.15.9",
     "@blackamda/song_video_dl": "^1.1.0"
   }
 }
