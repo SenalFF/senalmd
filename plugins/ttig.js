@@ -1,30 +1,36 @@
-// TikTok Downloader using @mrnima/tiktok-downloader
-
 const { cmd } = require("../command");
 const axios = require("axios");
-const { downloadTiktok } = require("@mrnima/tiktok-downloader");
+const { tiktokdl } = require("@kelvdra/scraper");
 const { https } = require("follow-redirects");
 
-const MAX_INLINE_SIZE = 16 * 1024 * 1024; // 16MB
+const MAX_INLINE_SIZE = 16 * 1024 * 1024; // 16 MB
 const sessions = {};
 
-// Normalize TikTok URL
-async function normalizeTikTokLink(link) {
+// ✅ Normalize TikTok Link
+async function normalizeTikTokLink(input) {
   return new Promise((resolve, reject) => {
-    if (!link.startsWith("http")) link = "https://" + link;
-    const req = https.get(link, (res) => resolve(res.responseUrl || link));
-    req.on("error", reject);
+    try {
+      if (!input.startsWith("http")) input = "https://" + input;
+
+      const req = https.get(input, (res) => {
+        resolve(res.responseUrl || input); // Final redirected URL
+      });
+
+      req.on("error", reject);
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 
-// Download buffer
-async function getBuffer(url) {
+// 🔽 Download video buffer
+async function downloadBuffer(url) {
   const res = await axios.get(url, { responseType: "arraybuffer" });
   return Buffer.from(res.data);
 }
 
-// Send as video
-async function sendVideo(robin, from, mek, buffer, title) {
+// 🎥 Inline send
+async function sendInline(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
     {
@@ -36,7 +42,7 @@ async function sendVideo(robin, from, mek, buffer, title) {
   );
 }
 
-// Send as document
+// 📄 Send as document
 async function sendDoc(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -44,70 +50,81 @@ async function sendDoc(robin, from, mek, buffer, title) {
       document: buffer,
       mimetype: "video/mp4",
       fileName: `${title.slice(0, 30)}.mp4`,
-      caption: "📤 *TikTok Video by SENAL MD*",
+      caption: `📄 *Sent by SENAL MD*`,
     },
     { quoted: mek }
   );
 }
 
-// TikTok command
+// ▶️ Command: .tt
 cmd(
   {
     pattern: "tiktok",
-    desc: "📥 Download TikTok video",
+    desc: "📥 TikTok Video Downloader",
     category: "download",
     react: "🎵",
   },
   async (robin, mek, m, { q, reply }) => {
     const from = mek.key.remoteJid;
-    if (!q || !q.includes("tiktok")) return reply("🔗 *Please provide a valid TikTok link.*");
-
     try {
-      await reply("🔍 Getting TikTok video...");
-
-      const fullUrl = await normalizeTikTokLink(q);
-      const result = await downloadTiktok(fullUrl);
-      if (!result.status || !result.result.dl_link.download_mp4_hd) {
-        return reply("❌ *Failed to get video download link.*");
+      if (!q || !q.includes("tiktok.com")) {
+        return reply("🔗 *Please provide a valid TikTok link.*");
       }
 
-      const videoURL = result.result.dl_link.download_mp4_hd || result.result.dl_link.download_mp4_1;
-      const title = result.result.title || "TikTok Video";
-      const thumb = result.result.image;
-      const buffer = await getBuffer(videoURL);
-      const sizeMB = (buffer.length / 1024 / 1024).toFixed(2);
+      await reply("🔍 Resolving and fetching TikTok video...");
+
+      const fullUrl = await normalizeTikTokLink(q);
+
+      const res = await tiktokdl(fullUrl);
+      if (!res?.status || !res?.result?.video?.url) {
+        return reply("❌ *Failed to get download link.*");
+      }
+
+      const { desc, author, duration, thumbnail, video } = res.result;
+      const title = desc || "TikTok Video";
+
+      const buffer = await downloadBuffer(video.url);
+      const filesize = buffer.length;
+      const sizeMB = (filesize / 1024 / 1024).toFixed(2);
 
       sessions[from] = {
-        buffer,
         title,
-        sizeMB,
-        step: "tt_select",
+        buffer,
+        filesize,
+        step: "choose_tiktok",
       };
+
+      const info = `
+🎥 *TikTok Video Found*
+
+📝 *Title:* ${title}
+👤 *Author:* ${author.nickname} (@${author.unique_id})
+⏱️ *Duration:* ${duration}s
+📦 *Size:* ${sizeMB} MB
+
+📁 Choose file type:
+1️⃣ Inline Video
+2️⃣ Document
+
+✍️ _Please reply with 1 or 2_
+`;
 
       await robin.sendMessage(
         from,
         {
-          image: { url: thumb },
-          caption: `🎥 *TikTok Video Found!*
-
-📝 *Title:* ${title}
-📦 *Size:* ${sizeMB} MB
-
-1️⃣ Inline Video
-2️⃣ Document
-
-_Reply with 1 or 2 to receive it._`,
+          image: { url: thumbnail },
+          caption: info,
         },
         { quoted: mek }
       );
     } catch (e) {
-      console.error("TikTok DL Error:", e);
-      reply("❌ *Failed to download TikTok video.*");
+      console.error("TikTok Download Error:", e);
+      return reply("❌ *Error downloading TikTok video.*");
     }
   }
 );
 
-// Reply with "1" for inline
+// 1️⃣ Inline send
 cmd(
   {
     pattern: "1",
@@ -116,21 +133,28 @@ cmd(
   },
   async (robin, mek, m, { reply }) => {
     const from = mek.key.remoteJid;
-    const s = sessions[from];
-    if (!s || s.step !== "tt_select") return;
+    const session = sessions[from];
+    if (!session || session.step !== "choose_tiktok") return;
 
-    if (s.buffer.length > MAX_INLINE_SIZE) {
-      await reply("⚠️ File too large. Sending as document.");
-      await sendDoc(robin, from, mek, s.buffer, s.title);
-    } else {
-      await sendVideo(robin, from, mek, s.buffer, s.title);
+    try {
+      if (session.filesize > MAX_INLINE_SIZE) {
+        await reply("⚠️ *Too large for inline. Sending as document...*");
+        await sendDoc(robin, from, mek, session.buffer, session.title);
+      } else {
+        await reply("📤 Uploading...");
+        await sendInline(robin, from, mek, session.buffer, session.title);
+      }
+      await reply("✅ *Video sent!*");
+    } catch (err) {
+      console.error("Inline Error:", err);
+      await reply("❌ *Failed to send video.*");
     }
 
     delete sessions[from];
   }
 );
 
-// Reply with "2" for document
+// 2️⃣ Document send
 cmd(
   {
     pattern: "2",
@@ -139,10 +163,18 @@ cmd(
   },
   async (robin, mek, m, { reply }) => {
     const from = mek.key.remoteJid;
-    const s = sessions[from];
-    if (!s || s.step !== "tt_select") return;
+    const session = sessions[from];
+    if (!session || session.step !== "choose_tiktok") return;
 
-    await sendDoc(robin, from, mek, s.buffer, s.title);
+    try {
+      await reply("📤 Uploading as document...");
+      await sendDoc(robin, from, mek, session.buffer, session.title);
+      await reply("✅ *Sent successfully!*");
+    } catch (err) {
+      console.error("Document Error:", err);
+      await reply("❌ *Failed to send document.*");
+    }
+
     delete sessions[from];
   }
 );
