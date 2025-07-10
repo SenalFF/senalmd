@@ -1,160 +1,148 @@
 const { cmd } = require("../command");
-const { ttdl, tiktoks } = require("@kelvdra/scraper");
-const axios = require("axios");
+const { ttdl } = require("ruhend-scraper");
 
-const MAX_INLINE_SIZE = 16 * 1024 * 1024; // 16 MB
 const sessions = {};
 
-// 🧲 Download file
-async function downloadFile(url) {
-  const res = await axios.get(url, { responseType: "arraybuffer" });
-  return Buffer.from(res.data);
-}
-
-// 🎬 .tt command — TikTok video handler
 cmd(
   {
-    pattern: "tiktok",
-    desc: "📲 TikTok Downloader",
+    pattern: "ttdl",
+    desc: "TikTok Video Downloader",
     category: "download",
-    react: "🎵",
+    react: "🎬",
   },
-  async (robin, mek, m, { q, reply }) => {
-    const from = mek.key.remoteJid;
+  async (robin, mek, m, { q, from, reply }) => {
+    if (!q) return reply("🔍 *TikTok නමක් හෝ ලින්ක් එකක් දෙන්න...*");
 
-    if (!q) return reply("❗ *Please enter a TikTok link or search keyword*");
+    const regex = /(https?:\/\/)?(www\.)?(vm\.tiktok\.com|vt\.tiktok\.com|tiktok\.com)\/[^\s]+/;
+    const match = q.match(regex);
+    const url = match ? match[0] : null;
 
-    let link = q;
-    if (!q.includes("tiktok.com")) {
-      const results = await tiktoks(q);
-      if (!results || !results[0]?.url) return reply("❌ *No results found.*");
-      link = results[0].url;
-    }
+    if (!url) return reply("❌ *වලංගු TikTok ලින්ක් එකක් දාන්න!*");
 
     try {
-      const res = await ttdl(link);
-      if (!res?.video?.url) return reply("❌ *Failed to get download URL.*");
+      const data = await ttdl(url);
+      if (!data || !data.video) return reply("❌ Couldn't fetch video details!");
+
+      const {
+        title,
+        author,
+        username,
+        published,
+        like,
+        comment,
+        share,
+        views,
+        bookmark,
+        video,
+        music,
+        cover,
+      } = data;
 
       sessions[from] = {
-        url: res.video.url,
-        title: res.description || "TikTok Video",
-        thumb: res.thumbnail,
+        title,
+        video,
+        audio: music,
+        cover,
         step: "choose_format",
+        type: null,
       };
-
-      const info = `
-🎬 *TikTok Video Downloader*
-
-📝 *Title:* ${res.description || "N/A"}
-🎧 *Audio:* ${res.audio?.url ? "Available" : "Not Available"}
-📦 *Quality:* HD
-
-📁 *Choose file type to receive:*
-1️⃣ Inline Video
-2️⃣ Document
-
-✍️ _Reply with 1 or 2_
-`;
 
       await robin.sendMessage(
         from,
         {
-          image: { url: res.thumbnail },
-          caption: info,
+          image: { url: cover },
+          caption:
+            `*🎬 SENAL MD TikTok Downloader*\n\n` +
+            `🎵 *Title:* ${title}\n` +
+            `👤 *User:* ${author} (@${username})\n` +
+            `📅 *Date:* ${published}\n` +
+            `👁 *Views:* ${views} | 👍 ${like} | 💬 ${comment}\n\n` +
+            `📁 *File Type එක තෝරන්න:*\n1. Audio\n2. Video`,
         },
         { quoted: mek }
       );
     } catch (e) {
-      console.error("TikTok error:", e);
-      return reply("❌ *Error downloading TikTok video.*");
+      console.error(e);
+      return reply(`❌ Error: ${e.message}`);
     }
   }
 );
 
-// 1️⃣ Send as inline
+// Step 2: Choose Format
 cmd(
   {
     pattern: "1",
     on: "number",
     dontAddCommandList: true,
   },
-  async (robin, mek, m, { reply }) => {
-    const from = mek.key.remoteJid;
+  async (robin, mek, m, { from }) => {
     const session = sessions[from];
     if (!session || session.step !== "choose_format") return;
 
-    try {
-      const buffer = await downloadFile(session.url);
-      const size = buffer.length;
+    session.type = "audio";
+    session.step = "choose_send_type";
 
-      if (size > MAX_INLINE_SIZE) {
-        await reply(`⚠️ File is ${(size / 1024 / 1024).toFixed(2)}MB. Sending as document...`);
-        await robin.sendMessage(
-          from,
-          {
-            document: buffer,
-            mimetype: "video/mp4",
-            fileName: `${session.title.slice(0, 30)}.mp4`,
-            caption: "📄 *Sent by SENAL MD*",
-          },
-          { quoted: mek }
-        );
-      } else {
-        await reply("📤 Uploading video...");
-        await robin.sendMessage(
-          from,
-          {
-            video: buffer,
-            mimetype: "video/mp4",
-            fileName: `${session.title.slice(0, 30)}.mp4`,
-            caption: "🎥 *Sent by SENAL MD*",
-          },
-          { quoted: mek }
-        );
-      }
-
-      await reply("✅ *Sent successfully!*");
-    } catch (e) {
-      console.error("Inline video error:", e);
-      return reply("❌ *Failed to send video.*");
-    }
-
-    delete sessions[from];
+    return robin.sendMessage(from, {
+      text: "*📦 File එක කොහොමද එවන්න?*\n1. Normal\n2. Document",
+    }, { quoted: mek });
   }
 );
 
-// 2️⃣ Send as document
 cmd(
   {
     pattern: "2",
     on: "number",
     dontAddCommandList: true,
   },
-  async (robin, mek, m, { reply }) => {
-    const from = mek.key.remoteJid;
+  async (robin, mek, m, { from }) => {
     const session = sessions[from];
-    if (!session || session.step !== "choose_format") return;
+    if (!session) return;
 
-    try {
-      const buffer = await downloadFile(session.url);
-      await reply("📤 Uploading as document...");
+    if (session.step === "choose_format") {
+      session.type = "video";
+      session.step = "choose_send_type";
 
-      await robin.sendMessage(
-        from,
-        {
-          document: buffer,
-          mimetype: "video/mp4",
-          fileName: `${session.title.slice(0, 30)}.mp4`,
-          caption: "📄 *Sent by SENAL MD*",
-        },
-        { quoted: mek }
-      );
-
-      await reply("✅ *Document sent successfully!*");
-    } catch (e) {
-      console.error("Document send error:", e);
-      return reply("❌ *Failed to send document.*");
+      return robin.sendMessage(from, {
+        text: "*📦 File එක කොහොමද එවන්න?*\n1. Normal\n2. Document",
+      }, { quoted: mek });
     }
+
+    if (session.step === "choose_send_type") {
+      const url = session.type === "audio" ? session.audio : session.video;
+      const mimetype = session.type === "audio" ? "audio/mp4" : "video/mp4";
+      const extension = session.type === "audio" ? "mp3" : "mp4";
+
+      await robin.sendMessage(from, {
+        document: { url },
+        mimetype,
+        fileName: `${session.title}.${extension}`,
+        caption: "✅ 𝐅𝐢𝐥𝐞 𝐬𝐞𝐧𝐭 𝐛𝐲 𝐒𝐄𝐍𝐀𝐋 𝐌𝐃 ❤️",
+      }, { quoted: mek });
+
+      delete sessions[from];
+    }
+  }
+);
+
+// Step 3: Normal File Send
+cmd(
+  {
+    pattern: "1",
+    on: "number",
+    dontAddCommandList: true,
+  },
+  async (robin, mek, m, { from }) => {
+    const session = sessions[from];
+    if (!session || session.step !== "choose_send_type") return;
+
+    const url = session.type === "audio" ? session.audio : session.video;
+    const mimetype = session.type === "audio" ? "audio/mp4" : "video/mp4";
+
+    await robin.sendMessage(from, {
+      [session.type]: { url },
+      mimetype,
+      caption: `🎧 ${session.title}`,
+    }, { quoted: mek });
 
     delete sessions[from];
   }
