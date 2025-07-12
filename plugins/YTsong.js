@@ -2,15 +2,14 @@ const { cmd } = require("../command");
 const yts = require("yt-search");
 const { ytmp3 } = require("@kelvdra/scraper");
 const axios = require("axios");
+const fs = require("fs");
+const path = require("path");
+const { uploadAndGetBuffer } = require("../lib/senaldb"); // ✅ GoFile uploader
 
-const MAX_AUDIO_SIZE = 16 * 1024 * 1024; // 16 MB WhatsApp audio limit
+const MAX_AUDIO_SIZE = 16 * 1024 * 1024; // 16MB
 const sessions = {};
 
-async function downloadFile(url) {
-  const res = await axios.get(url, { responseType: "arraybuffer" });
-  return Buffer.from(res.data);
-}
-
+// Send as voice/audio
 async function sendAudio(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -23,12 +22,13 @@ async function sendAudio(robin, from, mek, buffer, title) {
   );
 }
 
-async function sendDocument(robin, from, mek, buffer, title) {
+// Send as document
+async function sendDocument(robin, from, mek, buffer, title, mimeType = "audio/mpeg") {
   await robin.sendMessage(
     from,
     {
       document: buffer,
-      mimetype: "audio/mpeg",
+      mimetype: mimeType,
       fileName: `${title.slice(0, 30)}.mp3`,
       caption: "✅ *Document sent by SENAL MD* ❤️",
     },
@@ -36,6 +36,7 @@ async function sendDocument(robin, from, mek, buffer, title) {
   );
 }
 
+// .play command
 cmd(
   {
     pattern: "play",
@@ -58,20 +59,30 @@ cmd(
       const result = await ytmp3(video.url, "mp3");
       if (!result?.download?.url) return reply("⚠️ *Could not fetch the download link. Try again later.*");
 
-      // Download file once, buffer cache
-      const buffer = await downloadFile(result.download.url);
+      const fileName = `${video.title.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 40)}.mp3`;
+      const filePath = path.join(__dirname, "..", "downloads", fileName);
 
-      // Measure size from actual buffer
+      // Save file to disk
+      const writer = fs.createWriteStream(filePath);
+      const audioStream = await axios.get(result.download.url, { responseType: "stream" });
+      await new Promise((resolve, reject) => {
+        audioStream.data.pipe(writer);
+        writer.on("finish", resolve);
+        writer.on("error", reject);
+      });
+
+      // Upload and get buffer from SenalDB
+      const { buffer, mimeType } = await uploadAndGetBuffer(filePath);
       const filesize = buffer.length;
+      const filesizeMB = (filesize / (1024 * 1024)).toFixed(2);
 
       sessions[from] = {
         video,
         buffer,
+        mimeType,
         filesize,
         step: "choose_format",
       };
-
-      const filesizeMB = (filesize / (1024 * 1024)).toFixed(2);
 
       const info = `
 🎧 *SENAL MD Song Downloader*
@@ -107,6 +118,7 @@ cmd(
   }
 );
 
+// Reply: 1️⃣ Audio
 cmd(
   {
     pattern: "1",
@@ -125,7 +137,7 @@ cmd(
           `⚠️ *Audio file is too large (${(session.filesize / (1024 * 1024)).toFixed(2)} MB) for voice note.*\n` +
             `Sending as document instead...`
         );
-        await sendDocument(robin, from, mek, session.buffer, session.video.title);
+        await sendDocument(robin, from, mek, session.buffer, session.video.title, session.mimeType);
         await reply("✅ *Document sent successfully!* 📄");
       } else {
         await reply("⏳ Uploading audio as voice note...");
@@ -141,6 +153,7 @@ cmd(
   }
 );
 
+// Reply: 2️⃣ Document
 cmd(
   {
     pattern: "2",
@@ -155,7 +168,7 @@ cmd(
 
     try {
       await reply("⏳ Uploading audio as document...");
-      await sendDocument(robin, from, mek, session.buffer, session.video.title);
+      await sendDocument(robin, from, mek, session.buffer, session.video.title, session.mimeType);
       await reply("✅ *Document sent successfully!* 📄");
     } catch (e) {
       console.error("Document send error:", e);
