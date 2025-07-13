@@ -7,12 +7,8 @@ const MAX_AUDIO_SIZE = 16 * 1024 * 1024; // 16MB WhatsApp limit
 
 // Download file using axios
 async function downloadFile(url) {
-  try {
-    const res = await axios.get(url, { responseType: "arraybuffer" });
-    return Buffer.from(res.data);
-  } catch (err) {
-    throw new Error("❌ බාගැනීම අසාර්ථකයි.");
-  }
+  const res = await axios.get(url, { responseType: "arraybuffer" });
+  return Buffer.from(res.data);
 }
 
 // Normalize input (YouTube link or search text)
@@ -80,15 +76,7 @@ cmd(
 
       const title = video.title;
 
-      await reply("⏬ _බාගැනීම සකසමින්..._");
-
-      const result = await ytmp3(url, "128");
-      if (!result?.download?.url) return reply("❌ *බාගැනීම අසාර්ථකයි.*");
-
-      const buffer = await downloadFile(result.download.url);
-      const filesize = buffer.length;
-      const filesizeMB = (filesize / (1024 * 1024)).toFixed(2);
-
+      // Send details first (before download)
       const info = `
 🎧 *𝐘𝐨𝐮𝐓𝐮𝐛𝐞 𝐌𝐏𝟑 𝐁𝐲 SENAL MD*
 
@@ -96,8 +84,9 @@ cmd(
 ⏱️ *Duration:* ${video.timestamp}
 👁️ *Views:* ${video.views.toLocaleString()}
 📤 *Uploaded:* ${video.ago}
-📦 *File Size:* ${filesizeMB} MB
 🔗 *Link:* ${url}
+
+⏬ _බාගැනීම සකසමින්..._
       `.trim();
 
       await robin.sendMessage(
@@ -106,7 +95,15 @@ cmd(
         { quoted: mek }
       );
 
-      await reply("📤 _යැවෙමින් පවතී..._");
+      // Start download after sending message
+      const result = await ytmp3(url, "128");
+      if (!result?.download?.url) return reply("❌ *බාගැනීම අසාර්ථකයි.*");
+
+      const buffer = await downloadFile(result.download.url);
+      const filesize = buffer.length;
+      const filesizeMB = (filesize / (1024 * 1024)).toFixed(2);
+
+      await reply(`📤 _ගීතය (${filesizeMB}MB) යැවෙමින් පවතී..._`);
 
       if (filesize <= MAX_AUDIO_SIZE) {
         await sendAudio(robin, from, mek, buffer, title);
@@ -116,7 +113,6 @@ cmd(
         await sendDocument(robin, from, mek, buffer, title);
         await reply("✅ *📄 Document සාර්ථකව යැවුණි!*");
       }
-
     } catch (e) {
       console.error("Play Command Error:", e);
       await reply("❌ *දෝෂයක් සිදුවිය. කරුණාකර නැවත උත්සාහ කරන්න.*");
