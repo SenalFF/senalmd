@@ -1,15 +1,21 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
 const { ytmp3 } = require("@kelvdra/scraper");
-const got = require("got");
 const axios = require("axios");
 
-const MAX_AUDIO_SIZE = 16 * 1024 * 1024; // 16MB WhatsApp voice note limit
+const MAX_AUDIO_SIZE = 16 * 1024 * 1024; // 16MB WhatsApp limit
 const sessions = {};
 
-// 🧲 Downloader using got with fallback to axios
+// Dynamic import for got (ESM module)
+async function getGot() {
+  const mod = await import('got');
+  return mod.default;
+}
+
+// --- Downloader with got + axios fallback ---
 async function downloadFile(url) {
   try {
+    const got = await getGot();
     const res = await got(url, { responseType: "buffer" });
     return res.body;
   } catch (e1) {
@@ -23,7 +29,7 @@ async function downloadFile(url) {
   }
 }
 
-// 🎵 Send as voice note
+// Send as audio (voice note)
 async function sendAudio(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -31,13 +37,12 @@ async function sendAudio(robin, from, mek, buffer, title) {
       audio: buffer,
       mimetype: "audio/mpeg",
       fileName: `${title.slice(0, 30)}.mp3`,
-      ptt: true,
     },
     { quoted: mek }
   );
 }
 
-// 📄 Send as document
+// Send as document
 async function sendDocument(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -45,13 +50,13 @@ async function sendDocument(robin, from, mek, buffer, title) {
       document: buffer,
       mimetype: "audio/mpeg",
       fileName: `${title.slice(0, 30)}.mp3`,
-      caption: "✅ *Document sent by SENAL MD* ❤️",
+      caption: "✅ Document sent by SENAL MD ❤️",
     },
     { quoted: mek }
   );
 }
 
-// 🎧 .play command
+// .play command
 cmd(
   {
     pattern: "play",
@@ -61,14 +66,15 @@ cmd(
   },
   async (robin, mek, m, { from, q, reply }) => {
     try {
-      if (!q) return reply("🔍 *Please provide a song name or YouTube link.*");
+      if (!q) return reply("🔍 Please provide a song name or YouTube URL.");
 
       await reply("🔎 Searching for your song...");
       const searchResult = await yts(q);
       const video = searchResult.videos[0];
-      if (!video) return reply("❌ *No results found. Try another keyword.*");
+      if (!video) return reply("❌ *No results found.*");
 
-      const { title, url, timestamp, views, ago, thumbnail } = video;
+      const title = video.title;
+      const url = video.url;
 
       await reply("🎧 Fetching download link...");
       const result = await ytmp3(url, "128");
@@ -86,28 +92,25 @@ cmd(
       };
 
       const info = `
-🎧 *SENAL MD Song Downloader*
+🎧 SENAL MD Song Downloader
 
-🎶 *Title:* ${title}
-⏱️ *Duration:* ${timestamp}
-👁️ *Views:* ${views.toLocaleString()}
-📤 *Uploaded:* ${ago}
-📦 *File Size:* ${filesizeMB} MB
-🔗 *URL:* ${url}
+🎶 Title: ${title} 
+⏱️ Duration: ${video.timestamp} 
+👁️ Views: ${video.views.toLocaleString()} 
+📤 Uploaded: ${video.ago} 
+📦 File Size: ${filesizeMB} MB 
+🔗 URL: ${url}
 
-📁 *Select format:*
-1️⃣ Voice Note
-2️⃣ Document
+📁 Choose format: 
+1️⃣ Voice Note 
+2️⃣ Document 
 
-✍️ _Reply with 1 or 2_
+✍️ Reply with 1 or 2
 `;
 
       await robin.sendMessage(
         from,
-        {
-          image: { url: thumbnail },
-          caption: info,
-        },
+        { image: { url: video.thumbnail }, caption: info },
         { quoted: mek }
       );
     } catch (e) {
@@ -117,7 +120,7 @@ cmd(
   }
 );
 
-// 🔢 Reply 1️⃣: Send as voice note (if under 16MB)
+// Reply: 1 (voice note)
 cmd(
   {
     pattern: "1",
@@ -132,14 +135,13 @@ cmd(
 
     try {
       if (session.filesize > MAX_AUDIO_SIZE) {
-        await reply("⚠️ *File too large for voice note. Sending as document...*");
+        await reply("⚠️ File is too large for voice note. Sending as document...");
         await sendDocument(robin, from, mek, session.buffer, session.video.title);
       } else {
-        await reply("🎵 *Uploading voice note...*");
+        await reply("🎵 Sending voice note...");
         await sendAudio(robin, from, mek, session.buffer, session.video.title);
       }
-
-      await reply("✅ *Sent successfully!*");
+      await reply("✅ *Sent successfully!* 🎧");
     } catch (e) {
       console.error("Audio send error:", e);
       await reply("❌ *Failed to send audio.*");
@@ -149,7 +151,7 @@ cmd(
   }
 );
 
-// 🔢 Reply 2️⃣: Send as document always
+// Reply: 2 (document)
 cmd(
   {
     pattern: "2",
@@ -163,9 +165,9 @@ cmd(
     session.step = "sending";
 
     try {
-      await reply("📤 *Uploading as document...*");
+      await reply("📤 Sending as document...");
       await sendDocument(robin, from, mek, session.buffer, session.video.title);
-      await reply("✅ *Document sent successfully!*");
+      await reply("✅ *Document sent successfully!* 📄");
     } catch (e) {
       console.error("Document send error:", e);
       await reply("❌ *Failed to send document.*");
