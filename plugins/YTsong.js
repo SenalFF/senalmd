@@ -3,15 +3,15 @@ const yts = require("yt-search");
 const { ytmp3 } = require("@kelvdra/scraper");
 const axios = require("axios");
 
-const MAX_AUDIO_SIZE = 16 * 1024 * 1024; // 16MB WhatsApp limit
+const MAX_AUDIO_SIZE = 16 * 1024 * 1024; // 16MB WhatsApp voice note limit
 
-// Download audio buffer
+// Download file as buffer
 async function downloadFile(url) {
   const res = await axios.get(url, { responseType: "arraybuffer" });
   return Buffer.from(res.data);
 }
 
-// Check if input is a YouTube link
+// Check if text contains a YouTube link
 function normalizeYouTubeInput(text) {
   const ytRegex = /(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/\S+/;
   return ytRegex.test(text) ? text : null;
@@ -45,7 +45,7 @@ async function sendDocument(robin, from, mek, buffer, title) {
   );
 }
 
-// Main .play command
+// .play command
 cmd(
   {
     pattern: "play",
@@ -63,7 +63,15 @@ cmd(
       let video;
 
       if (url) {
-        const videoId = new URL(url).searchParams.get("v");
+        url = url.trim().replace(/[\[\]\(\)'"]/g, ""); // 🧼 Clean user input
+
+        let videoId;
+        try {
+          videoId = new URL(url).searchParams.get("v");
+        } catch {
+          return reply("❌ *වැරදි YouTube ලින්ක් එකක් දැමූවේය.*");
+        }
+
         const search = await yts({ videoId });
         video = search?.videos?.[0];
       } else {
@@ -77,7 +85,7 @@ cmd(
       const title = video.title;
       const filesizeMB = "බාගැනීමෙන් පසු ගණන් කරනු ලැබේ.";
 
-      // Short SENAL MD headline + details
+      // 🧾 Song details message
       const info = `
 🎵 ─── ✨ SENAL MD - YT MP3 ✨ ─── 🎵
 
@@ -99,7 +107,7 @@ ${url}
         { quoted: mek }
       );
 
-      // ✅ Corrected ytmp3 usage
+      // ✅ Correct usage of ytmp3
       const result = await ytmp3(url, "mp3");
       if (!result?.download?.url) return reply("❌ *බාගැනීම අසාර්ථකයි.*");
 
