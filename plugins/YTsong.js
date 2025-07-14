@@ -3,21 +3,21 @@ const yts = require("yt-search");
 const { ytmp3 } = require("@kelvdra/scraper");
 const axios = require("axios");
 
-const MAX_AUDIO_SIZE = 16 * 1024 * 1024; // 16MB WhatsApp voice note limit
+const MAX_AUDIO_SIZE = 16 * 1024 * 1024; // 16MB for WhatsApp voice note
 
-// Download file as buffer
+// 📥 Download file directly into memory (no local save)
 async function downloadFile(url) {
   const res = await axios.get(url, { responseType: "arraybuffer" });
   return Buffer.from(res.data);
 }
 
-// Check if text contains a YouTube link
+// 🔍 Check if it's a YouTube link
 function normalizeYouTubeInput(text) {
   const ytRegex = /(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/\S+/;
   return ytRegex.test(text) ? text : null;
 }
 
-// Send voice note
+// 🎧 Send audio as voice note
 async function sendAudio(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -31,7 +31,7 @@ async function sendAudio(robin, from, mek, buffer, title) {
   );
 }
 
-// Send as document
+// 📄 Send audio as document
 async function sendDocument(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -45,7 +45,7 @@ async function sendDocument(robin, from, mek, buffer, title) {
   );
 }
 
-// .play command
+// ▶️ .play command
 cmd(
   {
     pattern: "play",
@@ -63,7 +63,7 @@ cmd(
       let video;
 
       if (url) {
-        url = url.trim().replace(/[\[\]\(\)'"]/g, ""); // 🧼 Clean user input
+        url = url.trim().replace(/[\[\]\(\)'"]/g, ""); // 🧼 sanitize broken links
 
         let videoId;
         try {
@@ -83,9 +83,8 @@ cmd(
       if (!video || !url) return reply("❌ *ගීතය හමු නොවීය.*");
 
       const title = video.title;
-      const filesizeMB = "බාගැනීමෙන් පසු ගණන් කරනු ලැබේ.";
 
-      // 🧾 Song details message
+      // 🧾 Details preview message
       const info = `
 🎵 ─── ✨ SENAL MD - YT MP3 ✨ ─── 🎵
 
@@ -93,12 +92,12 @@ cmd(
 ⏰ Duration: *${video.timestamp}*
 👁️ Views  : *${video.views.toLocaleString()}*
 📅 Uploaded: *${video.ago}*
-💾 Size    : *${filesizeMB}*
+💾 Size    : _බාගැනීමෙන් පසු තහවුරු වේ_
 
 🔗 Link:
 ${url}
 
-⏬ Download starting...
+⏬ Downloading, please wait...
 `.trim();
 
       await robin.sendMessage(
@@ -107,7 +106,7 @@ ${url}
         { quoted: mek }
       );
 
-      // ✅ Correct usage of ytmp3
+      // 🛠 Get MP3 download URL using scraper
       const result = await ytmp3(url, "mp3");
       if (!result?.download?.url) return reply("❌ *බාගැනීම අසාර්ථකයි.*");
 
@@ -117,13 +116,14 @@ ${url}
 
       await reply(`📤 _ගීතය (${realFilesizeMB}MB) SENAL MD හරහා යැවෙමින් පවතී..._`);
 
+      // ✅ Stream to WhatsApp without saving
       if (filesize <= MAX_AUDIO_SIZE) {
         await sendAudio(robin, from, mek, buffer, title);
         await reply("✅ *🎧 Voice Note සාර්ථකව SENAL MD හරහා යැවුණි!* 🎶");
       } else {
-        await reply("⚠️ *🔊 Voice Note ලෙස SENAL MD හරහා යැවිය නොහැක!*\n📁 _ගිණුම විශාලයි (>16MB)._ \n➡️ _Document ආකාරයෙන් යැවෙමින් පවතී..._");
+        await reply("⚠️ *🔊 Voice Note ලෙස යැවිය නොහැක!* (>16MB)\n➡️ _Document ආකාරයෙන් යැවෙමින් පවතී..._");
         await sendDocument(robin, from, mek, buffer, title);
-        await reply("✅ *📄 Document සාර්ථකව SENAL MD හරහා යැවුණි!* 📁");
+        await reply("✅ *📄 Document සාර්ථකව SENAL MD හරහා යැවුණි!*");
       }
     } catch (e) {
       console.error("Play Command Error:", e);
