@@ -15,7 +15,7 @@ const normalizeYouTubeURL = (url) => {
 
 // 🎵 SONG COMMAND
 cmd({
-    pattern: "song",
+    pattern: "play",
     desc: "🎧 Download YouTube Audio",
     category: "download",
     react: "🎵",
