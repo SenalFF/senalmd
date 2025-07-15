@@ -1,137 +1,72 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
-const { ytmp3 } = require("@kelvdra/scraper");
-const axios = require("axios");
+const { ytmp3, ytmp4 } = require("@kelvdra/scraper");
 
-const MAX_VOICE_NOTE = 16 * 1024 * 1024;
-const sessions = {}; // To track pending confirmations
+/**
+ * Normalize YouTube URL (e.g. youtu.be → youtube.com)
+ */
+const normalizeYouTubeURL = (url) => {
+    if (url.startsWith("https://youtu.be/")) {
+        const videoId = url.split("/").pop().split("?")[0];
+        return `https://www.youtube.com/watch?v=${videoId}`;
+    }
+    return url;
+};
 
-// 🔗 Stream buffer directly from URL
-async function streamAudioBuffer(url) {
-  const res = await axios.get(url, { responseType: "arraybuffer" });
-  return Buffer.from(res.data);
-}
-
-// 🎵 Send audio
-async function sendAudio(robin, from, mek, buffer, title) {
-  await robin.sendMessage(
-    from,
-    {
-      audio: buffer,
-      mimetype: "audio/mpeg",
-      ptt: buffer.length <= MAX_VOICE_NOTE,
-      fileName: `${title.slice(0, 30)}.mp3`,
-    },
-    { quoted: mek }
-  );
-}
-
-// 📍 YouTube input normalizer
-function normalizeYouTubeInput(text) {
-  const ytRegex = /(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/\S+/;
-  return ytRegex.test(text) ? text : null;
-}
-
-// ▶️ Step 1: .play command — send details only
-cmd(
-  {
-    pattern: "play",
-    desc: "🎧 YouTube Audio Info",
+// 🎵 SONG COMMAND
+cmd({
+    pattern: "song",
+    desc: "🎧 Download YouTube Audio",
     category: "download",
     react: "🎵",
-  },
-  async (robin, mek, m, { from, q, reply }) => {
+}, async (conn, mek, m, { from, q, reply }) => {
     try {
-      if (!q) return reply("❗Please provide a song name or YouTube link.");
+        if (!q) return reply("❗Please provide a YouTube link or song name.");
 
-      await reply("🔍 Searching...");
+        const normalized = q.startsWith("http") ? normalizeYouTubeURL(q) : q;
+        const search = await yts(normalized);
+        const data = search.videos[0];
+        if (!data?.url) return reply("❌ No results found.");
 
-      let url = normalizeYouTubeInput(q);
-      let video;
+        const caption = `
+🎧 ━━━ 『 *SENAL MD - MP3 DOWNLOADER* 』━━━
 
-      if (url) {
-        url = url.trim().replace(/[\[\]\(\)'"]/g, "");
-        let videoId;
-        try {
-          videoId = new URL(url).searchParams.get("v");
-        } catch {
-          return reply("❌ Invalid YouTube link.");
-        }
-        const search = await yts({ videoId });
-        video = search?.videos?.[0];
-      } else {
-        const search = await yts(q);
-        video = search.videos[0];
-        url = video?.url;
-      }
+🎵 *Title:* ${data.title}
+🕒 *Duration:* ${data.timestamp}
+👁️ *Views:* ${data.views.toLocaleString()}
+📅 *Uploaded:* ${data.ago}
+🔗 *Link:* ${data.url}
 
-      if (!video || !url) return reply("❌ No results found.");
-
-      const title = video.title;
-
-      // Save session for .yes command
-      sessions[from] = {
-        title,
-        url,
-        thumbnail: video.thumbnail,
-      };
-
-      const info = `
-🎧 ━━━ 『 *SENAL MD* YouTube Audio 』 ━━━
-
-🎵 *Title:* ${title}
-⏱️ *Duration:* ${video.timestamp}
-👁️ *Views:* ${video.views.toLocaleString()}
-📅 *Uploaded:* ${video.ago}
-🔗 *Link:* ${url}
-
-💬 *Type* \`.yes\` *to start downloading...*
+⏬ Downloading MP3...
 `.trim();
 
-      await robin.sendMessage(
-        from,
-        { image: { url: video.thumbnail }, caption: info },
-        { quoted: mek }
-      );
+        await conn.sendMessage(from, {
+            image: { url: data.thumbnail },
+            caption
+        }, { quoted: mek });
+
+        await reply("🎧 Fetching audio...");
+
+        const result = await ytmp3(data.url, "mp3");
+        if (!result?.download?.url) return reply("❌ Failed to fetch download link.");
+
+        const audio = {
+            url: result.download.url,
+        };
+
+        await conn.sendMessage(from, { audio, mimetype: "audio/mpeg" }, { quoted: mek });
+
+        await conn.sendMessage(from, {
+            document: audio,
+            mimetype: "audio/mpeg",
+            fileName: `${data.title}.mp3`,
+            caption: "✅ MP3 sent by *SENAL MD* 🎵"
+        }, { quoted: mek });
+
+        await reply("✅ Uploaded successfully.");
 
     } catch (err) {
-      console.error("Play Error:", err);
-      return reply("❌ Failed to fetch video info.");
+        console.error(err);
+        reply("❌ An error occurred while downloading the song.");
     }
-  }
-);
-
-// ▶️ Step 2: .yes command — start downloading and sending
-cmd(
-  {
-    pattern: "yes",
-    desc: "📥 Confirm and Download Audio",
-    category: "download",
-    react: "⬇️",
-  },
-  async (robin, mek, m, { from, reply }) => {
-    try {
-      const session = sessions[from];
-      if (!session) return reply("❌ No pending download. Use `.play <song>` first.");
-
-      await reply("📥 Downloading audio...");
-
-      const result = await ytmp3(session.url, "mp3");
-      if (!result?.download?.url) return reply("❌ Failed to get download link.");
-
-      const buffer = await streamAudioBuffer(result.download.url);
-
-      await reply("📤 Uploading to WhatsApp...");
-
-      await sendAudio(robin, from, mek, buffer, session.title);
-
-      await reply("✅ Audio sent successfully via *SENAL MD*!");
-
-      delete sessions[from];
-
-    } catch (err) {
-      console.error("Download Error:", err);
-      return reply("❌ Download failed. Please try again.");
-    }
-  }
-);
+});
