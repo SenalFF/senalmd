@@ -14,7 +14,7 @@ async function sendOriginal(robin, from, mek, file, title, mimeType = "applicati
 
 await robin.sendMessage( from, { document: isBuffer ? file : { url: file }, mimetype: mimeType, fileName, caption: "✅ File sent as original format", }, { quoted: mek } ); }
 
-cmd( { pattern: "video", desc: "📥 YouTube Video Downloader", category: "download", react: "📹", }, async (robin, mek, m, { q, reply }) => { const from = mek.key.remoteJid; if (!q) return reply("🔍 කරුණාකර වීඩියෝ නමක් හෝ YouTube ලින්ක් එකක් ලබාදෙන්න");
+cmd( { pattern: "vid", desc: "📥 YouTube Video Downloader", category: "download", react: "📹", }, async (robin, mek, m, { q, reply }) => { const from = mek.key.remoteJid; if (!q) return reply("🔍 කරුණාකර වීඩියෝ නමක් හෝ YouTube ලින්ක් එකක් ලබාදෙන්න");
 
 try {
   const searchResult = await yts(q);
