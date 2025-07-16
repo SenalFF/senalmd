@@ -92,7 +92,7 @@ cmd(
 🔹 *video1* - Send as Video
 🔹 *video2* - Send as Document
 
-✍️ _Reply with *video1* or *video2*_
+✍️ _Reply with *get1* or *get2*_
 `;
 
       await robin.sendMessage(
@@ -113,7 +113,7 @@ cmd(
 // .video1 command
 cmd(
   {
-    pattern: "video1",
+    pattern: "get1",
     desc: "Send video inline",
     dontAddCommandList: true,
   },
@@ -165,7 +165,7 @@ cmd(
 // .video2 command
 cmd(
   {
-    pattern: "video2",
+    pattern: "get2",
     desc: "Send video as document",
     dontAddCommandList: true,
   },
