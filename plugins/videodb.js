@@ -53,7 +53,7 @@ async function sendFromGofile(robin, from, mek, gofileUrl, title) {
 
 cmd(
   {
-    pattern: "video",
+    pattern: "vid",
     desc: "📥 YouTube Video Downloader",
     category: "download",
     react: "📹",
