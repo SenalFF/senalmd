@@ -7,13 +7,11 @@ const uploadToGofile = require("../lib/upload");
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
 const sessions = {};
 
-// Download buffer
 async function downloadFile(url) {
   const res = await axios.get(url, { responseType: "arraybuffer" });
   return Buffer.from(res.data);
 }
 
-// Send video directly
 async function sendVideo(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -27,7 +25,6 @@ async function sendVideo(robin, from, mek, buffer, title) {
   );
 }
 
-// Send document
 async function sendDocument(robin, from, mek, buffer, title) {
   await robin.sendMessage(
     from,
@@ -35,13 +32,12 @@ async function sendDocument(robin, from, mek, buffer, title) {
       document: buffer,
       mimetype: "video/mp4",
       fileName: `${title.slice(0, 30)}.mp4`,
-      caption: `✅ *Document sent by SENAL MD* 🎥`,
+      caption: "✅ *Document sent by SENAL MD* 🎥",
     },
     { quoted: mek }
   );
 }
 
-// Stream from Gofile
 async function sendFromGofile(robin, from, mek, gofileUrl, title) {
   await robin.sendMessage(
     from,
@@ -55,10 +51,9 @@ async function sendFromGofile(robin, from, mek, gofileUrl, title) {
   );
 }
 
-// .video command
 cmd(
   {
-    pattern: "vid",
+    pattern: "video",
     desc: "📥 YouTube Video Downloader",
     category: "download",
     react: "📹",
@@ -89,8 +84,8 @@ cmd(
 🔗 *URL:* ${video.url}
 
 📁 *Choose file type:*
-🔹 *video1* - Send as Video
-🔹 *video2* - Send as Document
+🔹 *get1* - Send as Video
+🔹 *get2* - Send as Document
 
 ✍️ _Reply with *get1* or *get2*_
 `;
@@ -110,11 +105,11 @@ cmd(
   }
 );
 
-// .video1 command
+// ▶️ get1: Send as inline video
 cmd(
   {
     pattern: "get1",
-    desc: "Send video inline",
+    desc: "Send YouTube video inline",
     dontAddCommandList: true,
   },
   async (robin, mek, m, { reply }) => {
@@ -130,9 +125,9 @@ cmd(
       await reply("⏬ Downloading video...");
       const result = await ytmp4(session.video.url, "360");
 
-      if (!result?.url) return reply("❌ *Download link not found.*");
+      if (!result?.download?.url) return reply("❌ *Download link not found.*");
 
-      const buffer = await downloadFile(result.url);
+      const buffer = await downloadFile(result.download.url);
       const sizeMB = (buffer.length / 1024 / 1024).toFixed(2);
       await reply(`📦 *File size:* ${sizeMB} MB`);
 
@@ -154,7 +149,7 @@ cmd(
 
       await reply("✅ *Done.*");
     } catch (err) {
-      console.error("video1 error:", err);
+      console.error("get1 error:", err);
       reply("❌ *Something went wrong.*");
     }
 
@@ -162,11 +157,11 @@ cmd(
   }
 );
 
-// .video2 command
+// 📁 get2: Send as document
 cmd(
   {
     pattern: "get2",
-    desc: "Send video as document",
+    desc: "Send YouTube video as document",
     dontAddCommandList: true,
   },
   async (robin, mek, m, { reply }) => {
@@ -182,9 +177,9 @@ cmd(
       await reply("⏬ Downloading video...");
       const result = await ytmp4(session.video.url, "360");
 
-      if (!result?.url) return reply("❌ *Download link not found.*");
+      if (!result?.download?.url) return reply("❌ *Download link not found.*");
 
-      const buffer = await downloadFile(result.url);
+      const buffer = await downloadFile(result.download.url);
       const sizeMB = (buffer.length / 1024 / 1024).toFixed(2);
       await reply(`📦 *File size:* ${sizeMB} MB`);
 
@@ -200,13 +195,13 @@ cmd(
         await reply("📨 Streaming from Gofile...");
         await sendFromGofile(robin, from, mek, upload.directUrl, session.video.title);
       } else {
-        await reply("📤 Uploading to WhatsApp...");
+        await reply("📤 Uploading document to WhatsApp...");
         await sendDocument(robin, from, mek, buffer, session.video.title);
       }
 
       await reply("✅ *Done.*");
     } catch (err) {
-      console.error("video2 error:", err);
+      console.error("get2 error:", err);
       reply("❌ *Something went wrong.*");
     }
 
