@@ -2,7 +2,7 @@ const { cmd } = require("../command");
 const yts = require("yt-search");
 const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
-const uploadToGofile = require("../lib/upload");
+const { uploadToGofile } = require("../lib/upload");
 
 const sessions = {};
 const MAX_VIDEO_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
