@@ -6,35 +6,53 @@ const axios = require("axios");
 const MAX_INLINE_SIZE = 50 * 1024 * 1024; // 50MB for inline videos
 const sessions = {};
 
+// Helper: get file size from URL using HEAD or Range GET requests
+async function getSizeFromUrl(url) {
+  try {
+    // Try HEAD request first
+    const headRes = await axios.head(url, { timeout: 10000 });
+    let size = headRes.headers["content-length"];
+    if (size) return Number(size);
+
+    // If no content-length in HEAD, try GET with Range header
+    const rangeRes = await axios.get(url, {
+      headers: { Range: "bytes=0-0" },
+      timeout: 10000,
+    });
+    const contentRange = rangeRes.headers["content-range"];
+    if (contentRange) {
+      // content-range format: bytes 0-0/12345678
+      const totalSize = contentRange.split("/")[1];
+      return Number(totalSize);
+    }
+
+    // Size unknown
+    return 0;
+  } catch (err) {
+    // On error, return 0 (unknown)
+    return 0;
+  }
+}
+
 // Fetch stream with timeout and size fallback
 async function getVideoStream(url) {
   try {
     const res = await axios.get(url, {
       responseType: "stream",
-      timeout: 60000, // 60 seconds
+      timeout: 60000,
       headers: {
         Connection: "keep-alive",
         "User-Agent": "Mozilla/5.0",
       },
     });
 
-    let size = Number(res.headers["content-length"]);
+    let size = Number(res.headers["content-length"]) || 0;
     let mime = res.headers["content-type"] || "video/mp4";
     let host = new URL(url).hostname;
 
-    // Fallback size check (Range request)
+    // If size still unknown, try getSizeFromUrl helper
     if (!size) {
-      try {
-        const rangeRes = await axios({
-          url,
-          method: "GET",
-          headers: { Range: "bytes=0-0" },
-        });
-        const range = rangeRes.headers["content-range"];
-        size = range ? Number(range.split("/")[1]) : 0;
-      } catch {
-        size = 0;
-      }
+      size = await getSizeFromUrl(url);
     }
 
     return { stream: res.data, size, mime, host };
@@ -95,9 +113,21 @@ cmd(
       const video = searchResult.videos[0];
       if (!video) return reply("❌ *Video not found. Try again.*");
 
+      // Get size safely
+      let sizeBytes = 0;
+      try {
+        const result = await ytmp4(video.url, "360");
+        if (result?.download?.url) {
+          sizeBytes = await getSizeFromUrl(result.download.url);
+        }
+      } catch {}
+
+      const sizeMB = sizeBytes ? (sizeBytes / 1024 / 1024).toFixed(2) : "Unknown";
+
       sessions[from] = {
         video,
         step: "choose_format",
+        sizeMB,
       };
 
       const info = `
@@ -108,6 +138,7 @@ cmd(
 👁️ *Views:* ${video.views.toLocaleString()}
 📤 *Uploaded:* ${video.ago}
 🔗 *URL:* ${video.url}
+📦 *Size:* ${sizeMB} MB
 
 📁 *Choose file type:*
 🔹 *vid1* - Send as Video
