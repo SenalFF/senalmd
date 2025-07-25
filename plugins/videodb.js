@@ -2,12 +2,14 @@ const { cmd } = require("../command");
 const yts = require("yt-search");
 const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
+const uploadToR2 = require("../lib/upload");
 
-const MAX_INLINE_SIZE = 50 * 1024 * 1024; // 50MB
-const MAX_DOCUMENT_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
+const MAX_INLINE_SIZE = 50 * 1024 * 1024;
+const MAX_DOCUMENT_SIZE = 2 * 1024 * 1024 * 1024;
+
 const sessions = {};
 
-// 🔎 Get file size from HEAD or Range
+// Get file size from HEAD or Range
 async function getSizeFromUrl(url) {
   try {
     const head = await axios.head(url, { timeout: 10000 });
@@ -26,36 +28,22 @@ async function getSizeFromUrl(url) {
   return 0;
 }
 
-// 📥 Open stream with error handling
+// Open stream with metadata
 async function getVideoStream(url) {
-  try {
-    const res = await axios.get(url, {
-      responseType: "stream",
-      timeout: 60000,
-      headers: {
-        Connection: "keep-alive",
-        "User-Agent": "Mozilla/5.0",
-      },
-    });
+  const res = await axios.get(url, {
+    responseType: "stream",
+    timeout: 60000,
+    headers: { "User-Agent": "Mozilla/5.0" },
+  });
 
-    const size =
-      Number(res.headers["content-length"]) || (await getSizeFromUrl(url));
-    const mime = res.headers["content-type"] || "video/mp4";
-    const host = new URL(url).hostname;
+  const size = Number(res.headers["content-length"]) || (await getSizeFromUrl(url));
+  const mime = res.headers["content-type"] || "video/mp4";
+  const host = new URL(url).hostname;
 
-    res.data.on("error", (err) => {
-      console.error("Stream error:", err);
-      res.data.destroy();
-    });
-
-    return { stream: res.data, size, mime, host };
-  } catch (err) {
-    console.error("getVideoStream error:", err);
-    throw new Error("🔌 Failed to open stream");
-  }
+  return { stream: res.data, size, mime, host };
 }
 
-// 🎥 Send inline video
+// Send as video
 async function sendVideo(robin, from, mek, stream, title, mime) {
   return robin.sendMessage(
     from,
@@ -69,9 +57,9 @@ async function sendVideo(robin, from, mek, stream, title, mime) {
   );
 }
 
-// 📄 Send as document
+// Send as document
 async function sendDocument(robin, from, mek, stream, title, mime, sizeMB, host) {
-  const caption = `✅ *Document sent by SENAL MD* 🎥
+  const caption = `✅ *Document sent by SENAL MD*
 
 🎞️ *Title:* ${title}
 📦 *Size:* ${sizeMB || "Unknown"} MB
@@ -90,7 +78,30 @@ async function sendDocument(robin, from, mek, stream, title, mime, sizeMB, host)
   );
 }
 
-// ▶️ .vid Command
+// Send as uploaded document (R2 fallback)
+async function sendR2Document(robin, from, mek, stream, title, mime, sizeMB, host) {
+  const fileUrl = await uploadToR2(stream);
+  const caption = `✅ *Uploaded to SENAL R2*
+
+🎞️ *Title:* ${title}
+📦 *Size:* ${sizeMB} MB
+📄 *Type:* ${mime}
+🌐 *Host:* ${host}
+📁 *Download:* ${fileUrl}`;
+
+  return robin.sendMessage(
+    from,
+    {
+      document: { url: fileUrl },
+      mimetype: mime,
+      fileName: `${title.slice(0, 30)}.mp4`,
+      caption,
+    },
+    { quoted: mek }
+  );
+}
+
+// ▶️ .vid
 cmd(
   {
     pattern: "vid",
@@ -103,10 +114,10 @@ cmd(
     if (!q) return reply("🔍 Please provide a video name or YouTube link.");
 
     try {
-      await reply("🔎 Searching for your video...");
+      await reply("🔎 Searching...");
       const search = await yts(q);
       const video = search.videos[0];
-      if (!video) return reply("❌ *Video not found. Try a different keyword.*");
+      if (!video) return reply("❌ *Video not found.*");
 
       let sizeMB = "Unknown";
       try {
@@ -124,7 +135,7 @@ cmd(
       };
 
       const info = `
-🎬 SENAL MD Video Downloader
+🎬 *SENAL MD Video Downloader*
 
 🎞️ Title: ${video.title}
 ⏱️ Duration: ${video.timestamp}
@@ -133,11 +144,9 @@ cmd(
 🔗 URL: ${video.url}
 📦 Size: ${sizeMB} MB
 
-📁 Choose file type:
-🔹 vid1 - Send as Video
-🔹 vid2 - Send as Document
-
-✍️ Reply with vid1 or vid2
+📁 Choose format:
+🔹 *vid1* - Send as video
+🔹 *vid2* - Send as document
 `;
 
       await robin.sendMessage(
@@ -149,13 +158,13 @@ cmd(
         { quoted: mek }
       );
     } catch (err) {
-      console.error("vid command error:", err);
-      reply("❌ *Error occurred while processing. Please try again.*");
+      console.error("vid error:", err);
+      reply("❌ *Error occurred. Try again.*");
     }
   }
 );
 
-// 📽️ vid1 command
+// 📽️ vid1
 cmd(
   {
     pattern: "vid1",
@@ -170,33 +179,37 @@ cmd(
     session.step = "sending";
 
     try {
-      await reply("⏬ Getting video link...");
+      await reply("⏬ Getting link...");
       const result = await ytmp4(session.video.url, "360");
-      if (!result?.download?.url) return reply("❌ Couldn’t get video download URL.");
+      if (!result?.download?.url) return reply("❌ Couldn't get video link.");
 
       await reply("📡 Opening stream...");
       const { stream, size, mime, host } = await getVideoStream(result.download.url);
       const sizeMB = size ? (size / 1024 / 1024).toFixed(2) : "Unknown";
 
       if (size > MAX_INLINE_SIZE) {
-        await reply(`⚠️ *Video is ${sizeMB} MB* — switching to document...`);
-        await sendDocument(robin, from, mek, stream, session.video.title, mime, sizeMB, host);
+        await reply(`⚠️ *Video is ${sizeMB} MB* — sending as document...`);
+        if (size > MAX_DOCUMENT_SIZE) {
+          await reply("📤 Uploading to Cloudflare R2...");
+          await sendR2Document(robin, from, mek, stream, session.video.title, mime, sizeMB, host);
+        } else {
+          await sendDocument(robin, from, mek, stream, session.video.title, mime, sizeMB, host);
+        }
       } else {
-        await reply("📤 Uploading video...");
         await sendVideo(robin, from, mek, stream, session.video.title, mime);
       }
 
-      reply("✅ *Video sent successfully!*");
+      reply("✅ *Video sent!*");
     } catch (err) {
       console.error("vid1 error:", err);
-      reply("❌ *Failed to send video.*");
+      reply("❌ *Failed to send.*");
     }
 
     delete sessions[from];
   }
 );
 
-// 📁 vid2 command
+// 📁 vid2
 cmd(
   {
     pattern: "vid2",
@@ -213,25 +226,20 @@ cmd(
     try {
       await reply("⏬ Getting video link...");
       const result = await ytmp4(session.video.url, "360");
-      if (!result?.download?.url) return reply("❌ Couldn’t get video download URL.");
+      if (!result?.download?.url) return reply("❌ Couldn't get download URL.");
 
       await reply("📡 Opening stream...");
       const { stream, size, mime, host } = await getVideoStream(result.download.url);
       const sizeMB = size ? (size / 1024 / 1024).toFixed(2) : "Unknown";
 
       if (size > MAX_DOCUMENT_SIZE) {
-        return reply("🚫 *Video exceeds WhatsApp 2GB document limit.*");
+        await reply("📤 Uploading to Cloudflare R2...");
+        await sendR2Document(robin, from, mek, stream, session.video.title, mime, sizeMB, host);
+      } else {
+        await sendDocument(robin, from, mek, stream, session.video.title, mime, sizeMB, host);
       }
 
-      await reply(`📁 Preparing to send...
-
-🎞️ *Title:* ${session.video.title}
-📦 *Size:* ${sizeMB} MB
-📄 *Type:* ${mime}
-🌐 *Host:* ${host}`);
-
-      await sendDocument(robin, from, mek, stream, session.video.title, mime, sizeMB, host);
-      reply("✅ *Document sent successfully!*");
+      reply("✅ *Document sent!*");
     } catch (err) {
       console.error("vid2 error:", err);
       reply("❌ *Failed to send document.*");
