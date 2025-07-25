@@ -1,34 +1,35 @@
+// project/plugin/videodl.js
 const { cmd } = require("../command");
 const yts = require("yt-search");
 const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
-const uploadToR2 = require("../lib/upload");
+const { uploadToR2 } = require("../lib/upload");
 
 const MAX_INLINE_SIZE = 50 * 1024 * 1024;
 const MAX_DOCUMENT_SIZE = 2 * 1024 * 1024 * 1024;
 
 const sessions = {};
 
-// Get file size from HEAD or Range
+// Get file size using HEAD or range
 async function getSizeFromUrl(url) {
   try {
     const head = await axios.head(url, { timeout: 10000 });
-    const size = head.headers["content-length"];
-    if (size) return Number(size);
+    if (head.headers["content-length"]) return Number(head.headers["content-length"]);
 
     const range = await axios.get(url, {
       headers: { Range: "bytes=0-0" },
       timeout: 10000,
     });
+
     const contentRange = range.headers["content-range"];
     if (contentRange) return Number(contentRange.split("/")[1]);
   } catch (err) {
-    console.warn("getSizeFromUrl error:", err.message || err);
+    console.warn("getSizeFromUrl error:", err.message);
   }
   return 0;
 }
 
-// Open stream with metadata
+// Get video stream with metadata
 async function getVideoStream(url) {
   const res = await axios.get(url, {
     responseType: "stream",
@@ -43,7 +44,7 @@ async function getVideoStream(url) {
   return { stream: res.data, size, mime, host };
 }
 
-// Send as video
+// Send inline video
 async function sendVideo(robin, from, mek, stream, title, mime) {
   return robin.sendMessage(
     from,
@@ -57,12 +58,12 @@ async function sendVideo(robin, from, mek, stream, title, mime) {
   );
 }
 
-// Send as document
+// Send document
 async function sendDocument(robin, from, mek, stream, title, mime, sizeMB, host) {
   const caption = `✅ *Document sent by SENAL MD*
 
 🎞️ *Title:* ${title}
-📦 *Size:* ${sizeMB || "Unknown"} MB
+📦 *Size:* ${sizeMB} MB
 📄 *Type:* ${mime}
 🌐 *Source:* ${host}`;
 
@@ -78,9 +79,11 @@ async function sendDocument(robin, from, mek, stream, title, mime, sizeMB, host)
   );
 }
 
-// Send as uploaded document (R2 fallback)
+// Upload to R2 and send
 async function sendR2Document(robin, from, mek, stream, title, mime, sizeMB, host) {
-  const fileUrl = await uploadToR2(stream);
+  const fileUrl = await uploadToR2(stream, title.slice(0, 30));
+  if (!fileUrl) return robin.sendMessage(from, { text: "❌ R2 upload failed." }, { quoted: mek });
+
   const caption = `✅ *Uploaded to SENAL R2*
 
 🎞️ *Title:* ${title}
@@ -101,7 +104,7 @@ async function sendR2Document(robin, from, mek, stream, title, mime, sizeMB, hos
   );
 }
 
-// ▶️ .vid
+// ▶️ .vid command
 cmd(
   {
     pattern: "vid",
@@ -164,7 +167,7 @@ cmd(
   }
 );
 
-// 📽️ vid1
+// 📽️ vid1 command
 cmd(
   {
     pattern: "vid1",
@@ -209,7 +212,7 @@ cmd(
   }
 );
 
-// 📁 vid2
+// 📁 vid2 command
 cmd(
   {
     pattern: "vid2",
