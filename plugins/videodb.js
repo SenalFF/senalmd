@@ -1,15 +1,15 @@
 // project/plugin/videodl.js
 
 const { cmd } = require("../command");
-const yts = require("yt-search");
-const { ytmp4 } = require("@kelvdra/scraper"); // Using your preferred scraper
+const yts = require("yt-search"); // For getting video details
+const { ytmp4 } = require("@kelvdra/scraper"); // For getting the download link
 const axios = require("axios");
 
 // --- Configuration ---
 const MAX_DOCUMENT_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB
-const MAX_INLINE_VIDEO_SIZE = 64 * 1024 * 1024; // 64 MB
+const MAX_INLINE_VIDEO_SIZE = 64 * 1024 * 1024; // 64 MB for sending as 'video'
 
-const sessions = {};
+const sessions = {}; // To store user's video choice temporarily
 
 /**
  * A utility to format bytes into a human-readable string.
@@ -23,33 +23,20 @@ function formatBytes(bytes) {
 }
 
 /**
- * Gets the file size from a URL without downloading the whole file.
+ * Gets the file size from a URL efficiently using a HEAD request.
  * @param {string} url The URL of the file.
  * @returns {Promise<number>} The size of the file in bytes.
  */
 async function getFileSize(url) {
   try {
-    const response = await axios.head(url, { timeout: 15000 }); // Use HEAD request for efficiency
+    const response = await axios.head(url, { timeout: 15000 });
     if (response.headers['content-length']) {
       return Number(response.headers['content-length']);
     }
   } catch (error) {
-    console.warn("HEAD request failed, falling back to range request. Error:", error.message);
-    try {
-      // Fallback for servers that don't support HEAD
-      const response = await axios.get(url, {
-        headers: { Range: "bytes=0-0" },
-        timeout: 15000,
-      });
-      const contentRange = response.headers["content-range"];
-      if (contentRange) {
-        return Number(contentRange.split("/")[1]);
-      }
-    } catch (rangeError) {
-      console.error("Could not determine file size from URL:", rangeError.message);
-    }
+    console.warn("HEAD request failed. It's okay, we can proceed without the exact size.", error.message);
   }
-  return 0; // Return 0 if size cannot be determined
+  return 0; // Return 0 if size cannot be determined beforehand
 }
 
 // --- Main Command to Search for the Video ---
@@ -66,23 +53,29 @@ cmd(
     const from = mek.key.remoteJid;
 
     try {
-      await reply("🔎 Searching for video...");
+      await reply("🔎 Searching video on YouTube...");
+      
+      // Step 1: Use yt-search to get video details
       const searchResults = await yts(q);
       const video = searchResults.videos[0];
       if (!video) return reply("❌ Video not found.");
       
-      await reply("⏬ Getting video details and size...");
-      const result = await ytmp4(video.url, "360p"); // Assuming 360p is desired
+      await reply("⏬ Getting download link...");
+
+      // Step 2: Use @kelvdra/scraper to get the download URL
+      // We will fetch a low-quality link first to get an approximate size
+      const result = await ytmp4(video.url, "360"); // Quality can be changed here
       if (!result?.download?.url) {
-        return reply("❌ Could not get video details from the scraper.");
+        return reply("❌ Could not get a download link from the scraper.");
       }
 
       const fileSize = await getFileSize(result.download.url);
-      const sizeFormatted = formatBytes(fileSize);
+      const sizeFormatted = fileSize > 0 ? formatBytes(fileSize) : "Unknown";
 
+      // Store all necessary info in the session
       sessions[from] = {
         title: video.title,
-        downloadUrl: result.download.url,
+        downloadUrl: result.download.url, // The most important part
         size: fileSize,
         sizeFormatted: sizeFormatted,
         step: "choose_format",
@@ -97,7 +90,7 @@ cmd(
 🔗 *URL:* ${video.url}
 
 *Reply with one of the following commands:*
-🔹 Reply with *vid1* - Send as a standard video (if under 64MB)
+🔹 Reply with *vid1* - Send as a standard video
 🔹 Reply with *vid2* - Send as a document file
 `;
 
@@ -128,27 +121,17 @@ async function handleDownload(robin, mek, m, { reply }, sendAsDocument = false) 
       
       await reply(`✅ Preparing your video...\n*Title:* ${title}\n*Size:* ${sizeFormatted}`);
 
-      // CRITICAL CHANGE: Get the stream from Axios WITHOUT a timeout.
-      // The connection will stay open as long as data is flowing.
+      // Get the video stream from the URL provided by the scraper
+      // CRITICAL: NO TIMEOUT is set, allowing for large file downloads.
       const response = await axios.get(downloadUrl, {
         responseType: "stream",
       });
       const stream = response.data;
       
-      // Logic for sending
-      if (sendAsDocument || size > MAX_INLINE_VIDEO_SIZE) {
-        await reply("📡 Streaming video as a document file. Please wait, this may take a while...");
-        await robin.sendMessage(
-          from,
-          {
-            document: { stream },
-            mimetype: 'video/mp4',
-            fileName: `${title.slice(0, 50)}.mp4`,
-            caption: `✅ *Sent as Document*\n\n🎬 *Title:* ${title}\n📦 *Size:* ${sizeFormatted}`,
-          },
-          { quoted: mek }
-        );
-      } else {
+      // Determine if we should send as a document or a video
+      const sendAsVideo = !sendAsDocument && size < MAX_INLINE_VIDEO_SIZE && size > 0;
+
+      if (sendAsVideo) {
         await reply("📡 Streaming video directly. Please wait...");
         await robin.sendMessage(
           from,
@@ -160,12 +143,24 @@ async function handleDownload(robin, mek, m, { reply }, sendAsDocument = false) 
           },
           { quoted: mek }
         );
+      } else {
+        await reply("📡 Streaming video as a document file. Please wait, this may take a while...");
+        await robin.sendMessage(
+          from,
+          {
+            document: { stream },
+            mimetype: 'video/mp4',
+            fileName: `${title.slice(0, 50)}.mp4`,
+            caption: `✅ *Sent as Document*\n\n🎬 *Title:* ${title}\n📦 *Size:* ${sizeFormatted}`,
+          },
+          { quoted: mek }
+        );
       }
     } catch (err) {
       console.error("Error during download/send:", err);
-      reply("❌ Failed to send the video. The download link from the scraper may have expired or the stream was interrupted.");
+      reply("❌ Failed to send the video. The download link may have expired or the stream was interrupted.");
     } finally {
-      delete sessions[from]; // Clean up session
+      delete sessions[from]; // Clean up the session to save memory
     }
 }
 
