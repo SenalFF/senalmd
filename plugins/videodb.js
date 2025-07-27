@@ -1,22 +1,18 @@
 // project/plugin/videodl.js
 
-const { cmd } = require("../command"); // Assuming your command handler is here
+const { cmd } = require("../command");
 const yts = require("yt-search");
-const ytdl = require("@distube/ytdl-core"); // Use the maintained fork
+const { ytmp4 } = require("@kelvdra/scraper"); // Using your preferred scraper
+const axios = require("axios");
 
 // --- Configuration ---
-// WhatsApp's official limit for documents is 2GB
-const MAX_DOCUMENT_SIZE = 2 * 1024 * 1024 * 1024;
-// A safe limit for sending as a 'video' message type (~64MB is a safe bet)
-const MAX_INLINE_VIDEO_SIZE = 64 * 1024 * 1024;
+const MAX_DOCUMENT_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB
+const MAX_INLINE_VIDEO_SIZE = 64 * 1024 * 1024; // 64 MB
 
-// Session management to keep track of user choices
 const sessions = {};
 
 /**
  * A utility to format bytes into a human-readable string.
- * @param {number} bytes - The number of bytes.
- * @returns {string} A formatted string (e.g., "150.5 MB").
  */
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 Bytes';
@@ -26,6 +22,35 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+/**
+ * Gets the file size from a URL without downloading the whole file.
+ * @param {string} url The URL of the file.
+ * @returns {Promise<number>} The size of the file in bytes.
+ */
+async function getFileSize(url) {
+  try {
+    const response = await axios.head(url, { timeout: 15000 }); // Use HEAD request for efficiency
+    if (response.headers['content-length']) {
+      return Number(response.headers['content-length']);
+    }
+  } catch (error) {
+    console.warn("HEAD request failed, falling back to range request. Error:", error.message);
+    try {
+      // Fallback for servers that don't support HEAD
+      const response = await axios.get(url, {
+        headers: { Range: "bytes=0-0" },
+        timeout: 15000,
+      });
+      const contentRange = response.headers["content-range"];
+      if (contentRange) {
+        return Number(contentRange.split("/")[1]);
+      }
+    } catch (rangeError) {
+      console.error("Could not determine file size from URL:", rangeError.message);
+    }
+  }
+  return 0; // Return 0 if size cannot be determined
+}
 
 // --- Main Command to Search for the Video ---
 cmd(
@@ -36,162 +61,120 @@ cmd(
     react: "📹",
   },
   async (robin, mek, m, { q, reply }) => {
-    if (!q) return reply("🔍 Please provide a video name or YouTube link to search.");
+    if (!q) return reply("🔍 Please provide a video name or YouTube link.");
 
     const from = mek.key.remoteJid;
 
     try {
-      await reply("🔎 Searching for the video on YouTube...");
+      await reply("🔎 Searching for video...");
+      const searchResults = await yts(q);
+      const video = searchResults.videos[0];
+      if (!video) return reply("❌ Video not found.");
       
-      let videoInfo;
-      // Check if the query is a valid YouTube URL
-      if (ytdl.validateURL(q)) {
-        videoInfo = await ytdl.getInfo(q);
-      } else {
-        // If not a URL, search on YouTube
-        const searchResults = await yts(q);
-        if (!searchResults.videos.length) return reply("❌ No video found for your query.");
-        videoInfo = await ytdl.getInfo(searchResults.videos[0].url);
+      await reply("⏬ Getting video details and size...");
+      const result = await ytmp4(video.url, "360p"); // Assuming 360p is desired
+      if (!result?.download?.url) {
+        return reply("❌ Could not get video details from the scraper.");
       }
-      
-      const { videoDetails } = videoInfo;
 
-      // Find the best MP4 format under 2GB with both video and audio
-      const format = ytdl.chooseFormat(videoInfo.formats, {
-        quality: 'highest',
-        filter: (f) => 
-            f.container === 'mp4' && 
-            f.hasVideo && 
-            f.hasAudio &&
-            Number(f.contentLength || 0) < MAX_DOCUMENT_SIZE,
-      });
+      const fileSize = await getFileSize(result.download.url);
+      const sizeFormatted = formatBytes(fileSize);
 
-      if (!format) {
-        return reply("❌ Couldn't find a suitable video format to download (under 2GB with audio).");
-      }
-      
-      const size = format.contentLength ? formatBytes(format.contentLength) : "Unknown";
-
-      // Store the video info and chosen format in the session
       sessions[from] = {
-        videoUrl: videoDetails.video_url,
-        title: videoDetails.title,
-        format: format, // Store the entire format object
+        title: video.title,
+        downloadUrl: result.download.url,
+        size: fileSize,
+        sizeFormatted: sizeFormatted,
         step: "choose_format",
       };
 
       const infoCaption = `
 🎬 *SENAL MD Video Downloader*
 
-🎞️ *Title:* ${videoDetails.title}
-⏱️ *Duration:* ${new Date(videoDetails.lengthSeconds * 1000).toISOString().substr(11, 8)}
-👁️ *Views:* ${Number(videoDetails.viewCount).toLocaleString()}
-✅ *Quality:* ${format.qualityLabel || 'Unknown'} (${format.container})
-📦 *Size:* ${size}
-🔗 *URL:* ${videoDetails.video_url}
+🎞️ *Title:* ${video.title}
+⏱️ *Duration:* ${video.timestamp}
+📦 *Approx. Size:* ${sizeFormatted} (at 360p)
+🔗 *URL:* ${video.url}
 
 *Reply with one of the following commands:*
 🔹 Reply with *vid1* - Send as a standard video (if under 64MB)
 🔹 Reply with *vid2* - Send as a document file
 `;
 
-      await robin.sendMessage(
-        from,
-        {
-          image: { url: videoDetails.thumbnails[videoDetails.thumbnails.length - 1].url },
-          caption: infoCaption,
-        },
-        { quoted: mek }
-      );
-
+      await robin.sendMessage(from, { image: { url: video.thumbnail }, caption: infoCaption }, { quoted: mek });
     } catch (err) {
       console.error("Error in .vid command:", err);
-      reply("❌ An error occurred. It might be an age-restricted video, a private video, or a network issue. Please try again.");
+      reply("❌ An error occurred. The scraper might have failed or the video is unavailable.");
     }
   }
 );
 
 
 /**
- * The core function to handle the download and sending process.
- * @param {boolean} sendAsDocument - If true, forces sending as a document.
+ * Core function to handle the download and sending process.
  */
 async function handleDownload(robin, mek, m, { reply }, sendAsDocument = false) {
     const from = mek.key.remoteJid;
     const session = sessions[from];
 
     if (!session || session.step !== "choose_format") {
-        return reply("Please search for a video with the `.vid` command first.");
+      return reply("Please search for a video with the `.vid` command first.");
     }
-    
-    // Prevent multiple triggers
-    session.step = "sending";
+
+    session.step = "sending"; // Prevent multiple triggers
 
     try {
-        const { videoUrl, title, format } = session;
-        const size = Number(format.contentLength);
-        const sizeFormatted = formatBytes(size);
+      const { title, downloadUrl, size, sizeFormatted } = session;
+      
+      await reply(`✅ Preparing your video...\n*Title:* ${title}\n*Size:* ${sizeFormatted}`);
 
-        await reply(`✅ Preparing your video...\n*Title:* ${title}\n*Size:* ${sizeFormatted}`);
-
-        // Create a readable stream from ytdl-core.
-        // It does not require any additional options like 'highWaterMark' for this use case,
-        // as the backpressure is handled between the source (ytdl) and destination (WhatsApp send).
-        const stream = ytdl(videoUrl, { format });
-
-        // Logic for sending
-        if (sendAsDocument || size > MAX_INLINE_VIDEO_SIZE) {
-            await reply("📡 Streaming video as a document file. Please wait, this may take a while for large files...");
-            await robin.sendMessage(
-                from,
-                {
-                    document: { stream },
-                    mimetype: 'video/mp4',
-                    fileName: `${title.slice(0, 50)}.mp4`,
-                    caption: `✅ *Sent as Document*\n\n🎬 *Title:* ${title}\n📦 *Size:* ${sizeFormatted}`,
-                },
-                { quoted: mek }
-            );
-        } else {
-            await reply("📡 Streaming video directly. Please wait...");
-            await robin.sendMessage(
-                from,
-                {
-                    video: { stream },
-                    mimetype: 'video/mp4',
-                    fileName: `${title.slice(0, 50)}.mp4`,
-                    caption: `🎬 *${title}*`,
-                },
-                { quoted: mek }
-            );
-        }
+      // CRITICAL CHANGE: Get the stream from Axios WITHOUT a timeout.
+      // The connection will stay open as long as data is flowing.
+      const response = await axios.get(downloadUrl, {
+        responseType: "stream",
+      });
+      const stream = response.data;
+      
+      // Logic for sending
+      if (sendAsDocument || size > MAX_INLINE_VIDEO_SIZE) {
+        await reply("📡 Streaming video as a document file. Please wait, this may take a while...");
+        await robin.sendMessage(
+          from,
+          {
+            document: { stream },
+            mimetype: 'video/mp4',
+            fileName: `${title.slice(0, 50)}.mp4`,
+            caption: `✅ *Sent as Document*\n\n🎬 *Title:* ${title}\n📦 *Size:* ${sizeFormatted}`,
+          },
+          { quoted: mek }
+        );
+      } else {
+        await reply("📡 Streaming video directly. Please wait...");
+        await robin.sendMessage(
+          from,
+          {
+            video: { stream },
+            mimetype: 'video/mp4',
+            fileName: `${title.slice(0, 50)}.mp4`,
+            caption: `🎬 *${title}*`,
+          },
+          { quoted: mek }
+        );
+      }
     } catch (err) {
-        console.error("Error during download/send:", err);
-        reply("❌ Failed to send the video. The stream may have been interrupted or the video might be inaccessible.");
+      console.error("Error during download/send:", err);
+      reply("❌ Failed to send the video. The download link from the scraper may have expired or the stream was interrupted.");
     } finally {
-        // Clean up the session to free up memory
-        delete sessions[from];
+      delete sessions[from]; // Clean up session
     }
 }
 
-
 // --- Command to download as Video (vid1) ---
-cmd(
-  {
-    pattern: "vid1",
-    desc: "Send YouTube video (uses the result from .vid).",
-    dontAddCommandList: true,
-  },
+cmd({ pattern: "vid1", desc: "Send YT video.", dontAddCommandList: true },
   (robin, mek, m, args) => handleDownload(robin, mek, m, args, false)
 );
 
-
 // --- Command to download as Document (vid2) ---
-cmd(
-  {
-    pattern: "vid2",
-    desc: "Send YouTube video as a document (uses the result from .vid).",
-    dontAddCommandList: true,
-  },
+cmd({ pattern: "vid2", desc: "Send YT video as document.", dontAddCommandList: true },
   (robin, mek, m, args) => handleDownload(robin, mek, m, args, true)
 );
