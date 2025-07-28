@@ -1,94 +1,53 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
-const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
-const https = require("https");
+const { ytmp4 } = require("@kelvdra/scraper");
 
-const MAX_DOCUMENT_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB
-
-// Streamtape credentials (embedded)
+// Streamtape API Credentials
 const STREAMTAPE_USER = "23f14c5519cc5e3175ca";
 const STREAMTAPE_KEY = "OkWybJzO6ah6K4";
 
-// Utility to format file size
-function formatBytes(bytes) {
-  if (!bytes) return "0 Bytes";
-  const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-}
+const MAX_INLINE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_DOCUMENT_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
-// Get file size from URL headers
-async function getFileSize(url) {
-  try {
-    const res = await axios.head(url, { timeout: 10000 });
-    return res.headers["content-length"] ? Number(res.headers["content-length"]) : 0;
-  } catch {
-    return 0;
-  }
-}
-
-// Clean file name title
-function sanitizeTitle(title) {
-  return title.replace(/[^\w\s-]/gi, "").replace(/\s+/g, "_").slice(0, 50);
-}
-
-// Upload video URL to Streamtape
+// Upload a file directly from URL to Streamtape
 async function uploadToStreamtape(directUrl) {
-  const apiUrl = `https://api.streamtape.com/file/ul?login=${STREAMTAPE_USER}&key=${STREAMTAPE_KEY}&url=${encodeURIComponent(directUrl)}`;
-  const res = await axios.get(apiUrl);
-  if (res.data.status !== 200) throw new Error("Upload to Streamtape failed");
-  return res.data.result.url;
+    const apiUrl = `https://api.streamtape.com/file/ul?login=${STREAMTAPE_USER}&key=${STREAMTAPE_KEY}&url=${encodeURIComponent(directUrl)}`;
+    const res = await axios.get(apiUrl);
+    if (res.data.status !== 200) throw new Error("Upload failed");
+    return res.data.result.url;
 }
 
-// Main command
-cmd(
-  {
-    pattern: "vid",
-    desc: "📥 YouTube Video Downloader (Streamtape Method)",
-    category: "download",
-    react: "📹",
-  },
-  async (robin, mek, m, { q, reply }) => {
-    const from = mek.key.remoteJid;
-    if (!q) return reply("🔍 Please provide a video name or YouTube link.");
+cmd({
+    pattern: "vdb",
+    desc: "Download and stream YouTube video using Streamtape",
+    type: "downloader",
+    fromMe: true,
+}, async (message, match) => {
+    if (!match) return await message.reply("🔍 Please provide a search term or YouTube link!");
 
     try {
-      await reply("🔎 Searching video on YouTube...");
-      const search = await yts(q);
-      const video = search.videos[0];
-      if (!video) return reply("❌ No video found.");
+        await message.reply("⏬ Fetching download link...");
 
-      await reply("⏬ Fetching download link...");
-      const result = await ytmp4(video.url, "360");
-      if (!result?.download?.url) return reply("❌ Couldn't fetch download link.");
+        let result;
+        if (match.includes("youtube.com") || match.includes("youtu.be")) {
+            result = await ytmp4(match);
+        } else {
+            const search = await yts(match);
+            if (!search.videos.length) throw new Error("No results found");
+            result = await ytmp4(search.videos[0].url);
+        }
 
-      const downloadUrl = result.download.url;
-      const fileSize = await getFileSize(downloadUrl);
-      const sizeFormatted = fileSize > 0 ? formatBytes(fileSize) : "Unknown";
-      const fileName = `${sanitizeTitle(video.title)}.mp4`;
+        if (!result || !result.url) throw new Error("Failed to extract download link");
 
-      await reply("📤 Uploading to Streamtape...");
-      const streamtapeUrl = await uploadToStreamtape(downloadUrl);
+        await message.reply("📤 Uploading to Streamtape...");
 
-      await reply("📡 Streaming to WhatsApp as document...");
-      const response = await axios.get(streamtapeUrl, { responseType: "stream" });
-      const mime = response.headers["content-type"] || "video/mp4";
+        const streamtapeLink = await uploadToStreamtape(result.url);
+        if (!streamtapeLink) throw new Error("Streamtape upload failed");
 
-      await robin.sendMessage(
-        from,
-        {
-          document: { stream: response.data },
-          mimetype: mime,
-          fileName,
-          caption: `🎬 *${video.title}*\n📦 *Size:* ${sizeFormatted}`,
-        },
-        { quoted: mek }
-      );
-    } catch (err) {
-      console.error("Video Download Error:", err.message);
-      reply("❌ Failed to process video. Please try again later.");
+        await message.reply(`📡 Streaming to WhatsApp as document...\n${streamtapeLink}`);
+    } catch (e) {
+        console.error(e);
+        await message.reply("❌ Failed to process video. Please try again later.");
     }
-  }
-);
+});
