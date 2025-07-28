@@ -30,7 +30,7 @@ ${link ? `📥 *Download Link:* ${link}\n` : ""}
 }
 
 cmd({
-  pattern: "video",
+  pattern: "vid",
   desc: "Download YouTube video (max 2GB)",
   category: "media",
   use: ".video <search or link>",
