@@ -2,13 +2,14 @@ const { cmd } = require("../command");
 const yts = require("yt-search");
 const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
+const fs = require("fs");
+const path = require("path");
 
 const MAX_DOCUMENT_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB
 const MAX_INLINE_VIDEO_SIZE = 64 * 1024 * 1024;   // 64 MB
-
 const sessions = {};
 
-// Format bytes to readable string
+// Format bytes
 function formatBytes(bytes) {
   if (!bytes) return '0 Bytes';
   const k = 1024;
@@ -17,7 +18,7 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// Get file size via HEAD request
+// Get file size via HEAD
 async function getFileSize(url) {
   try {
     const res = await axios.head(url, { timeout: 10000 });
@@ -33,7 +34,7 @@ function sanitizeTitle(title) {
   return title.replace(/[^\w\s-]/gi, '').replace(/\s+/g, '_').slice(0, 50);
 }
 
-// Main search & prepare command
+// Main command
 cmd({
   pattern: "vid",
   desc: "📥 YouTube Video Downloader.",
@@ -51,7 +52,7 @@ cmd({
 
     await reply("⏬ Fetching download link...");
     const result = await ytmp4(video.url, "360");
-    if (!result?.download?.url) {
+    if (!result?.download?.url || !result.download.url.startsWith("http")) {
       return reply("❌ Could not get download link. Maybe age-restricted or unsupported.");
     }
 
@@ -91,7 +92,7 @@ cmd({
   }
 });
 
-// Handle download and sending (stream only)
+// Downloader function
 async function handleDownload(robin, mek, m, { reply }, sendAsDocument = false) {
   const from = mek.key.remoteJid;
   const session = sessions[from];
@@ -111,36 +112,61 @@ async function handleDownload(robin, mek, m, { reply }, sendAsDocument = false) 
     const { title, downloadUrl, size, sizeFormatted } = session;
     const safeTitle = sanitizeTitle(title);
     const fileName = `${safeTitle}.mp4`;
+    const tempFilePath = path.join("/tmp", `${Date.now()}_${fileName}`);
 
     await reply(`✅ *Preparing video...*\n🎞️ *Title:* ${title}\n📦 *Size:* ${sizeFormatted}`);
 
-    const response = await axios.get(downloadUrl, { responseType: "stream" });
-    const stream = response.data;
-    const mime = response.headers['content-type'] || 'video/mp4';
+    const response = await axios.get(downloadUrl, {
+      responseType: "stream",
+      timeout: 60000,
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+    });
+
+    const writer = fs.createWriteStream(tempFilePath);
+    response.data.pipe(writer);
+
+    response.data.on("error", (err) => {
+      console.error("❌ Stream error:", err.message);
+      reply("❌ Download stream failed.");
+    });
+
+    await new Promise((resolve, reject) => {
+      writer.on("finish", resolve);
+      writer.on("error", (err) => {
+        console.error("❌ File write error:", err.message);
+        reject(err);
+      });
+    });
 
     const sendInline = !sendAsDocument && size < MAX_INLINE_VIDEO_SIZE && size > 0;
 
     if (sendInline) {
       await reply("📡 Uploading as video...");
       await robin.sendMessage(from, {
-        video: { stream },
-        mimetype: mime,
+        video: { url: tempFilePath },
+        mimetype: "video/mp4",
         fileName,
         caption: `🎬 ${title}`,
       }, { quoted: mek });
     } else {
       await reply("📡 Uploading as document...");
       await robin.sendMessage(from, {
-        document: { stream },
-        mimetype: mime,
+        document: { url: tempFilePath },
+        mimetype: "video/mp4",
         fileName,
         caption: `✅ *Sent as Document*\n\n🎬 *Title:* ${title}\n📦 *Size:* ${sizeFormatted}`,
       }, { quoted: mek });
     }
 
+    fs.unlinkSync(tempFilePath); // cleanup temp file
+
   } catch (err) {
-    console.error("Stream send error:", err);
-    reply("❌ Failed to send video. Link may have expired or stream interrupted.");
+    console.error("❌ Download/send error:", err.message || err);
+    reply("❌ Failed to download or send video.");
   } finally {
     delete sessions[from];
   }
@@ -159,7 +185,7 @@ cmd({
   dontAddCommandList: true,
 }, (robin, mek, m, args) => handleDownload(robin, mek, m, args, true));
 
-// Clean expired sessions
+// Cleanup expired sessions
 setInterval(() => {
   const now = Date.now();
   for (const key in sessions) {
