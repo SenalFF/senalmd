@@ -1,40 +1,66 @@
 const { cmd } = require("../command");
-const yts = require("yt-search");
 const { ytmp4 } = require("@kelvdra/scraper");
+const yts = require("yt-search");
 const axios = require("axios");
-const fs = require("fs");
-const path = require("path");
 
-const MAX_DOCUMENT_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB
-const MAX_INLINE_VIDEO_SIZE = 64 * 1024 * 1024;   // 64 MB
-const sessions = {};
+const MAX_INLINE_VIDEO_SIZE = 64 * 1024 * 1024; // 64MB
+const MAX_DOCUMENT_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
-// Format bytes
-function formatBytes(bytes) {
-  if (!bytes) return '0 Bytes';
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
+cmd({
+  pattern: "ytdl2",
+  alias: ["ytv2", "yt2"],
+  desc: "Download YouTube video (alt)",
+  category: "downloader",
+  use: "<search | url>",
+}, async (m, sock, { text, args, command }) => {
+  if (!text) return m.reply("*Please provide a search query or YouTube URL.*");
 
-// Get file size via HEAD
-async function getFileSize(url) {
+  let result;
+  let ytLink;
+
   try {
-    const res = await axios.head(url, { timeout: 10000 });
-    return res.headers['content-length'] ? Number(res.headers['content-length']) : 0;
+    if (text.startsWith("http")) {
+      ytLink = text;
+    } else {
+      const search = await yts(text);
+      if (!search?.videos?.length) return m.reply("*Video not found.*");
+      ytLink = search.videos[0].url;
+    }
+
+    m.reply("🔍 Fetching download link...");
+
+    result = await ytmp4(ytLink);
+    if (!result?.url) return m.reply("*❌ Failed to fetch download link.*");
+
+    const { title, url, size, sizeB, thumbnail } = result;
+
+    if (parseInt(sizeB) > MAX_DOCUMENT_SIZE) {
+      return m.reply("*❌ File too large to send (2GB limit).*");
+    }
+
+    const videoBuffer = await axios.get(url, {
+      responseType: "arraybuffer",
+      timeout: 60000,
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+      maxBodyLength: Infinity,
+    }).then(res => res.data).catch(() => null);
+
+    if (!videoBuffer) return m.reply("*❌ Error downloading the video.*");
+
+    await sock.sendMessage(m.chat, {
+      video: videoBuffer,
+      caption: `*🎬 Title:* ${title}\n*📦 Size:* ${size}\n*🔗 Link:* ${ytLink}`,
+      mimetype: "video/mp4",
+      fileName: title + ".mp4",
+    }, { quoted: m });
+
   } catch (err) {
-    console.warn("File size fetch failed:", err.message);
-    return 0;
+    console.error(err);
+    m.reply("*❌ Something went wrong while processing the video.*");
   }
-}
-
-// Sanitize filename
-function sanitizeTitle(title) {
-  return title.replace(/[^\w\s-]/gi, '').replace(/\s+/g, '_').slice(0, 50);
-}
-
-// Main command
+});// Main command
 cmd({
   pattern: "vid",
   desc: "📥 YouTube Video Downloader.",
