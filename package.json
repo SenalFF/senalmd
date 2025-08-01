@@ -33,7 +33,7 @@
     "sharp": "^0.32.6",
     "node-fetch": "^3.3.2",
     "path": "^0.12.7",
-    "node-downloader-manager": "^1.0.11",
+    "@sl-code-lords/movie-api": "^1.0.0",
     "pino": "^9.7.0",
     "pm2": "^6.0.8",
     "qrcode-terminal": "^0.12.0",
