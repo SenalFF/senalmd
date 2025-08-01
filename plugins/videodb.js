@@ -7,7 +7,7 @@ const MAX_INLINE_VIDEO_SIZE = 64 * 1024 * 1024; // 64MB
 const MAX_DOCUMENT_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
 cmd({
-  pattern: "ytdl2",
+  pattern: "vid",
   alias: ["ytv2", "yt2"],
   desc: "Download YouTube video (alt)",
   category: "downloader",
