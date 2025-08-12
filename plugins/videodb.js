@@ -8,16 +8,15 @@ const path = require("path");
 const MAX_DOCUMENT_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB
 const MAX_INLINE_VIDEO_SIZE = 64 * 1024 * 1024; // 64MB
 
-cmd({
-  pattern: "vid",
-  desc: "Download YouTube video by search or URL",
-  category: "downloader",
-  use: "<YouTube link or title>",
-  filename: __filename,
-}, async (message, match) => {
-  try {
-    if (!match) {
-      return message.reply("❌ *Please enter a YouTube link or search query.*");
+cmd(
+  {
+    pattern: "vid", 
+    desc: "📥 YouTube Video Downloader",
+    category: "download",
+    react: "📹",
+  },
+  async (robin, mek, m, { q, reply }) => {
+    const from = mek.key.remoteJid;
     }
 
     // Search YouTube
