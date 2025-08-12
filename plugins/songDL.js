@@ -1,7 +1,7 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
 const { ytmp3 } = require("@kelvdra/scraper");
-const { DownloaderHelper } = require("node-downloader-manager");
+const { DownloaderHelper } = require("");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
