@@ -2,6 +2,8 @@ const { cmd } = require("../command");
 const yts = require("yt-search");
 const { ytmp4 } = require("@kelvdra/scraper");
 const axios = require("axios");
+const fs = require("fs");
+const path = require("path");
 
 const MAX_DOCUMENT_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB
 const MAX_INLINE_VIDEO_SIZE = 64 * 1024 * 1024; // 64MB
@@ -14,13 +16,18 @@ cmd({
   filename: __filename,
 }, async (message, match) => {
   try {
-    if (!match) return message.reply("❌ *Please enter a YouTube link or search query.*");
+    if (!match) {
+      return message.reply("❌ *Please enter a YouTube link or search query.*");
+    }
 
+    // Search YouTube
     const search = await yts(match);
     const video = search.videos[0];
     if (!video) return message.reply("❌ *No results found.*");
 
-    const { url, title, timestamp, ago, views, image } = video;
+    const { url, title, timestamp, ago, views } = video;
+
+    // Get video info
     const info = await ytmp4(url);
     if (!info || !info.videoUrl) return message.reply("❌ *Failed to fetch video details.*");
 
@@ -32,15 +39,27 @@ cmd({
       return message.reply("❌ *Video too large to send.*");
     }
 
-    const res = await axios.get(info.videoUrl, {
-      responseType: "arraybuffer",
-      timeout: 30000,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
+    // Create a temp file path
+    const tempPath = path.join(__dirname, `${Date.now()}.mp4`);
+
+    // Download video in chunks (streaming)
+    const writer = fs.createWriteStream(tempPath);
+    const response = await axios({
+      method: "get",
+      url: info.videoUrl,
+      responseType: "stream",
+      timeout: 60000
     });
 
+    await new Promise((resolve, reject) => {
+      response.data.pipe(writer);
+      writer.on("finish", resolve);
+      writer.on("error", reject);
+    });
+
+    // Send file
     await message.send(
-      Buffer.from(res.data),
+      fs.readFileSync(tempPath),
       {
         caption,
         mimetype: "video/mp4",
@@ -49,6 +68,10 @@ cmd({
       },
       "video"
     );
+
+    // Delete temp file after sending
+    fs.unlinkSync(tempPath);
+
   } catch (err) {
     console.error("vid error:", err);
     return message.reply("⚠️ *An error occurred while executing the command.*\n\n_Use cmd: `vid <title or link>`_");
