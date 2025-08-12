@@ -18,6 +18,7 @@
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "file_size_url": "^1.0.6",
+    "node-fetch": "latest",
     "form-data": "^4.0.3",
     "fs": "^0.0.1-security",
     "os": "^0.1.2",
