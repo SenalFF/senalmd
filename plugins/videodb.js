@@ -58,7 +58,7 @@ async function sendDocument(robin, from, mek, filePath, title) {
 // ▶️ .video command
 cmd(
   {
-    pattern: "video",
+    pattern: "vid",
     desc: "📥 YouTube Video Downloader",
     category: "download",
     react: "📹",
