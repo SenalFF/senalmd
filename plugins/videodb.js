@@ -6,7 +6,7 @@ const sessions = {};
 
 cmd(
   {
-    pattern: "vidb",
+    pattern: "ytv",
     desc: "📥 YouTube Video Downloader",
     category: "download",
     react: "📹",
