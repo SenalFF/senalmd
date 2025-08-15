@@ -70,7 +70,7 @@ async (conn, mek, m, {
 //===========VIDEO-DL===========
 
 cmd({
-    pattern: "video",
+    pattern: "ytmp4",
     desc: "Download video",
     category: "download",
     react: "🎥",
