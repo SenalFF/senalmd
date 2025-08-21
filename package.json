@@ -29,14 +29,10 @@
     "fluent-ffmpeg": "latest",
     "ffmpeg-static": "latest",
     "form-data": "latest",
-
-    // 🔹 Big file / hosting
     "megajs": "latest",
     "mfiredlcore-vihangayt": "latest",
     "seedr": "latest",
     "adm-zip": "latest",
-
-    // 🔹 YouTube & Media downloaders
     "ytdl-core": "latest",
     "youtubedl-core": "latest",
     "@dark-yasiya/yt-dl.js": "latest",
@@ -46,19 +42,13 @@
     "api-dylux": "latest",
     "ruhend-scraper": "latest",
     "@bochilteam/scraper": "latest",
-
-    // 🔹 TikTok / FB / IG / others
     "@mrnima/tiktok-downloader": "latest",
     "@mrnima/facebook-downloader": "latest",
     "@dark-yasiya/imgbb.js": "latest",
-
-    // 🔹 Movies / subtitles / Sinhala content
     "@sl-code-lords/movie-api": "latest",
     "@sl-code-lords/si-subdl": "latest",
     "@sl-code-lords/esana-news": "latest",
     "wikipedia": "latest",
-
-    // 🔹 Extra utilities
     "moment-timezone": "latest",
     "g-i-s": "latest",
     "async-g-i-s": "latest",
@@ -68,8 +58,6 @@
     "xml2js": "latest",
     "cricketlive": "latest",
     "node-cache": "latest",
-
-    // 🔹 Image / audio extras
     "jimp": "latest",
     "acrcloud": "latest"
   }
