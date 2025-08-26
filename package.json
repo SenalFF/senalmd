@@ -19,6 +19,7 @@
     "qrcode-terminal": "latest",
     "pino": "latest",
     "pm2": "latest",
+    "btch-downloader" "latest",
     "cheerio": "latest",
     "yt-search": "latest",
     "file-type": "latest",
