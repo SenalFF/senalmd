@@ -1,166 +1,69 @@
 const { cmd } = require("../command");
 const { fbdown } = require("btch-downloader");
-const axios = require("axios");
 
-const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB limit
-const sessions = {};
-
-// 🔽 Download file
-async function downloadFile(url) {
-  const res = await axios.get(url, { responseType: "arraybuffer" });
-  return Buffer.from(res.data);
-}
-
-// ▶️ Send inline video
-async function sendVideo(robin, from, mek, buffer, title) {
-  await robin.sendMessage(
-    from,
-    {
-      video: buffer,
-      mimetype: "video/mp4",
-      fileName: `${title.slice(0, 30)}.mp4`,
-      caption: `🎬 *${title}*`,
-    },
-    { quoted: mek }
-  );
-}
-
-// 📁 Send as document
-async function sendDocument(robin, from, mek, buffer, title) {
-  await robin.sendMessage(
-    from,
-    {
-      document: buffer,
-      mimetype: "video/mp4",
-      fileName: `${title.slice(0, 30)}.mp4`,
-      caption: "✅ *Document sent by SENAL MD* 🎥",
-    },
-    { quoted: mek }
-  );
-}
-
-// ▶️ .fbdl command
 cmd(
   {
     pattern: "fbdl",
-    desc: "📥 Facebook Video Downloader",
-    category: "download",
-    react: "📹",
+    desc: "Download Facebook videos",
+    category: "downloader",
   },
-  async (robin, mek, m, { q, reply }) => {
-    const from = mek.key.remoteJid;
-
-    if (!q) return reply("🔗 *කරුණාකර Facebook video link එකක් ලබාදෙන්න*");
-
+  async (conn, mek, m, { args }) => {
     try {
-      await reply("🔎 Fetching Facebook video info...");
+      if (!args[0]) {
+        return conn.sendMessage(m.chat, { text: "📌 *Give me a Facebook video URL!*" }, { quoted: mek });
+      }
 
-      const data = await fbdown(q);
-      if (!data?.hd && !data?.sd) return reply("❌ *Couldn't fetch video. Try another link.*");
+      const url = args[0];
+      const data = await fbdown(url);
 
-      const videoInfo = {
-        title: data.title || "Facebook Video",
-        url: data.hd || data.sd,
-      };
+      if (!data || !data.sd || !data.hd) {
+        return conn.sendMessage(m.chat, { text: "❌ *Couldn't fetch video. Try another link.*" }, { quoted: mek });
+      }
 
-      // Save session
-      sessions[from] = { videoInfo, step: "choose_format" };
+      // Make buttons for HD / SD / Audio
+      const buttons = [
+        { buttonId: `fb_download ${data.hd}`, buttonText: { displayText: "📺 Download HD" }, type: 1 },
+        { buttonId: `fb_download ${data.sd}`, buttonText: { displayText: "📺 Download SD" }, type: 1 },
+        ...(data.audio ? [{ buttonId: `fb_download ${data.audio}`, buttonText: { displayText: "🎵 Download Audio" }, type: 1 }] : [])
+      ];
 
-      const info = `
-🎬 *SENAL MD Facebook Downloader*
-
-🎞️ *Title:* ${videoInfo.title}
-🔗 *URL:* ${q}
-
-📁 *Choose file type:*
-`;
-
-      // Send with reply buttons
-      await robin.sendMessage(
-        from,
+      await conn.sendMessage(
+        m.chat,
         {
-          image: { url: "https://telegra.ph/file/f2be313fe820b56b47748.png" },
-          caption: info,
-          footer: "SENAL BOT",
-          buttons: [
-            { buttonId: "fb1", buttonText: { displayText: "📹 Send as Video" }, type: 1 },
-            { buttonId: "fb2", buttonText: { displayText: "📁 Send as Document" }, type: 1 },
-          ],
+          text: `🎬 *Facebook Video Found!*\n\n🔗 ${url}\n\nChoose quality to download:`,
+          buttons,
           headerType: 4,
         },
         { quoted: mek }
       );
-    } catch (err) {
-      console.error("FB Video Error:", err);
-      return reply("❌ *Error while fetching Facebook video.*");
+
+    } catch (e) {
+      console.error(e);
+      return conn.sendMessage(m.chat, { text: "❌ *Couldn't fetch video. Try another link.*" }, { quoted: mek });
     }
   }
 );
 
-// 📽️ fb1: send inline video
+// Button response handler
 cmd(
   {
-    pattern: "fb1",
-    desc: "Send Facebook video inline",
+    pattern: "fb_download",
     dontAddCommandList: true,
   },
-  async (robin, mek, m, { reply }) => {
-    const from = mek.key.remoteJid;
-    const session = sessions[from];
-    if (!session || session.step !== "choose_format") return;
-
-    session.step = "sending";
-
+  async (conn, mek, m, { args }) => {
     try {
-      await reply("⏬ Downloading Facebook video...");
-      const buffer = await downloadFile(session.videoInfo.url);
-      const filesize = buffer.length;
+      const dlUrl = args[0];
+      if (!dlUrl) return;
 
-      if (filesize > MAX_VIDEO_SIZE) {
-        await reply(`⚠️ File is ${(filesize / 1024 / 1024).toFixed(2)} MB — sending as document instead.`);
-        await sendDocument(robin, from, mek, buffer, session.videoInfo.title);
-      } else {
-        await reply("📤 Uploading inline video...");
-        await sendVideo(robin, from, mek, buffer, session.videoInfo.title);
-      }
+      await conn.sendMessage(
+        m.chat,
+        { video: { url: dlUrl }, mimetype: "video/mp4", caption: "✅ Here is your video" },
+        { quoted: mek }
+      );
 
-      await reply("✅ *Video sent successfully!*");
-    } catch (err) {
-      console.error("FB1 send error:", err);
-      await reply("❌ *Failed to send Facebook video.*");
+    } catch (e) {
+      console.error(e);
+      conn.sendMessage(m.chat, { text: "⚠️ *Error sending video.*" }, { quoted: mek });
     }
-
-    delete sessions[from];
-  }
-);
-
-// 📁 fb2: send as document
-cmd(
-  {
-    pattern: "fb2",
-    desc: "Send Facebook video as document",
-    dontAddCommandList: true,
-  },
-  async (robin, mek, m, { reply }) => {
-    const from = mek.key.remoteJid;
-    const session = sessions[from];
-    if (!session || session.step !== "choose_format") return;
-
-    session.step = "sending";
-
-    try {
-      await reply("⏬ Downloading Facebook video...");
-      const buffer = await downloadFile(session.videoInfo.url);
-
-      await reply("📤 Uploading document...");
-      await sendDocument(robin, from, mek, buffer, session.videoInfo.title);
-
-      await reply("✅ *Document sent successfully!*");
-    } catch (err) {
-      console.error("FB2 send error:", err);
-      await reply("❌ *Failed to send document.*");
-    }
-
-    delete sessions[from];
   }
 );
