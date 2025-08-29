@@ -1,5 +1,6 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
+const sharp = require("sharp");
 const { cmd } = require("../command");
 
 const MAX_WHATSAPP_SIZE = 64 * 1024 * 1024; // 64 MB
@@ -15,7 +16,7 @@ async function fetchHTML(url) {
   return res.data;
 }
 
-// Search command with real thumbnail previews
+// Search command with working thumbnail previews
 cmd({
   pattern: "xvid",
   react: "🔞",
@@ -49,26 +50,32 @@ cmd({
 
     if (videos.length === 0) return reply("❌ Search results හමු නොවුණා.");
 
-    // Send results as image messages with captions
-    const limit = Math.min(5, videos.length); // limit to 5 to avoid flooding
+    // Limit to 5 results to avoid flooding
+    const limit = Math.min(5, videos.length);
     for (let i = 0; i < limit; i++) {
       const vid = videos[i];
       const caption = `*${i + 1}.* ${vid.title}\n🔗 ${vid.url}\n➡️ Use: *.xhamsterdl <video link>*`;
 
       if (vid.thumb) {
         try {
-          const tRes = await axios.get(vid.thumb, { responseType: "arraybuffer", timeout: 15000 });
+          // Fetch thumbnail as arraybuffer
+          const tRes = await axios.get(vid.thumb, { responseType: "arraybuffer", headers: { 'User-Agent': 'Mozilla/5.0' } });
+
+          // Convert to JPEG to ensure WhatsApp compatibility
+          const jpegBuffer = await sharp(Buffer.from(tRes.data)).jpeg().toBuffer();
+
+          // Send thumbnail as WhatsApp image
           await conn.sendMessage(mek.chat, {
-            image: { buffer: Buffer.from(tRes.data) }, // <-- send actual image
+            image: { buffer: jpegBuffer },
             caption
           }, { quoted: mek });
           continue;
-        } catch {
-          // fallback to text if thumbnail fetch fails
+        } catch (e) {
+          console.error("Thumbnail fetch/convert error:", e);
         }
       }
 
-      // fallback text message if thumbnail unavailable
+      // Fallback text message if thumbnail unavailable
       await reply(caption);
     }
 
@@ -159,8 +166,9 @@ cmd({
 
     if (thumb) {
       try {
-        const tRes = await axios.get(thumb, { responseType: "arraybuffer", timeout: 15000 });
-        sendObj.jpegThumbnail = Buffer.from(tRes.data);
+        const tRes = await axios.get(thumb, { responseType: "arraybuffer", headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const jpegThumb = await sharp(Buffer.from(tRes.data)).jpeg().toBuffer();
+        sendObj.jpegThumbnail = jpegThumb;
       } catch {}
     }
 
