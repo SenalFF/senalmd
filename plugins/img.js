@@ -1,53 +1,52 @@
-const { cmd } = require('../command');
-const axios = require('axios');
-const { Buffer } = require('buffer');
-
-const GOOGLE_API_KEY = 'AIzaSyDebFT-uY_f82_An6bnE9WvVcgVbzwDKgU'; // Replace with your Google API key
-const GOOGLE_CX = '45b94c5cef39940d1'; // Replace with your Google Custom Search Engine ID
+const { cmd } = require("../command");
+const axios = require("axios");
 
 cmd({
     pattern: "img",
-    desc: "Search and send images from Google.",
-    react: "🖼️",
-    category: "media",
+    alias: ["image", "googleimage", "searchimg"],
+    react: "🦋",
+    desc: "Search and download Google images",
+    category: "fun",
+    use: ".img <keywords>",
     filename: __filename
-},
-async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
+}, async (conn, mek, m, { reply, args, from }) => {
     try {
-        if (!q) return reply("Please provide a search query for the image.");
-
-        // Fetch image URLs from Google Custom Search API
-        const searchQuery = encodeURIComponent(q);
-        const url = `https://www.googleapis.com/customsearch/v1?q=${searchQuery}&cx=${GOOGLE_CX}&key=${GOOGLE_API_KEY}&searchType=image&num=5`;
-        
-        const response = await axios.get(url);
-        const data = response.data;
-
-        if (!data.items || data.items.length === 0) {
-            return reply("No images found for your query.");
+        const query = args.join(" ");
+        if (!query) {
+            return reply("🖼️ Please provide a search query\nExample: .img cute cats");
         }
 
-        // Send images
-        for (let i = 0; i < data.items.length; i++) {
-            const imageUrl = data.items[i].link;
+        await reply(`🔍 𝐒ᴇᴀʀᴄʜɪɴ𝐆 𝐈ᴍᴀɢᴇ𝐒 𝐅ᴏ𝐑 "${query}"...`);
 
-            // Download the image
-            const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-            const buffer = Buffer.from(imageResponse.data, 'binary');
+        const url = `https://apis.davidcyriltech.my.id/googleimage?query=${encodeURIComponent(query)}`;
+        const response = await axios.get(url);
 
-            // Send the image with a footer
-            await conn.sendMessage(from, {
-                image: buffer,
-                caption: `
-            🌟 *-------「 SENAL MD Image ${i + 1} from your search! 」-------* 🌟
+        // Validate response
+        if (!response.data?.success || !response.data.results?.length) {
+            return reply("❌ No images found. Try different keywords");
+        }
 
- © 𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐘 𝐒𝐄𝐍𝐀𝐋 𝐌𝐃
-`
-}, { quoted: mek });
-}
+        const results = response.data.results;
+        // Get 5 random images
+        const selectedImages = results
+            .sort(() => 0.5 - Math.random())
+            .slice(0, 5);
 
-    } catch (e) {
-        console.error(e);
-        reply(`Error: ${e.message}`);
+        for (const imageUrl of selectedImages) {
+            await conn.sendMessage(
+                from,
+                { 
+                    image: { url: imageUrl },
+                    caption: `📷 𝐑ᴇꜱᴜʟ𝐓 𝐅ᴏ𝐑: ${query}\n> *© Powered By King-Sandesh-Md V2 💸*`
+                },
+                { quoted: mek }
+            );
+            // Add delay between sends to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+    } catch (error) {
+        console.error('Image Search Error:', error);
+        reply(`❌ Error: ${error.message || "Failed to fetch images"}`);
     }
 });
