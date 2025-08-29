@@ -15,7 +15,7 @@ async function fetchHTML(url) {
   return res.data;
 }
 
-// Search command with thumbnail preview
+// Search command with real thumbnail previews
 cmd({
   pattern: "xvid",
   react: "🔞",
@@ -34,46 +34,32 @@ cmd({
     const html = await fetchHTML(searchUrl);
     const $ = cheerio.load(html);
 
-    const links = new Map();
-    const thumbs = new Map();
+    const videos = [];
 
     $('a').each((i, el) => {
       const href = $(el).attr('href');
       const title = $(el).attr('title') || $(el).text();
       const thumb = $(el).find('img').attr('src') || $(el).attr('data-thumb');
-      if (!href) return;
-      if (/\/videos?\/[a-z0-9-]+/i.test(href)) {
-        const full = href.startsWith('http') ? href : `https://xhamster.com${href}`;
-        if (!links.has(full)) {
-          links.set(full, title.trim() || full);
-          if (thumb) thumbs.set(full, thumb);
-        }
-      }
+
+      if (!href || !/\/videos?\/[a-z0-9-]+/i.test(href)) return;
+
+      const full = href.startsWith('http') ? href : `https://xhamster.com${href}`;
+      videos.push({ url: full, title: title.trim(), thumb });
     });
 
-    if (links.size === 0) {
-      const regex = /href="(\/videos?\/[a-z0-9-]+)"/gi;
-      let mch;
-      while ((mch = regex.exec(html)) !== null && links.size < 20) {
-        const full = `https://xhamster.com${mch[1]}`;
-        if (!links.has(full)) links.set(full, full);
-      }
-    }
+    if (videos.length === 0) return reply("❌ Search results හමු නොවුණා.");
 
-    const arr = Array.from(links.entries()).slice(0, 10);
-    if (arr.length === 0) return reply("❌ Search results හමු නොවුණා.");
+    // Send results as image messages with captions
+    const limit = Math.min(5, videos.length); // limit to 5 to avoid flooding
+    for (let i = 0; i < limit; i++) {
+      const vid = videos[i];
+      const caption = `*${i + 1}.* ${vid.title}\n🔗 ${vid.url}\n➡️ Use: *.xhamsterdl <video link>*`;
 
-    for (let i = 0; i < arr.length; i++) {
-      const [url, title] = arr[i];
-      const t = title.length > 80 ? title.slice(0, 77) + "..." : title;
-      const caption = `*${i + 1}.* ${t}\n🔗 ${url}\n➡️ Use: *.xhamsterdl <video link>*`;
-
-      const thumb = thumbs.get(url);
-      if (thumb) {
+      if (vid.thumb) {
         try {
-          const tRes = await axios.get(thumb, { responseType: "arraybuffer", timeout: 15000 });
+          const tRes = await axios.get(vid.thumb, { responseType: "arraybuffer", timeout: 15000 });
           await conn.sendMessage(mek.chat, {
-            image: { buffer: Buffer.from(tRes.data) },
+            image: { buffer: Buffer.from(tRes.data) }, // <-- send actual image
             caption
           }, { quoted: mek });
           continue;
@@ -82,7 +68,12 @@ cmd({
         }
       }
 
+      // fallback text message if thumbnail unavailable
       await reply(caption);
+    }
+
+    if (videos.length > 5) {
+      await reply(`ℹ️ More results available. Refine your search or download using the above links.`);
     }
 
   } catch (err) {
@@ -91,7 +82,7 @@ cmd({
   }
 });
 
-// Download command
+// Download command remains unchanged
 cmd({
   pattern: "xviddl",
   react: "⬇️",
