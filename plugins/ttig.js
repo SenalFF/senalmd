@@ -5,7 +5,7 @@ const sessions = {};
 
 cmd(
   {
-    pattern: "ttdl",
+    pattern: "ttdlvid",
     desc: "TikTok Video Downloader",
     category: "download",
     react: "🎬",
