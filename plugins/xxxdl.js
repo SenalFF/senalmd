@@ -41,32 +41,33 @@ cmd(
       const $ = cheerio.load(html);
 
       const results = [];
-      $("a.video-thumb").each((i, el) => {
-        if (results.length >= 5) return false;
-        const link = $(el).attr("href");
+      $("a").each((i, el) => {
+        const href = $(el).attr("href");
         const title =
-          $(el).attr("title") || $(el).find("img").attr("alt") || "Untitled";
+          $(el).attr("title") || $(el).text().trim() || "Untitled";
         const img =
-          $(el).find("img").attr("src") || $(el).find("img").attr("data-src");
-        if (link && title && img) {
-          results.push({
-            url: link.startsWith("http")
-              ? link
-              : `https://xhamster.com${link}`,
-            title,
-            thumb: img,
-          });
+          $(el).find("img").attr("src") ||
+          $(el).find("img").attr("data-src") ||
+          $(el).attr("data-thumb_url");
+
+        if (!href) return;
+        if (/\/videos?\//i.test(href)) {
+          const link = href.startsWith("http")
+            ? href
+            : `https://xhamster.com${href}`;
+          results.push({ url: link, title, thumb: img });
         }
       });
 
-      if (results.length === 0)
+      const arr = results.slice(0, 5); // limit to 5 results
+      if (arr.length === 0)
         return reply("❌ Search results හමු නොවුණා.");
 
-      for (const r of results) {
+      for (const r of arr) {
         await conn.sendMessage(
           mek.chat,
           {
-            image: { url: r.thumb },
+            image: r.thumb ? { url: r.thumb } : undefined,
             caption: `*${r.title}*\n🔗 ${r.url}`,
             buttons: [
               {
@@ -111,6 +112,7 @@ cmd(
 
       const html = await fetchHTML(url);
 
+      // Title + Thumbnail
       let title =
         (html.match(
           /<meta property="og:title" content="([^"]+)"/i
@@ -119,15 +121,14 @@ cmd(
         /<meta property="og:image" content="([^"]+)"/i
       ) || [])[1];
 
-      // find MP4 links
+      // Extract MP4 links
       const mp4Regex = /https?:\/\/[^"'()\s]+\.mp4[^"'()\s]*/gi;
       const found = [];
-      let mRes;
-      while ((mRes = mp4Regex.exec(html)) !== null) found.push(mRes[0]);
+      let match;
+      while ((match = mp4Regex.exec(html)) !== null) found.push(match[0]);
 
       if (found.length === 0) {
-        const cfgRegex =
-          /"videoUrl"\s*:\s*"([^"]+\.mp4[^"]*)"/i;
+        const cfgRegex = /"videoUrl"\s*:\s*"([^"]+\.mp4[^"]*)"/i;
         const cfg = html.match(cfgRegex);
         if (cfg && cfg[1])
           found.push(
@@ -142,13 +143,11 @@ cmd(
         );
 
       const videoUrl = unique[0];
-
-      // title safe filename
       const safeTitle = title.replace(/[^a-zA-Z0-9 ]/g, "_").slice(0, 64);
       const fileName = `${safeTitle}.mp4`;
       const caption = `🔞 *${title}*`;
 
-      // ✅ Always send as Document (no inline play, large files supported)
+      // ✅ Always send as Document (up to 2GB)
       await conn.sendMessage(
         mek.chat,
         {
