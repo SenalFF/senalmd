@@ -25,7 +25,7 @@ async function sendDocument(robin, from, mek, buffer, title) {
 // ▶️ .moviedl command
 cmd(
   {
-    pattern: "moviedl",
+    pattern: "mvdl",
     desc: "📥 Search & Download Movies",
     category: "download",
     react: "🎬",
