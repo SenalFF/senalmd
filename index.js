@@ -5,22 +5,25 @@ const {
     jidNormalizedUser,
     getContentType,
     fetchLatestBaileysVersion,
-    Browsers
+    Browsers,
+    downloadContentFromMessage,
+    proto,
+    generateWAMessageFromContent,
+    prepareWAMessageMedia
 } = require('@whiskeysockets/baileys');
 const { getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson } = require('./lib/functions');
 const fs = require('fs');
 const P = require('pino');
 const config = require('./config');
-const qrcode = require('qrcode-terminal');
 const util = require('util');
-const { sms, downloadMediaMessage } = require('./lib/msg');
+const { sms, downloadMediaMessage, AntiDelete } = require('./lib');
 const axios = require('axios');
 const { File } = require('megajs');
 const prefix = '.';
 
 const ownerNumber = ['94769872326'];
 
-//===================SESSION-AUTH============================
+//=================== SESSION-AUTH ============================
 if (!fs.existsSync(__dirname + '/auth_info_baileys/creds.json')) {
     if (!config.SESSION_ID) return console.log('Please add your session to SESSION_ID env!!');
     const sessdata = config.SESSION_ID;
@@ -37,7 +40,7 @@ const express = require("express");
 const app = express();
 const port = process.env.PORT || 8000;
 
-//=============================================
+//=============================================================
 
 async function connectToWA() {
     console.log("Connecting Senal MD BOT ⏳️...");
@@ -56,11 +59,11 @@ async function connectToWA() {
     conn.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            if (lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut) {
+            if (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut) {
                 connectToWA();
             }
         } else if (connection === 'open') {
-            console.log('🧬 Installing');
+            console.log('🧬 Installing Plugins...');
             const path = require('path');
             fs.readdirSync("./plugins/").forEach((plugin) => {
                 if (path.extname(plugin).toLowerCase() == ".js") {
@@ -71,12 +74,22 @@ async function connectToWA() {
             console.log('Bot connected to WhatsApp ✅');
 
             let up = `Senal-MD connected successfully ✅\n\nPREFIX: ${prefix}`;
-
             conn.sendMessage(ownerNumber + "@s.whatsapp.net", { image: { url: `https://files.catbox.moe/gm88nn.png` }, caption: up });
         }
     });
     conn.ev.on('creds.update', saveCreds);
 
+    //================ Anti Delete ===================
+    conn.ev.on('messages.update', async updates => {
+        for (const update of updates) {
+            if (update.update.message === null) {
+                console.log("Delete Detected:", JSON.stringify(update, null, 2));
+                await AntiDelete(conn, updates);
+            }
+        }
+    });
+
+    //================ Messages ======================
     conn.ev.on('messages.upsert', async (mek) => {
         mek = mek.messages[0];
         if (!mek.message) return;
@@ -89,14 +102,14 @@ async function connectToWA() {
         const m = sms(conn, mek);
         const type = getContentType(mek.message);
         const from = mek.key.remoteJid;
-        const quoted = (type == 'extendedTextMessage' && mek.message.extendedTextMessage.contextInfo) 
-            ? mek.message.extendedTextMessage.contextInfo.quotedMessage || [] 
+        const quoted = (type == 'extendedTextMessage' && mek.message.extendedTextMessage.contextInfo)
+            ? mek.message.extendedTextMessage.contextInfo.quotedMessage || []
             : [];
 
-        const body = (type === 'conversation') ? mek.message.conversation : 
-                     (type === 'extendedTextMessage') ? mek.message.extendedTextMessage.text : 
-                     (type === 'imageMessage') && mek.message.imageMessage.caption ? mek.message.imageMessage.caption : 
-                     (type === 'videoMessage') && mek.message.videoMessage.caption ? mek.message.videoMessage.caption : '';
+        const body = (type === 'conversation') ? mek.message.conversation :
+            (type === 'extendedTextMessage') ? mek.message.extendedTextMessage.text :
+                (type == 'imageMessage' && mek.message.imageMessage.caption) ? mek.message.imageMessage.caption :
+                    (type == 'videoMessage' && mek.message.videoMessage.caption) ? mek.message.videoMessage.caption : '';
 
         const isCmd = body.startsWith(prefix);
         const commandText = isCmd ? body.slice(prefix.length).trim().split(' ').shift().toLowerCase() : '';
@@ -110,7 +123,7 @@ async function connectToWA() {
         const isMe = botNumber.includes(senderNumber);
         const isOwner = ownerNumber.includes(senderNumber) || isMe;
         const botNumber2 = await jidNormalizedUser(conn.user.id);
-        const groupMetadata = isGroup ? await conn.groupMetadata(from).catch(() => {}) : '';
+        const groupMetadata = isGroup ? await conn.groupMetadata(from).catch(() => { }) : '';
         const groupName = isGroup ? groupMetadata.subject : '';
         const participants = isGroup ? await groupMetadata.participants : '';
         const groupAdmins = isGroup ? await getGroupAdmins(participants) : '';
@@ -118,58 +131,92 @@ async function connectToWA() {
         const isAdmins = isGroup ? groupAdmins.includes(sender) : false;
 
         // Reply helper
-        const reply = (text, extra = {}) => {
-            return conn.sendMessage(from, { text, ...extra }, { quoted: mek });
-        };
+        const reply = (text, extra = {}) => conn.sendMessage(from, { text, ...extra }, { quoted: mek });
 
-        // Load commands module
+        //================ Ban System ==================
+        const bannedUsers = JSON.parse(fs.readFileSync('./lib/ban.json', 'utf-8'));
+        if (bannedUsers.includes(senderNumber)) return; // ignore banned users
+
+        //================ Command Handler =============
         const events = require('./command');
-        // Find command by command text
-        const cmd = isCmd 
-            ? (events.commands.find(c => c.pattern === commandText) || events.commands.find(c => c.alias && c.alias.includes(commandText))) 
+        const cmd = isCmd
+            ? (events.commands.find(c => c.pattern === commandText) || events.commands.find(c => c.alias && c.alias.includes(commandText)))
             : null;
 
-        // Number command logic: commands triggered by exact number text (like "1", "2", etc)
-        const numberCmd = events.commands.find(c => c.on === 'number' && c.pattern === body);
-
-        // Handle command (prefix commands)
         if (cmd) {
             if (cmd.react) {
                 await conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
             }
             try {
-                await cmd.function(conn, mek, m, { from, quoted, body, isCmd, command: commandText, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
+                await cmd.function(conn, mek, m, {
+                    from, quoted, body, isCmd, command: commandText, args, q, isGroup,
+                    sender, senderNumber, botNumber2, botNumber, pushname,
+                    isMe, isOwner, groupMetadata, groupName, participants,
+                    groupAdmins, isBotAdmins, isAdmins, reply
+                });
             } catch (e) {
                 console.error("[PLUGIN ERROR] " + e);
                 reply("⚠️ An error occurred while executing the command.");
             }
-            return; // Command handled, exit
         }
+    });
 
-        // Handle number command (no prefix, exact message number)
-        if (numberCmd) {
-            try {
-                await numberCmd.function(conn, mek, m, { from, quoted, body, isCmd: false, command: numberCmd.pattern, args: [], q: '', isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
-            } catch (e) {
-                console.error("[NUMBER CMD ERROR] " + e);
-                reply("⚠️ An error occurred while executing the number command.");
-            }
-            return; // Number command handled, exit
+    //=============== Utility Functions ===============
+    conn.sendFileUrl = async (jid, url, caption, quoted, options = {}) => {
+        let mime = (await axios.head(url)).headers['content-type'];
+        let buffer = await getBuffer(url);
+        if (mime.startsWith("image")) return conn.sendMessage(jid, { image: buffer, caption, ...options }, { quoted });
+        if (mime.startsWith("video")) return conn.sendMessage(jid, { video: buffer, caption, ...options }, { quoted });
+        if (mime.startsWith("audio")) return conn.sendMessage(jid, { audio: buffer, mimetype: 'audio/mpeg', ...options }, { quoted });
+        return conn.sendMessage(jid, { document: buffer, mimetype: mime, caption, ...options }, { quoted });
+    };
+
+    conn.sendContact = async (jid, numbers, quoted = '', opts = {}) => {
+        let list = [];
+        for (let num of numbers) {
+            list.push({
+                displayName: num,
+                vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:${num}\nTEL;type=CELL;type=VOICE;waid=${num}:${num}\nEND:VCARD`
+            });
         }
+        await conn.sendMessage(jid, { contacts: { displayName: `${list.length} Contact`, contacts: list }, ...opts }, { quoted });
+    };
 
-        // Handle "body" type commands (commands triggered by matching body in any message)
-        events.commands.map(async (command) => {
-            if (body && command.on === "body") {
-                try {
-                    await command.function(conn, mek, m, { from, quoted, body, isCmd, command: command.pattern, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
-                } catch (e) {
-                    console.error("[BODY CMD ERROR] " + e);
+    conn.sendButtonText = (jid, buttons = [], text, footer, quoted = '', options = {}) => {
+        let buttonMessage = {
+            text,
+            footer,
+            buttons,
+            headerType: 2,
+            ...options
+        };
+        conn.sendMessage(jid, buttonMessage, { quoted, ...options });
+    };
+
+    conn.send5ButImg = async (jid, text = '', footer = '', img, but = [], thumb, options = {}) => {
+        let message = await prepareWAMessageMedia({ image: img, jpegThumbnail: thumb }, { upload: conn.waUploadToServer });
+        var template = generateWAMessageFromContent(jid, proto.Message.fromObject({
+            templateMessage: {
+                hydratedTemplate: {
+                    imageMessage: message.imageMessage,
+                    hydratedContentText: text,
+                    hydratedFooterText: footer,
+                    hydratedButtons: but
                 }
             }
-        });
-    });
+        }), options);
+        conn.relayMessage(jid, template.message, { messageId: template.key.id });
+    };
+
+    conn.sendTextWithMentions = async (jid, text, quoted, options = {}) =>
+        conn.sendMessage(
+            jid,
+            { text: text, contextInfo: { mentionedJid: [...text.matchAll(/@(\d{0,16})/g)].map(v => v[1] + '@s.whatsapp.net') }, ...options },
+            { quoted }
+        );
 }
 
+//================= Express KeepAlive =================
 app.get("/", (req, res) => {
     res.send("Hey, Senal started✅");
 });
