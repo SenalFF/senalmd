@@ -17,6 +17,8 @@
     "path": "latest",
     "node-fetch": "latest",
     "qrcode-terminal": "latest",
+    "@ffmpeg-installer/ffmpeg": "1.1.0",
+    "fluent-ffmpeg": "2.1.3",
     "pino": "latest",
     "pm2": "latest",
     "btch-downloader": "latest",
