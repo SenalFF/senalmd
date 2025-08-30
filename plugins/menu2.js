@@ -1,43 +1,33 @@
 const { cmd } = require('../command');
 
 cmd({
-    pattern: "menu2",
-    desc: "menu the bot",
+    pattern: "mn2",
+    desc: "Display the bot menu with buttons",
     category: "menu",
     react: "🧚‍♀️",
     filename: __filename
 }, async (conn, mek, m, { from, reply }) => {
     try {
-        // Main menu buttons
+        // Buttons
         const buttons = [
-            { buttonId: ".Owner", buttonText: { displayText: "👨‍💻 Owner" }, type: 1 },
-            { buttonId: ".Fun", buttonText: { displayText: "🎮 Fun" }, type: 1 },
-            { buttonId: ".Converter", buttonText: { displayText: "🛠 Converter" }, type: 1 },
-            { buttonId: ".AI", buttonText: { displayText: "🤖 AI" }, type: 1 },
-            { buttonId: ".Group", buttonText: { displayText: "👥 Group" }, type: 1 },
-            { buttonId: ".Download", buttonText: { displayText: "⬇ Download" }, type: 1 },
-            { buttonId: ".Anime", buttonText: { displayText: "🌸 Anime" }, type: 1 },
-            { buttonId: ".Other", buttonText: { displayText: "🔹 Other" }, type: 1 }
+            { buttonId: 'song', buttonText: { displayText: '🎵 Download Song' }, type: 1 },
+            { buttonId: 'video', buttonText: { displayText: '🎥 Download Video' }, type: 1 },
+            { buttonId: 'apk', buttonText: { displayText: '📱 Download APK' }, type: 1 },
+            { buttonId: 'sticker', buttonText: { displayText: '✨ Sticker Maker' }, type: 1 },
+            { buttonId: 'botcheck', buttonText: { displayText: '👤 Bot Check' }, type: 1 }
         ];
 
+        // Button message
         const buttonMessage = {
-            image: { url: "https://files.catbox.moe/gm88nn.png" },
-            caption: `
-🧚‍♀️ *Bot Name*: 😈🏆 Şєᶰάℓ м𝐝 ✎♡
-👨‍💻 *Owner*: Mr Senal
-👤 *Number*: 0769872xxx
-🧬 *Version*: 1.0.0
-💻 *Host*: fv-az661-842
-💫 *Prefix*: .
-            
-> © POWERED BY SENAL MD
-            `,
-            footer: "Select an option below 👇",
+            image: { url: "https://files.catbox.moe/gm88nn.png" }, // menu banner
+            caption: "╭─────『 *MR SENAL CONTROL CMDz* 』─────◆\n│\n│  Select an option below 👇\n╰─────────────◆\n\n╰─⧼ ɢᴇɴᴇʀᴀᴛᴇᴅ ʙʏ ᴍʀ ꜱᴇɴᴀʟ ⧽",
+            footer: "MR SENAL CONTROL CMDz",
             buttons: buttons,
-            headerType: 4
+            headerType: 4 // 4 = image header
         };
 
         await conn.sendMessage(from, buttonMessage, { quoted: mek });
+
     } catch (e) {
         console.log(e);
         reply(`⚠️ Error: ${e}`);
