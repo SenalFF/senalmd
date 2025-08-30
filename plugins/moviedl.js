@@ -1,145 +1,111 @@
 const { cmd } = require("../command");
 const { sinhalaSub } = require("mrnima-moviedl");
 
-// Initialize the scraper
-let movieScraper;
-(async () => { movieScraper = await sinhalaSub(); })();
+let movie;
+(async () => { movie = await sinhalaSub(); })();
 
 // -------------------------------------
 // Search Movies & TV Shows
 cmd({
   pattern: "sub",
-  react: "🎬",
-  desc: "Search Sinhala Subtitles (Movies & TV Shows)",
+  desc: "Search Movies & TV Shows",
   category: "download",
-  use: ".sub <movie/tv name>",
   filename: __filename
 }, async (conn, m, { args }) => {
-  if (!args[0]) return m.reply("❌ Please enter a movie or TV show name.");
-
+  if (!args[0]) return m.reply("❌ Please provide a search term.");
+  
   const query = args.join(" ");
-  let res = await movieScraper.search(query).catch(() => null);
-  if (!res || !res.status || res.result.length === 0) return m.reply("❌ No Sinhala subtitles found!");
+  const res = await movie.search(query).catch(() => null);
+  if (!res || !res.status || res.result.length === 0) return m.reply("❌ No results found.");
+  
+  let text = `🎬 *Search Results for:* ${query}\n\n`;
+  res.result.slice(0, 10).forEach((item, i) => {
+    text += `${i+1}. ${item.title}\nType: ${item.type}\nLink: ${item.link}\n\n`;
+  });
 
-  const results = res.result.slice(0, 5); // first 5 results
-  const buttons = results.map((r, i) => ({
-    buttonId: `.getsub ${encodeURIComponent(r.link)}`,
-    buttonText: { displayText: `${i + 1}. ${r.title}` },
-    type: 1
-  }));
-
-  await conn.sendMessage(m.from, {
-    image: { url: results[0].img },
-    caption: `🎬 *Sinhala Subtitles Search*\n🔎 Query: ${query}\n📌 Found ${res.result.length} results. Select one below:`,
-    footer: "💠 MR-NIMA Sinhala Sub Downloader",
-    buttons,
-    headerType: 4
-  }, { quoted: m });
+  await m.reply(text);
 });
 
 // -------------------------------------
-// Latest TV Shows
+// New Movies
 cmd({
-  pattern: "tvsub",
-  react: "📺",
-  desc: "Latest TV Shows with Sinhala Subtitles",
+  pattern: "newmovies",
+  desc: "Latest Movies",
   category: "download",
   filename: __filename
 }, async (conn, m, { args }) => {
   const page = args[0] || "1";
-  let res = await movieScraper.tvShows(page).catch(() => null);
-  if (!res || !res.status || res.result.length === 0) return m.reply("❌ No TV shows found!");
+  const res = await movie.newMovies(page).catch(() => null);
+  if (!res || !res.status || res.result.length === 0) return m.reply("❌ No new movies found.");
 
-  const results = res.result.slice(0, 5);
-  const buttons = results.map((r, i) => ({
-    buttonId: `.episodes ${encodeURIComponent(r.link)}`,
-    buttonText: { displayText: `${i + 1}. ${r.title}` },
-    type: 1
-  }));
+  let text = `🎬 *New Movies (Page ${page}):*\n\n`;
+  res.result.slice(0, 10).forEach((item, i) => {
+    text += `${i+1}. ${item.title}\nLink: ${item.link}\n\n`;
+  });
 
-  await conn.sendMessage(m.from, {
-    image: { url: results[0].img },
-    caption: `📺 *Latest TV Shows Sinhala Subtitles*\n📌 Page: ${page}\nSelect a show below:`,
-    footer: "💠 MR-NIMA TV Series Downloader",
-    buttons,
-    headerType: 4
-  }, { quoted: m });
+  await m.reply(text);
 });
 
 // -------------------------------------
-// Episodes of a TV Show
+// TV Shows
+cmd({
+  pattern: "tvsub",
+  desc: "Latest TV Shows",
+  category: "download",
+  filename: __filename
+}, async (conn, m, { args }) => {
+  const page = args[0] || "1";
+  const res = await movie.tvShows(page).catch(() => null);
+  if (!res || !res.status || res.result.length === 0) return m.reply("❌ No TV shows found.");
+
+  let text = `📺 *Latest TV Shows (Page ${page}):*\n\n`;
+  res.result.slice(0, 10).forEach((item, i) => {
+    text += `${i+1}. ${item.title}\nLink: ${item.link}\n\n`;
+  });
+
+  await m.reply(text);
+});
+
+// -------------------------------------
+// Episodes
 cmd({
   pattern: "episodes",
-  react: "📺",
-  desc: "Get episodes of a TV show",
+  desc: "Get episodes for a TV show",
   category: "download",
   filename: __filename
 }, async (conn, m, { args }) => {
   if (!args[0]) return m.reply("⚠️ Please provide TV show link.");
+  const tvLink = args[0];
 
-  const tvLink = decodeURIComponent(args[0]);
-  let res = await movieScraper.episodes(tvLink).catch(() => null);
-  if (!res || !res.status) return m.reply("❌ Could not fetch episodes.");
+  const res = await movie.episodes(tvLink).catch(() => null);
+  if (!res || !res.status || !res.result.episodes) return m.reply("❌ Could not fetch episodes.");
 
-  const epList = res.result.episodes || [];
-  if (epList.length === 0) return m.reply("❌ No episodes found.");
+  let text = `📺 *Episodes for:* ${res.result.title}\n\n`;
+  res.result.episodes.forEach((ep, i) => {
+    text += `${i+1}. ${ep.title}\nLink: ${ep.link}\n\n`;
+  });
 
-  const buttons = epList.slice(0, 10).map((ep, i) => ({
-    buttonId: `.getsub ${encodeURIComponent(ep.link)}`,
-    buttonText: { displayText: `Ep ${i + 1}: ${ep.title}` },
-    type: 1
-  }));
-
-  await conn.sendMessage(m.from, {
-    image: { url: res.result.image },
-    caption: `📺 *${res.result.title}*\n🗓️ Air date: ${res.result.first_air}\n📌 Total episodes: ${res.result.episodes_count}\nSelect episode below:`,
-    footer: "💠 MR-NIMA TV Episodes Downloader",
-    buttons,
-    headerType: 4
-  }, { quoted: m });
+  await m.reply(text);
 });
 
 // -------------------------------------
-// Get Download Links
+// Download Movie/Episode Links
 cmd({
   pattern: "getsub",
   desc: "Get download links for movie/episode",
   category: "download",
   filename: __filename
 }, async (conn, m, { args }) => {
-  if (!args[0]) return m.reply("⚠️ Link missing.");
+  if (!args[0]) return m.reply("⚠️ Please provide link.");
+  const link = args[0];
 
-  const link = decodeURIComponent(args[0]);
-  let res = await movieScraper.download(link).catch(() => null);
-  if (!res || !res.status) return m.reply("❌ Could not fetch download links.");
+  const res = await movie.download(link).catch(() => null);
+  if (!res || !res.status || !res.result.links) return m.reply("❌ Could not fetch download links.");
 
-  const links = res.result.links || [];
-  if (links.length === 0) return m.reply("❌ No download links available.");
+  let text = `🎬 *Download Links for:* ${res.result.title}\n\n`;
+  res.result.links.forEach(l => {
+    text += `${l.quality} (${l.size}): ${l.link}\n\n`;
+  });
 
-  const buttons = links.map(l => ({
-    buttonId: `.dl ${encodeURIComponent(l.link)}`,
-    buttonText: { displayText: `${l.quality} (${l.size})` },
-    type: 1
-  }));
-
-  await conn.sendMessage(m.from, {
-    image: { url: res.result.image },
-    caption: `🎬 *${res.result.title}*\n📅 Date: ${res.result.date}\n⏱ Duration: ${res.result.duration}\nSelect quality below:`,
-    footer: "💠 MR-NIMA Sinhala Downloader",
-    buttons,
-    headerType: 4
-  }, { quoted: m });
-});
-
-// -------------------------------------
-// Direct Download Link
-cmd({
-  pattern: "dl",
-  desc: "Send direct download link",
-  category: "download",
-  filename: __filename
-}, async (conn, m, { args }) => {
-  if (!args[0]) return m.reply("⚠️ Download link missing.");
-  const dlLink = decodeURIComponent(args[0]);
-  await m.reply(`📥 *Download Link:*\n${dlLink}`);
+  await m.reply(text);
 });
