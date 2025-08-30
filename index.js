@@ -6,17 +6,15 @@ const {
     getContentType,
     fetchLatestBaileysVersion,
     Browsers,
-    downloadContentFromMessage,
     proto,
     generateWAMessageFromContent,
     prepareWAMessageMedia
 } = require('@whiskeysockets/baileys');
-const { getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson } = require('./lib/functions');
+const { getBuffer, getGroupAdmins, fetchJson } = require('./lib/functions');
 const fs = require('fs');
 const P = require('pino');
 const config = require('./config');
-const util = require('util');
-const { sms, downloadMediaMessage, AntiDelete } = require('./lib');
+const { sms, downloadMediaMessage } = require('./lib'); 
 const axios = require('axios');
 const { File } = require('megajs');
 const prefix = '.';
@@ -74,20 +72,10 @@ async function connectToWA() {
             console.log('Bot connected to WhatsApp ✅');
 
             let up = `Senal-MD connected successfully ✅\n\nPREFIX: ${prefix}`;
-            conn.sendMessage(ownerNumber + "@s.whatsapp.net", { image: { url: `https://files.catbox.moe/gm88nn.png` }, caption: up });
+            conn.sendMessage(ownerNumber + "@s.whatsapp.net", { text: up });
         }
     });
     conn.ev.on('creds.update', saveCreds);
-
-    //================ Anti Delete ===================
-    conn.ev.on('messages.update', async updates => {
-        for (const update of updates) {
-            if (update.update.message === null) {
-                console.log("Delete Detected:", JSON.stringify(update, null, 2));
-                await AntiDelete(conn, updates);
-            }
-        }
-    });
 
     //================ Messages ======================
     conn.ev.on('messages.upsert', async (mek) => {
@@ -95,16 +83,9 @@ async function connectToWA() {
         if (!mek.message) return;
         mek.message = (getContentType(mek.message) === 'ephemeralMessage') ? mek.message.ephemeralMessage.message : mek.message;
 
-        if (mek.key && mek.key.remoteJid === 'status@broadcast' && config.AUTO_READ_STATUS === "true") {
-            await conn.readMessages([mek.key]);
-        }
-
         const m = sms(conn, mek);
         const type = getContentType(mek.message);
         const from = mek.key.remoteJid;
-        const quoted = (type == 'extendedTextMessage' && mek.message.extendedTextMessage.contextInfo)
-            ? mek.message.extendedTextMessage.contextInfo.quotedMessage || []
-            : [];
 
         const body = (type === 'conversation') ? mek.message.conversation :
             (type === 'extendedTextMessage') ? mek.message.extendedTextMessage.text :
@@ -118,17 +99,7 @@ async function connectToWA() {
         const isGroup = from.endsWith('@g.us');
         const sender = mek.key.fromMe ? (conn.user.id.split(':')[0] + '@s.whatsapp.net' || conn.user.id) : (mek.key.participant || mek.key.remoteJid);
         const senderNumber = sender.split('@')[0];
-        const botNumber = conn.user.id.split(':')[0];
-        const pushname = mek.pushName || 'No Name';
-        const isMe = botNumber.includes(senderNumber);
-        const isOwner = ownerNumber.includes(senderNumber) || isMe;
         const botNumber2 = await jidNormalizedUser(conn.user.id);
-        const groupMetadata = isGroup ? await conn.groupMetadata(from).catch(() => { }) : '';
-        const groupName = isGroup ? groupMetadata.subject : '';
-        const participants = isGroup ? await groupMetadata.participants : '';
-        const groupAdmins = isGroup ? await getGroupAdmins(participants) : '';
-        const isBotAdmins = isGroup ? groupAdmins.includes(botNumber2) : false;
-        const isAdmins = isGroup ? groupAdmins.includes(sender) : false;
 
         // Reply helper
         const reply = (text, extra = {}) => conn.sendMessage(from, { text, ...extra }, { quoted: mek });
@@ -137,51 +108,48 @@ async function connectToWA() {
         const bannedUsers = JSON.parse(fs.readFileSync('./lib/ban.json', 'utf-8'));
         if (bannedUsers.includes(senderNumber)) return; // ignore banned users
 
-        //================ Command Handler =============
-        const events = require('./command');
-        const cmd = isCmd
-            ? (events.commands.find(c => c.pattern === commandText) || events.commands.find(c => c.alias && c.alias.includes(commandText)))
-            : null;
+        //================ Example Commands =============
+        if (isCmd) {
+            switch (commandText) {
+                case 'ban':
+                    if (!ownerNumber.includes(senderNumber)) return reply("❌ Only owner can ban users!");
+                    if (!q) return reply("⚠️ Provide a number to ban.");
+                    bannedUsers.push(q);
+                    fs.writeFileSync('./lib/ban.json', JSON.stringify(bannedUsers, null, 2));
+                    reply(`✅ User ${q} banned.`);
+                    break;
 
-        if (cmd) {
-            if (cmd.react) {
-                await conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
-            }
-            try {
-                await cmd.function(conn, mek, m, {
-                    from, quoted, body, isCmd, command: commandText, args, q, isGroup,
-                    sender, senderNumber, botNumber2, botNumber, pushname,
-                    isMe, isOwner, groupMetadata, groupName, participants,
-                    groupAdmins, isBotAdmins, isAdmins, reply
-                });
-            } catch (e) {
-                console.error("[PLUGIN ERROR] " + e);
-                reply("⚠️ An error occurred while executing the command.");
+                case 'unban':
+                    if (!ownerNumber.includes(senderNumber)) return reply("❌ Only owner can unban users!");
+                    if (!q) return reply("⚠️ Provide a number to unban.");
+                    const index = bannedUsers.indexOf(q);
+                    if (index !== -1) {
+                        bannedUsers.splice(index, 1);
+                        fs.writeFileSync('./lib/ban.json', JSON.stringify(bannedUsers, null, 2));
+                        reply(`✅ User ${q} unbanned.`);
+                    } else reply("⚠️ User not found in ban list.");
+                    break;
+
+                case 'menu':
+                    let buttons = [
+                        { buttonId: `${prefix}owner`, buttonText: { displayText: "👑 Owner" }, type: 1 },
+                        { buttonId: `${prefix}ping`, buttonText: { displayText: "📡 Ping" }, type: 1 }
+                    ];
+                    conn.sendButtonText(from, buttons, "✨ Senal-MD Menu", "Senal-MD Bot", mek);
+                    break;
+
+                case 'ping':
+                    reply("🏓 Pong!");
+                    break;
+
+                case 'owner':
+                    reply("👑 Owner: " + ownerNumber[0]);
+                    break;
             }
         }
     });
 
     //=============== Utility Functions ===============
-    conn.sendFileUrl = async (jid, url, caption, quoted, options = {}) => {
-        let mime = (await axios.head(url)).headers['content-type'];
-        let buffer = await getBuffer(url);
-        if (mime.startsWith("image")) return conn.sendMessage(jid, { image: buffer, caption, ...options }, { quoted });
-        if (mime.startsWith("video")) return conn.sendMessage(jid, { video: buffer, caption, ...options }, { quoted });
-        if (mime.startsWith("audio")) return conn.sendMessage(jid, { audio: buffer, mimetype: 'audio/mpeg', ...options }, { quoted });
-        return conn.sendMessage(jid, { document: buffer, mimetype: mime, caption, ...options }, { quoted });
-    };
-
-    conn.sendContact = async (jid, numbers, quoted = '', opts = {}) => {
-        let list = [];
-        for (let num of numbers) {
-            list.push({
-                displayName: num,
-                vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:${num}\nTEL;type=CELL;type=VOICE;waid=${num}:${num}\nEND:VCARD`
-            });
-        }
-        await conn.sendMessage(jid, { contacts: { displayName: `${list.length} Contact`, contacts: list }, ...opts }, { quoted });
-    };
-
     conn.sendButtonText = (jid, buttons = [], text, footer, quoted = '', options = {}) => {
         let buttonMessage = {
             text,
