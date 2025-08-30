@@ -7,7 +7,7 @@ const path = require("path");
 const PAGE_SIZE = 5; // results per page
 
 cmd({
-  pattern: "sub",
+  pattern: "ss",
   react: "🎬",
   desc: "Search Sinhala Subtitles with pagination",
   category: "download",
@@ -59,7 +59,7 @@ cmd({
 
     // Command to handle page clicks
     cmd({
-      pattern: "subpage",
+      pattern: "sp",
       fromMe: true,
       dontAddCommandList: true,
       filename: __filename
@@ -76,7 +76,7 @@ cmd({
 });
 
 cmd({
-  pattern: "subdl",
+  pattern: "sdl",
   react: "⬇️",
   desc: "Download Sinhala Subtitles (Baiscope)",
   category: "download",
