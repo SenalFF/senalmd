@@ -5,7 +5,6 @@ const { cmd } = require("../command");
 
 const MAX_WHATSAPP_SIZE = 64 * 1024 * 1024; // 64 MB
 
-// Helper: fetch HTML
 async function fetchHTML(url) {
   const res = await axios.get(url, {
     headers: {
@@ -18,116 +17,106 @@ async function fetchHTML(url) {
 
 // ==================== 🔎 SEARCH COMMAND ====================
 cmd({
-  pattern: "xvid",
+  pattern: "xnxx",
   react: "🔞",
-  desc: "Search xHamster videos by query",
+  desc: "Search xnxx.tv videos by query",
   category: "adult",
-  use: ".xvid <query>",
+  use: ".xnxx <query>",
   filename: __filename
 }, async (conn, mek, m, { args, reply }) => {
   try {
     const query = args.join(" ").trim();
-    if (!query) return reply("⚡ Query එකක් දෙන්න.\nඋදා: *.xvid indian milf*");
+    if (!query) return reply("⚡ Query එකක් දෙන්න.\nඋදා: *.xnxx hot milf*");
 
-    await reply("🔎 Searching xHamster...");
+    await reply("🔎 Searching xnxx.tv...");
 
-    const searchUrl = `https://xhamster.com/search/${encodeURIComponent(query)}`;
+    const searchUrl = `https://www.xnxx.tv/search/${encodeURIComponent(query)}`;
     const html = await fetchHTML(searchUrl);
     const $ = cheerio.load(html);
 
     const videos = [];
 
-    $("a").each((i, el) => {
-      const href = $(el).attr("href");
-      const title = $(el).attr("title") || $(el).text();
-      const thumb = $(el).find("img").attr("src") || $(el).attr("data-thumb");
+    $("div.mozaique > article").each((i, el) => {
+      const linkEl = $(el).find("a.thumb-block");
+      const href = linkEl.attr("href");
+      const title = linkEl.attr("title") || linkEl.text().trim();
+      const thumb = linkEl.find("img").attr("data-src") || linkEl.find("img").attr("src");
 
-      if (!href || !/\/videos?\/[a-z0-9-]+/i.test(href)) return;
-
-      const full = href.startsWith("http") ? href : `https://xhamster.com${href}`;
-      videos.push({ url: full, title: title.trim(), thumb });
+      if (!href) return;
+      const full = href.startsWith("http") ? href : `https://www.xnxx.tv${href}`;
+      videos.push({ url: full, title, thumb });
     });
 
     if (videos.length === 0) return reply("❌ Search results හමු නොවුණා.");
 
-    // Limit results
     const limit = Math.min(5, videos.length);
     for (let i = 0; i < limit; i++) {
       const vid = videos[i];
-      const caption = `*${i + 1}.* ${vid.title}\n🔗 ${vid.url}\n➡️ Use: *.xviddl ${vid.url}*`;
+      const caption = `*${i + 1}.* ${vid.title}\n🔗 ${vid.url}\n➡️ Use: *.xnxxdl ${vid.url}*`;
 
       if (vid.thumb) {
         try {
           const tRes = await axios.get(vid.thumb, { responseType: "arraybuffer" });
           const jpegBuffer = await sharp(Buffer.from(tRes.data)).jpeg().toBuffer();
-
           await conn.sendMessage(mek.chat, {
             image: { buffer: jpegBuffer },
             caption
           }, { quoted: mek });
           continue;
         } catch (e) {
-          console.error("Thumbnail fetch/convert error:", e);
+          console.error("Thumbnail error:", e);
         }
       }
 
-      // fallback text
       await reply(caption);
     }
 
-    if (videos.length > 5) {
-      await reply("ℹ️ More results available. Refine your search.");
-    }
-
+    if (videos.length > 5) await reply("ℹ️ More results available. Refine your search.");
   } catch (err) {
-    console.error("xvid search error:", err);
-    reply("❌ Search එකේ දෝෂයක්. ටිකක් පසුව නැවත උත්සහ කරන්න.");
+    console.error("xnxx search error:", err);
+    reply("❌ Search error. Try again later.");
   }
 });
 
 // ==================== ⬇️ DOWNLOAD COMMAND ====================
 cmd({
-  pattern: "xviddl",
+  pattern: "xnxxdl",
   react: "⬇️",
-  desc: "Download xHamster video by URL",
+  desc: "Download xnxx.tv video by URL",
   category: "adult",
-  use: ".xviddl <xhamster video link>",
+  use: ".xnxxdl <video link>",
   filename: __filename
 }, async (conn, mek, m, { args, reply }) => {
   try {
     let url = args[0];
-    if (!url) return reply("⚡ Link එකක් දෙන්න.\nඋදා: *.xviddl https://xhamster.com/videos/...*");
-
+    if (!url) return reply("⚡ Link එකක් දෙන්න.\nඋදා: *.xnxxdl https://www.xnxx.tv/video/...*");
     if (!url.startsWith("http")) url = `https://${url}`;
+
     await reply("⏳ Fetching video page...");
 
     const html = await fetchHTML(url);
 
-    // Title + thumbnail
-    let title = (html.match(/<meta property="og:title" content="([^"]+)"/i) || [])[1] || "xhamster_video";
+    // Title + thumb
+    let title = (html.match(/<title>(.*?)<\/title>/i) || [])[1] || "xnxx_video";
     let thumb = (html.match(/<meta property="og:image" content="([^"]+)"/i) || [])[1];
 
-    // JSON extraction (supports both formats)
-    let jsonMatch = html.match(/window\.initials\s*=\s*({.*?});/s);
-    if (!jsonMatch) {
-      jsonMatch = html.match(/<script[^>]+id="initials-script"[^>]*>(.*?)<\/script>/s);
-    }
-
-    if (!jsonMatch) return reply("❌ Video metadata JSON not found.");
+    // Extract JSON from player setup
+    const playerJsonMatch = html.match(/var\s+player_quality\s*=\s*(\{.*?\});/s);
+    if (!playerJsonMatch) return reply("❌ Video JSON not found.");
 
     let sources = [];
     try {
-      const json = JSON.parse(jsonMatch[1]);
-      const media = json?.videoModel?.sources?.mp4;
-      if (media) sources = Object.values(media).map(v => v.url);
+      const json = JSON.parse(playerJsonMatch[1]);
+      if (json && json.html5 && json.html5.mp4) {
+        sources = Object.values(json.html5.mp4).map(v => v.url);
+      }
     } catch (e) {
       console.error("JSON parse error:", e);
     }
 
     if (sources.length === 0) return reply("❌ Direct video links not found.");
 
-    // Pick best quality (last one = highest)
-    const videoUrl = sources[sources.length - 1];
+    const videoUrl = sources[sources.length - 1]; // best quality
 
     // Size check
     let fileSize = 0;
@@ -160,9 +149,8 @@ cmd({
     }
 
     await conn.sendMessage(mek.chat, sendObj, { quoted: mek });
-
   } catch (err) {
-    console.error("xviddl error:", err);
-    reply("❌ Video download error. Link එක හරියට check කරන්න.");
+    console.error("xnxxdl error:", err);
+    reply("❌ Video download error. Check the link.");
   }
 });
