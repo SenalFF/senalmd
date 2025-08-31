@@ -28,15 +28,19 @@ cmd({
       return reply("❌ No videos found for your query!");
     }
 
-    // Send each result as thumbnail + caption
     for (let i = 0; i < Math.min(results.length, 10); i++) {
       const v = results[i];
       const caption = `*${i + 1}.* ${v.title}\n${v.info.replace(/\n/g, " ").trim()}\n🔗 ${v.link}\n_➡️ Use: *.xvideo <link>* to download_\n\n_Sent by ＳＥＮＡＬ ＭＤ_`;
 
-      await conn.sendMessage(mek.chat, {
-        image: { url: v.thumb || v.preview || "" },
-        caption: caption
-      }, { quoted: mek });
+      // Only send image if thumbnail exists
+      if (v.thumb && v.thumb.startsWith("http")) {
+        await conn.sendMessage(mek.chat, {
+          image: { url: v.thumb },
+          caption: caption
+        }, { quoted: mek });
+      } else {
+        await reply(caption); // fallback to text-only
+      }
     }
 
   } catch (e) {
