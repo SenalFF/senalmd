@@ -28,13 +28,16 @@ cmd({
       return reply("❌ No videos found for your query!");
     }
 
-    let txt = `🔞 𝐊ꜱᴍ𝐃 18+ 𝐕ɪᴅᴇ𝐎 𝐃ᴏᴡɴʟᴏᴀᴅᴇ𝐑 📥\n\n🔞 *𝚂𝙴𝙰𝚁𝙲𝙷 𝚁𝙴𝚂𝚄𝙻𝚃𝚂 𝙵𝙾𝚁 :* ${query}\n\n`;
-    results.slice(0, 10).forEach((v, i) => {
-      txt += `*${i + 1}.* ${v.title}\n${v.info.replace(/\n/g, " ").trim()}\n🔗 ${v.link}\n\n`;
-    });
-    txt += `_➡️ Use: *.xvideo <link>* to download_`;
+    // Send each result as thumbnail + caption
+    for (let i = 0; i < Math.min(results.length, 10); i++) {
+      const v = results[i];
+      const caption = `*${i + 1}.* ${v.title}\n${v.info.replace(/\n/g, " ").trim()}\n🔗 ${v.link}\n_➡️ Use: *.xvideo <link>* to download_\n\n_Sent by ＳＥＮＡＬ ＭＤ_`;
 
-    await reply(txt);
+      await conn.sendMessage(mek.chat, {
+        image: { url: v.thumb || v.preview || "" },
+        caption: caption
+      }, { quoted: mek });
+    }
 
   } catch (e) {
     console.log("XNXX Search Error:", e);
@@ -70,7 +73,7 @@ cmd({
     const title = videoData.title || "xnxx_video";
     const duration = videoData.duration || "Unknown";
 
-    let caption = `🔞 _*${title}*_\n⏱ 𝐃𝐮𝐫𝐚𝐭𝐢𝐨𝐧: ${duration} 𝐒𝐞𝐜`;
+    let caption = `🔞 _*${title}*_\n⏱ 𝐃𝐮𝐫𝐚𝐭𝐢𝐨𝐧: ${duration} 𝐒𝐞𝐜\n_Sent by ＳＥＮＡＬ ＭＤ_`;
 
     // File size check
     let fileSize = 0;
