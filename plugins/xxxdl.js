@@ -16,7 +16,7 @@ async function fetchHTML(url) {
   return res.data;
 }
 
-// --------------------- SEARCH COMMAND ---------------------
+// ==================== 🔎 SEARCH COMMAND ====================
 cmd({
   pattern: "xvid",
   react: "🔞",
@@ -37,20 +37,20 @@ cmd({
 
     const videos = [];
 
-    $('a').each((i, el) => {
-      const href = $(el).attr('href');
-      const title = $(el).attr('title') || $(el).text();
-      const thumb = $(el).find('img').attr('src') || $(el).attr('data-thumb');
+    $("a").each((i, el) => {
+      const href = $(el).attr("href");
+      const title = $(el).attr("title") || $(el).text();
+      const thumb = $(el).find("img").attr("src") || $(el).attr("data-thumb");
 
-      if (!href || !/\/videos?\//i.test(href)) return;
+      if (!href || !/\/videos?\/[a-z0-9-]+/i.test(href)) return;
 
-      const full = href.startsWith('http') ? href : `https://xhamster.com${href}`;
+      const full = href.startsWith("http") ? href : `https://xhamster.com${href}`;
       videos.push({ url: full, title: title.trim(), thumb });
     });
 
     if (videos.length === 0) return reply("❌ Search results හමු නොවුණා.");
 
-    // Limit to 5 results
+    // Limit results
     const limit = Math.min(5, videos.length);
     for (let i = 0; i < limit; i++) {
       const vid = videos[i];
@@ -71,11 +71,12 @@ cmd({
         }
       }
 
+      // fallback text
       await reply(caption);
     }
 
     if (videos.length > 5) {
-      await reply(`ℹ️ More results available. Refine your search or download using the above links.`);
+      await reply("ℹ️ More results available. Refine your search.");
     }
 
   } catch (err) {
@@ -84,7 +85,7 @@ cmd({
   }
 });
 
-// --------------------- DOWNLOAD COMMAND ---------------------
+// ==================== ⬇️ DOWNLOAD COMMAND ====================
 cmd({
   pattern: "xviddl",
   react: "⬇️",
@@ -98,44 +99,41 @@ cmd({
     if (!url) return reply("⚡ Link එකක් දෙන්න.\nඋදා: *.xviddl https://xhamster.com/videos/...*");
 
     if (!url.startsWith("http")) url = `https://${url}`;
-
     await reply("⏳ Fetching video page...");
 
     const html = await fetchHTML(url);
 
-    // Extract title & thumbnail
+    // Title + thumbnail
     let title = (html.match(/<meta property="og:title" content="([^"]+)"/i) || [])[1] || "xhamster_video";
     let thumb = (html.match(/<meta property="og:image" content="([^"]+)"/i) || [])[1];
 
-    // ✅ Extract JSON config (contains real MP4/HLS links)
-    const jsonMatch = html.match(/window\.initials\s*=\s*(\{.*\})\s*;/s);
-    if (!jsonMatch) return reply("❌ Video metadata not found.");
+    // JSON extraction (supports both formats)
+    let jsonMatch = html.match(/window\.initials\s*=\s*({.*?});/s);
+    if (!jsonMatch) {
+      jsonMatch = html.match(/<script[^>]+id="initials-script"[^>]*>(.*?)<\/script>/s);
+    }
+
+    if (!jsonMatch) return reply("❌ Video metadata JSON not found.");
 
     let sources = [];
     try {
       const json = JSON.parse(jsonMatch[1]);
-      const mediaMp4 = json?.videoModel?.sources?.mp4;
-      const mediaHls = json?.videoModel?.sources?.hls;
-
-      if (mediaMp4) {
-        sources = Object.values(mediaMp4).map(v => v.url);
-      } else if (mediaHls) {
-        sources = Object.values(mediaHls).map(v => v.url);
-      }
+      const media = json?.videoModel?.sources?.mp4;
+      if (media) sources = Object.values(media).map(v => v.url);
     } catch (e) {
       console.error("JSON parse error:", e);
     }
 
     if (sources.length === 0) return reply("❌ Direct video links not found.");
 
-    // Pick best quality
+    // Pick best quality (last one = highest)
     const videoUrl = sources[sources.length - 1];
 
-    // Check size limit
+    // Size check
     let fileSize = 0;
     try {
       const head = await axios.head(videoUrl, { timeout: 15000 });
-      fileSize = parseInt(head.headers['content-length'] || "0");
+      fileSize = parseInt(head.headers["content-length"] || "0");
     } catch {}
 
     const safeTitle = title.replace(/[^a-zA-Z0-9 ]/g, "_").slice(0, 64);
@@ -143,7 +141,7 @@ cmd({
     const caption = `🔞 *${title}*`;
 
     if (fileSize && fileSize > MAX_WHATSAPP_SIZE) {
-      return reply(`⚠️ File too large for WhatsApp (${(fileSize/1024/1024).toFixed(2)} MB).\nDownload manually:\n${videoUrl}`);
+      return reply(`⚠️ File too large (${(fileSize / 1024 / 1024).toFixed(2)} MB).\nDownload manually:\n${videoUrl}`);
     }
 
     const sendObj = {
