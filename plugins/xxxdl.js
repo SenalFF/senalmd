@@ -36,13 +36,13 @@ cmd({
 
     const videos = [];
 
-    $("div.mozaique > article").each((i, el) => {
-      const linkEl = $(el).find("a.thumb-block");
-      const href = linkEl.attr("href");
-      const title = linkEl.attr("title") || linkEl.text().trim();
-      const thumb = linkEl.find("img").attr("data-src") || linkEl.find("img").attr("src");
+    // 🔑 Updated selector for 2025 site
+    $("div.thumb a").each((i, el) => {
+      const href = $(el).attr("href");
+      const title = $(el).attr("title") || $(el).text().trim();
+      const thumb = $(el).find("img").attr("data-src") || $(el).find("img").attr("src");
 
-      if (!href) return;
+      if (!href || !href.startsWith("/video/")) return;
       const full = href.startsWith("http") ? href : `https://www.xnxx.tv${href}`;
       videos.push({ url: full, title, thumb });
     });
@@ -96,11 +96,11 @@ cmd({
 
     const html = await fetchHTML(url);
 
-    // Title + thumb
+    // Title + thumbnail
     let title = (html.match(/<title>(.*?)<\/title>/i) || [])[1] || "xnxx_video";
     let thumb = (html.match(/<meta property="og:image" content="([^"]+)"/i) || [])[1];
 
-    // Extract JSON from player setup
+    // Extract player JSON (works with current xnxx.tv)
     const playerJsonMatch = html.match(/var\s+player_quality\s*=\s*(\{.*?\});/s);
     if (!playerJsonMatch) return reply("❌ Video JSON not found.");
 
