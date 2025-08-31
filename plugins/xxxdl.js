@@ -107,16 +107,20 @@ cmd({
     let title = (html.match(/<meta property="og:title" content="([^"]+)"/i) || [])[1] || "xhamster_video";
     let thumb = (html.match(/<meta property="og:image" content="([^"]+)"/i) || [])[1];
 
-    // ✅ Extract JSON config (contains real MP4 links)
-    const jsonMatch = html.match(/window\.initials\s*=\s*({.*?});/s);
+    // ✅ Extract JSON config (contains real MP4/HLS links)
+    const jsonMatch = html.match(/window\.initials\s*=\s*(\{.*\})\s*;/s);
     if (!jsonMatch) return reply("❌ Video metadata not found.");
 
     let sources = [];
     try {
       const json = JSON.parse(jsonMatch[1]);
-      const media = json?.videoModel?.sources?.mp4;
-      if (media) {
-        sources = Object.values(media).map(v => v.url);
+      const mediaMp4 = json?.videoModel?.sources?.mp4;
+      const mediaHls = json?.videoModel?.sources?.hls;
+
+      if (mediaMp4) {
+        sources = Object.values(mediaMp4).map(v => v.url);
+      } else if (mediaHls) {
+        sources = Object.values(mediaHls).map(v => v.url);
       }
     } catch (e) {
       console.error("JSON parse error:", e);
