@@ -7,15 +7,15 @@ cmd({
   category: "download",
   use: ".mvs <movie name>",
   filename: __filename
-}, async (conn, m, { args }) => {
-  if (!args[0]) return m.reply("🎬 *Please enter a movie name.*");
-
+}, async (conn, mek, m, { args, reply }) => {
   try {
+    if (!args[0]) return reply("🎬 *Please enter a movie name.*\nExample: *.mvs Avengers*");
+
     const query = args.join(" ");
     const results = await getSearch(query);
 
     if (!results || results.length === 0) {
-      return m.reply("❌ Movie not found.");
+      return reply("❌ Movie not found.");
     }
 
     let msg = `🎬 *Movie Search Results for:* ${query}\n\n`;
@@ -26,10 +26,10 @@ cmd({
       msg += `🔗 Link: ${movie.url}\n\n`;
     });
 
-    await conn.sendMessage(m.chat, { text: msg }, { quoted: m });
+    await conn.sendMessage(mek.chat, { text: msg }, { quoted: mek });
 
   } catch (e) {
-    console.error(e);
-    m.reply("⚠️ Error occurred while searching movie.");
+    console.error("MVS ERROR:", e);
+    reply("⚠️ Error occurred while searching movie.");
   }
 });
