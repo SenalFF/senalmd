@@ -52,6 +52,7 @@
     "@sl-code-lords/movie-api": "latest",
     "@sl-code-lords/si-subdl": "latest",
     "@sl-code-lords/esana-news": "latest",
+    "sinhalasub.lk": "10.0.0",
     "wikipedia": "latest",
     "moment-timezone": "latest",
     "g-i-s": "latest",
