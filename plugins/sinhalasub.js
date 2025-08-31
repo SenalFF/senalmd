@@ -1,35 +1,36 @@
+const axios = require("axios");
 const { cmd } = require("../command");
-const { getSearch } = require("sinhalasub.lk"); // external lib
 
 cmd({
-  pattern: "mvs",
-  desc: "Search Sinhala subtitle movies",
-  category: "download",
-  use: ".mvs <movie name>",
-  filename: __filename
-}, async (conn, mek, m, { args, reply }) => {
-  try {
-    if (!args[0]) return reply("🎬 *Please enter a movie name.*\nExample: *.mvs Avengers*");
+    pattern: "mv",
+    alias: ["moviedl", "sinhalamovie"],
+    desc: "🎬 Senal MD ⚡ | Search Sinhala Sub Movies",
+    react: "🎬",
+    category: "download",
+    filename: __filename,
+},
+async (conn, mek, m, { from, reply, args }) => {
+    try {
+        const query = args.join(" ");
+        if (!query) {
+            return reply("⚡ Senal MD: Please provide a movie name!\n👉 Example: .movie Deadpool");
+        }
 
-    const query = args.join(" ");
-    const results = await getSearch(query);
+        const { data } = await axios.get(`https://www.dark-yasiya-api.site/movie/sinhalasub/search?text=${encodeURIComponent(query)}`);
 
-    if (!results || results.length === 0) {
-      return reply("❌ Movie not found.");
+        if (!data.status || !data.result || data.result.length === 0) {
+            return reply("⚡ Senal MD: No movies found for your query. Please try another name.");
+        }
+
+        let movieList = "🎬 *Senal MD ⚡ Movie Search Results* 🎬\n\n";
+        data.result.slice(0, 5).forEach((movie, i) => {
+            movieList += `*${i + 1}. ${movie.title}*\n📅 Year: ${movie.year || "N/A"}\n🔗 Link: ${movie.link}\n\n`;
+        });
+
+        await conn.sendMessage(from, { text: movieList }, { quoted: m });
+
+    } catch (error) {
+        console.error("Error in movie command:", error);
+        reply("⚡ Senal MD: Sorry, something went wrong while fetching movie details. Please try again later.");
     }
-
-    let msg = `🎬 *Movie Search Results for:* ${query}\n\n`;
-
-    results.slice(0, 5).forEach((movie, i) => {
-      msg += `*${i + 1}. ${movie.title}*\n`;
-      msg += `📅 Year: ${movie.year || "N/A"}\n`;
-      msg += `🔗 Link: ${movie.url}\n\n`;
-    });
-
-    await conn.sendMessage(mek.chat, { text: msg }, { quoted: mek });
-
-  } catch (e) {
-    console.error("MVS ERROR:", e);
-    reply("⚠️ Error occurred while searching movie.");
-  }
 });
