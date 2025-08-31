@@ -11,7 +11,7 @@
   "dependencies": {
     "@adiwajshing/keyed-db": "latest",
 "@whiskeysockets/baileys": "git+https://gitlab.com/amilaKumara/baileys-pmd.git",
-    "axios": "latest","
+    "axios": "latest",
     "express": "latest",
     "fs-extra": "latest",
     "path": "latest",
