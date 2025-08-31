@@ -110,9 +110,23 @@ async function connectToWA() {
         const isMe = botNumber.includes(senderNumber);
         const isOwner = ownerNumber.includes(senderNumber) || isMe;
         const botNumber2 = await jidNormalizedUser(conn.user.id);
-        const groupMetadata = isGroup ? await conn.groupMetadata(from).catch(() => {}) : '';
-        const groupName = isGroup ? groupMetadata.subject : '';
-        const participants = isGroup ? await groupMetadata.participants : '';
+
+        // ✅ FIX: safe group metadata
+        let groupMetadata = {};
+        let groupName = '';
+        let participants = [];
+        if (isGroup) {
+            try {
+                groupMetadata = await conn.groupMetadata(from);
+                groupName = groupMetadata.subject || '';
+                participants = groupMetadata.participants || [];
+            } catch (e) {
+                groupMetadata = {};
+                groupName = '';
+                participants = [];
+            }
+        }
+
         const groupAdmins = isGroup ? await getGroupAdmins(participants) : '';
         const isBotAdmins = isGroup ? groupAdmins.includes(botNumber2) : false;
         const isAdmins = isGroup ? groupAdmins.includes(sender) : false;
