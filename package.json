@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@adiwajshing/keyed-db": "latest",
-    "@whiskeysockets/baileys": "github:Hupa11/Asithamdb",
+    "baileys-elite": "*"
     "axios": "latest",
     "express": "latest",
     "fs-extra": "latest",
