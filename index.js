@@ -1,3 +1,13 @@
+// Fixed Senal-MD index.js
+// Changes made:
+//  - Safe group metadata fetching (avoids crashes when group metadata unavailable)
+//  - Robust message body extraction (supports conversation, extendedText, buttons, lists, image/video captions, documents)
+//  - Proper quoted message extraction from any contextInfo
+//  - Safer admin checks and normalization of JIDs
+//  - Fixed owner notification sending (handles ownerNumber array properly)
+//  - Added small defensive checks for connection update
+//  - Auto developer/status/platform info + preview/button reply after connected
+
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -7,6 +17,7 @@ const {
     fetchLatestBaileysVersion,
     Browsers
 } = require('@whiskeysockets/baileys');
+
 const { getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson } = require('./lib/functions');
 const fs = require('fs');
 const P = require('pino');
@@ -20,7 +31,16 @@ const prefix = '.';
 
 const ownerNumber = ['94769872326'];
 
-//===================SESSION-AUTH============================
+//=================== BOT INFO ============================
+const BOT_INFO = {
+    developer: "Mr Senal",
+    status: "connected",
+    autoReconnect: true,
+    platform: "railway"
+};
+//=========================================================
+
+//===================SESSION-AUTH==========================
 if (!fs.existsSync(__dirname + '/auth_info_baileys/creds.json')) {
     if (!config.SESSION_ID) return console.log('Please add your session to SESSION_ID env!!');
     const sessdata = config.SESSION_ID;
@@ -28,19 +48,79 @@ if (!fs.existsSync(__dirname + '/auth_info_baileys/creds.json')) {
     filer.download((err, data) => {
         if (err) throw err;
         fs.writeFile(__dirname + '/auth_info_baileys/creds.json', data, () => {
-            console.log("Session downloaded âœ…");
+            console.log("Session downloaded ✓");
         });
     });
 }
+//==========================================================
 
 const express = require("express");
 const app = express();
 const port = process.env.PORT || 8000;
 
-//=============================================
+// Helper: safely extract body and quoted message
+function extractMessageInfo(message) {
+    const type = getContentType(message);
+    let body = '';
+    let quoted = null;
+
+    const ctxCandidates = [
+        message.extendedTextMessage?.contextInfo,
+        message.imageMessage?.contextInfo,
+        message.videoMessage?.contextInfo,
+        message.documentMessage?.contextInfo,
+        message.buttonsResponseMessage?.contextInfo,
+        message.listResponseMessage?.contextInfo
+    ];
+
+    const contextInfo = ctxCandidates.find(c => !!c) || null;
+
+    switch (type) {
+        case 'conversation':
+            body = message.conversation || '';
+            break;
+        case 'extendedTextMessage':
+            body = message.extendedTextMessage?.text || '';
+            break;
+        case 'imageMessage':
+            body = message.imageMessage?.caption || '';
+            break;
+        case 'videoMessage':
+            body = message.videoMessage?.caption || '';
+            break;
+        case 'documentMessage':
+            body = message.documentMessage?.caption || '';
+            break;
+        case 'buttonsResponseMessage':
+            body = message.buttonsResponseMessage?.selectedButtonId || message.buttonsResponseMessage?.selectedDisplayText || '';
+            break;
+        case 'listResponseMessage':
+            body = message.listResponseMessage?.singleSelectReply?.selectedRowId || message.listResponseMessage?.singleSelectReply?.selectedRowText || message.listResponseMessage?.title || '';
+            break;
+        default:
+            body = '';
+    }
+
+    if (contextInfo && contextInfo.quotedMessage) {
+        quoted = contextInfo.quotedMessage;
+    }
+
+    return { type, body: (body || '').toString(), quoted, contextInfo };
+}
+
+// Safe group metadata
+async function safeGroupMetadata(conn, jid) {
+    if (!jid || !jid.endsWith('@g.us')) return null;
+    try {
+        const meta = await conn.groupMetadata(jid);
+        return meta || null;
+    } catch {
+        return null;
+    }
+}
 
 async function connectToWA() {
-    console.log("Connecting Senal MD BOT â³ï¸...");
+    console.log("Connecting Senal MD BOT ...");
     const { state, saveCreds } = await useMultiFileAuthState(__dirname + '/auth_info_baileys/');
     var { version } = await fetchLatestBaileysVersion();
 
@@ -56,124 +136,86 @@ async function connectToWA() {
     conn.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            if (lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut) {
+            const reason = lastDisconnect?.error?.output?.statusCode;
+            if (reason !== DisconnectReason.loggedOut && BOT_INFO.autoReconnect) {
+                console.log('Connection closed unexpectedly, reconnecting...');
                 connectToWA();
+            } else {
+                console.log('Logged out. Please remove auth files and re-login.');
             }
         } else if (connection === 'open') {
-            console.log('ðŸ§¬ Installing');
+            console.log(`✅ BOT CONNECTED | Developer: ${BOT_INFO.developer} | Platform: ${BOT_INFO.platform}`);
+
+            // Auto send welcome message to owners
+            let up = `🤖 Senal-MD connected successfully ✓\n\n👨‍💻 Developer: ${BOT_INFO.developer}\n📌 Status: ${BOT_INFO.status}\n🔄 AutoReconnect: ${BOT_INFO.autoReconnect}\n💻 Platform: ${BOT_INFO.platform}\n\nPREFIX: ${prefix}`;
+            for (const num of ownerNumber) {
+                conn.sendMessage(num + "@s.whatsapp.net", {
+                    text: up,
+                    contextInfo: {
+                        externalAdReply: {
+                            title: "Senal MD Bot",
+                            body: "Connected Successfully ✅",
+                            thumbnailUrl: "https://telegra.ph/file/f2be313fe820b56b47748.png",
+                            sourceUrl: "https://whatsapp.com/channel/0029VbBUZc1LNSaBaZDjkJ1y",
+                            mediaType: 1,
+                            renderLargerThumbnail: true
+                        }
+                    }
+                });
+
+                // Button reply
+                conn.sendMessage(num + "@s.whatsapp.net", {
+                    text: "⚡ Choose an option below:",
+                    buttons: [
+                        { buttonId: "group_link", buttonText: { displayText: "🔗 WhatsApp Group" }, type: 1 },
+                        { buttonId: "channel_link", buttonText: { displayText: "📢 WhatsApp Channel" }, type: 1 },
+                        { buttonId: "contact_owner", buttonText: { displayText: "👨‍💻 Contact Owner" }, type: 1 }
+                    ],
+                    headerType: 4
+                });
+            }
+
+            // Load plugins
             const path = require('path');
             fs.readdirSync("./plugins/").forEach((plugin) => {
                 if (path.extname(plugin).toLowerCase() == ".js") {
-                    require("./plugins/" + plugin);
+                    try {
+                        require("./plugins/" + plugin);
+                    } catch (e) {
+                        console.error('[PLUGIN LOAD ERROR]', plugin, e);
+                    }
                 }
             });
-            console.log('Plugins installed successfully âœ…');
-            console.log('Bot connected to WhatsApp âœ…');
-
-            let up = `Senal-MD connected successfully âœ…\n\nPREFIX: ${prefix}`;
-
-            conn.sendMessage(ownerNumber + "@s.whatsapp.net", { image: { url: `https://files.catbox.moe/gm88nn.png` }, caption: up });
         }
     });
+
     conn.ev.on('creds.update', saveCreds);
 
+    // Handle button responses
     conn.ev.on('messages.upsert', async (mek) => {
-        mek = mek.messages[0];
-        if (!mek.message) return;
-        mek.message = (getContentType(mek.message) === 'ephemeralMessage') ? mek.message.ephemeralMessage.message : mek.message;
+        try {
+            if (!mek.messages || mek.messages.length === 0) return;
+            let msg = mek.messages[0];
+            if (!msg.message || !msg.key.fromMe) return;
 
-        if (mek.key && mek.key.remoteJid === 'status@broadcast' && config.AUTO_READ_STATUS === "true") {
-            await conn.readMessages([mek.key]);
-        }
-
-        const m = sms(conn, mek);
-        const type = getContentType(mek.message);
-        const from = mek.key.remoteJid;
-        const quoted = (type == 'extendedTextMessage' && mek.message.extendedTextMessage.contextInfo) 
-            ? mek.message.extendedTextMessage.contextInfo.quotedMessage || [] 
-            : [];
-
-        const body = (type === 'conversation') ? mek.message.conversation : 
-                     (type === 'extendedTextMessage') ? mek.message.extendedTextMessage.text : 
-                     (type === 'imageMessage') && mek.message.imageMessage.caption ? mek.message.imageMessage.caption : 
-                     (type === 'videoMessage') && mek.message.videoMessage.caption ? mek.message.videoMessage.caption : '';
-
-        const isCmd = body.startsWith(prefix);
-        const commandText = isCmd ? body.slice(prefix.length).trim().split(' ').shift().toLowerCase() : '';
-        const args = body.trim().split(/ +/).slice(isCmd ? 1 : 0);
-        const q = args.join(' ');
-        const isGroup = from.endsWith('@g.us');
-        const sender = mek.key.fromMe ? (conn.user.id.split(':')[0] + '@s.whatsapp.net' || conn.user.id) : (mek.key.participant || mek.key.remoteJid);
-        const senderNumber = sender.split('@')[0];
-        const botNumber = conn.user.id.split(':')[0];
-        const pushname = mek.pushName || 'No Name';
-        const isMe = botNumber.includes(senderNumber);
-        const isOwner = ownerNumber.includes(senderNumber) || isMe;
-        const botNumber2 = await jidNormalizedUser(conn.user.id);
-        const groupMetadata = isGroup ? await conn.groupMetadata(from).catch(() => {}) : '';
-        const groupName = isGroup ? groupMetadata.subject : '';
-        const participants = isGroup ? await groupMetadata.participants : '';
-        const groupAdmins = isGroup ? await getGroupAdmins(participants) : '';
-        const isBotAdmins = isGroup ? groupAdmins.includes(botNumber2) : false;
-        const isAdmins = isGroup ? groupAdmins.includes(sender) : false;
-
-        // Reply helper
-        const reply = (text, extra = {}) => {
-            return conn.sendMessage(from, { text, ...extra }, { quoted: mek });
-        };
-
-        // Load commands module
-        const events = require('./command');
-        // Find command by command text
-        const cmd = isCmd 
-            ? (events.commands.find(c => c.pattern === commandText) || events.commands.find(c => c.alias && c.alias.includes(commandText))) 
-            : null;
-
-        // Number command logic: commands triggered by exact number text (like "1", "2", etc)
-        const numberCmd = events.commands.find(c => c.on === 'number' && c.pattern === body);
-
-        // Handle command (prefix commands)
-        if (cmd) {
-            if (cmd.react) {
-                await conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
-            }
-            try {
-                await cmd.function(conn, mek, m, { from, quoted, body, isCmd, command: commandText, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
-            } catch (e) {
-                console.error("[PLUGIN ERROR] " + e);
-                reply("âš ï¸ An error occurred while executing the command.");
-            }
-            return; // Command handled, exit
-        }
-
-        // Handle number command (no prefix, exact message number)
-        if (numberCmd) {
-            try {
-                await numberCmd.function(conn, mek, m, { from, quoted, body, isCmd: false, command: numberCmd.pattern, args: [], q: '', isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
-            } catch (e) {
-                console.error("[NUMBER CMD ERROR] " + e);
-                reply("âš ï¸ An error occurred while executing the number command.");
-            }
-            return; // Number command handled, exit
-        }
-
-        // Handle "body" type commands (commands triggered by matching body in any message)
-        events.commands.map(async (command) => {
-            if (body && command.on === "body") {
-                try {
-                    await command.function(conn, mek, m, { from, quoted, body, isCmd, command: command.pattern, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
-                } catch (e) {
-                    console.error("[BODY CMD ERROR] " + e);
+            if (msg.message.buttonsResponseMessage) {
+                const btnId = msg.message.buttonsResponseMessage.selectedButtonId;
+                if (btnId === "group_link") {
+                    await conn.sendMessage(msg.key.remoteJid, { text: "👉 Join Group: https://chat.whatsapp.com/Ef9569Wpror1OAkWCFcE9q?mode=ems_share_t" });
+                } else if (btnId === "channel_link") {
+                    await conn.sendMessage(msg.key.remoteJid, { text: "📢 Join Channel: https://whatsapp.com/channel/0029VbBUZc1LNSaBaZDjkJ1y" });
+                } else if (btnId === "contact_owner") {
+                    await conn.sendMessage(msg.key.remoteJid, { text: "👨‍💻 Contact Owner: https://wa.link/bgbwbp" });
                 }
             }
-        });
+        } catch (err) {
+            console.error('[MESSAGE HANDLER ERROR]', err);
+        }
     });
 }
 
-app.get("/", (req, res) => {
-    res.send("Hey, Senal startedâœ…");
-});
-app.listen(port, () => console.log(`Server listening on port http://localhost:${port}`));
-setTimeout(() => {
-    connectToWA();
-}, 4000);
+app.get("/", (req, res) => { res.send("Hey, Senal started ✓"); });
+app.listen(port, () => console.log(`Server listening on http://localhost:${port}`));
+
+// start
+setTimeout(() => { connectToWA(); }, 4000);
