@@ -23,6 +23,7 @@
     "pm2": "latest",
     "btch-downloader": "latest",
     "cheerio": "latest",
+    "sharp": "0.34.3",
     "yt-search": "latest",
     "file-type": "latest",
     "file_size_url": "latest",
