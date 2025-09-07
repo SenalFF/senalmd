@@ -61,6 +61,7 @@ async function connectToWA() {
             }
         } else if (connection === 'open') {
             console.log('✅ Senal-MD connected');
+
             // Load plugins automatically
             fs.readdirSync("./plugins/").forEach(file => {
                 if (path.extname(file).toLowerCase() === ".js") require(`./plugins/${file}`);
@@ -71,7 +72,8 @@ async function connectToWA() {
             const msg = `🤖 Senal-MD connected successfully ✅\n\nPREFIX: ${prefix}`;
             conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { 
                 image: { url: "https://files.catbox.moe/gm88nn.png" }, 
-                caption: msg 
+                caption: msg,
+                ai: true
             });
         }
     });
@@ -104,7 +106,8 @@ async function connectToWA() {
         const senderNumber = sender.split('@')[0];
         const isOwner = ownerNumber.includes(senderNumber);
 
-        const reply = (text, extra = {}) => conn.sendMessage(from, { text, ...extra }, { quoted: mek });
+        // ==================== REPLY HELPER (ai: true globally) ====================
+        const reply = (text, extra = {}) => conn.sendMessage(from, { text, ai: true, ...extra }, { quoted: mek });
 
         // ==================== BUTTON HANDLER ====================
         if (mek.message.buttonsResponseMessage) {
@@ -123,25 +126,36 @@ async function connectToWA() {
             ? (events.commands.find(c => c.pattern === commandText) || events.commands.find(c => c.alias && c.alias.includes(commandText))) 
             : null;
         if (cmd) {
-            if (cmd.react) await conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
-            try { await cmd.function(conn, mek, sms(conn, mek), { from, body, isCmd, command: commandText, args, q, reply, isOwner, isGroup, sender }); }
-            catch(e){ console.error("[PLUGIN ERROR]", e); reply("⚠️ Error executing the command."); }
+            if (cmd.react) await conn.sendMessage(from, { react: { text: cmd.react, key: mek.key }, ai: true });
+            try { 
+                await cmd.function(conn, mek, sms(conn, mek), { from, body, isCmd, command: commandText, args, q, reply, isOwner, isGroup, sender }); 
+            } catch(e){ 
+                console.error("[PLUGIN ERROR]", e); 
+                reply("⚠️ Error executing the command."); 
+            }
             return;
         }
 
         // Number commands
         const numberCmd = events.commands.find(c => c.on === 'number' && c.pattern === body);
         if (numberCmd) {
-            try { await numberCmd.function(conn, mek, sms(conn, mek), { from, body, isCmd: false, command: numberCmd.pattern, args: [], q: '', reply, isOwner, isGroup, sender }); }
-            catch(e){ console.error("[NUMBER CMD ERROR]", e); reply("⚠️ Error executing number command."); }
+            try { 
+                await numberCmd.function(conn, mek, sms(conn, mek), { from, body, isCmd: false, command: numberCmd.pattern, args: [], q: '', reply, isOwner, isGroup, sender }); 
+            } catch(e){ 
+                console.error("[NUMBER CMD ERROR]", e); 
+                reply("⚠️ Error executing number command."); 
+            }
             return;
         }
 
         // Body commands
         events.commands.forEach(async (command) => {
             if (body && command.on === "body") {
-                try { await command.function(conn, mek, sms(conn, mek), { from, body, isCmd, command: command.pattern, args, q, reply, isOwner, isGroup, sender }); }
-                catch(e){ console.error("[BODY CMD ERROR]", e); }
+                try { 
+                    await command.function(conn, mek, sms(conn, mek), { from, body, isCmd, command: command.pattern, args, q, reply, isOwner, isGroup, sender }); 
+                } catch(e){ 
+                    console.error("[BODY CMD ERROR]", e); 
+                }
             }
         });
     });
