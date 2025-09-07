@@ -1,7 +1,7 @@
-const { cmd } = require('../command')
+const { cmd } = require('../command');
 
 cmd({
-    pattern: "menu2",
+    pattern: "menu",
     desc: "Bot command menu",
     category: "menu",
     react: "🧚‍♀️",
@@ -96,12 +96,13 @@ async (conn, mek, m, { from, reply }) => {
                     ]
                 }
             ]
-        }
+        };
 
-        await conn.sendMessage(from, listMessage, { quoted: mek });
+        // Send the interactive list with ai: true
+        await conn.sendMessage(from, { ...listMessage, ai: true }, { quoted: mek });
 
     } catch (e) {
-        console.log(e)
-        reply(`${e}`)
+        console.log(e);
+        await conn.sendMessage(from, { text: `⚠️ Error: ${e}`, ai: true }, { quoted: mek });
     }
 });
