@@ -3,7 +3,7 @@ require("dotenv").config();
 
 module.exports = {
   //==========================================- MAIN - CONFIGS -==================================================================
-  SESSION_ID: process.env.SESSION_ID || "IV40hLLI#r44pgiMkzBx0ZTcqNYnR1wvkBo-8jSY_1p5LTVHaJd4",
+  SESSION_ID: process.env.SESSION_ID || "MQ40wabT#x26FoY2LfM9Gb_nYCzcOdp4NqLUrYq6D3nZiVCqY-C0",
   // ADD Your Session Id 
   MONGODB: process.env.MONGODB || "mongodb+srv://senalmd:<sena1122>@cluster0.pukovzb.mongodb.net/",
     // ADD Your MongoDB Database URL
