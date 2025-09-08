@@ -15,30 +15,29 @@ const P = require('pino');
 const config = require('./config');
 const express = require("express");
 const { sms } = require('./lib/msg');
-const { File } = require('megajs');
 const path = require('path');
 
 const app = express();
-const port = process.env.PORT || 8000;
-const prefix = '.';
-const ownerNumber = ['94769872326'];
+const port = config.PORT || 8000;
+const prefix = config.PREFIX || '.';
+const ownerNumber = config.OWNER_NUMBER || ['94769872326'];
 
 // ==================== SESSION AUTH ====================
-if (!fs.existsSync(__dirname + '/auth_info_baileys/creds.json')) {
-    if (!config.SESSION_ID) return console.log('Please add your session to SESSION_ID env!!');
-    const sessdata = config.SESSION_ID;
-    const filer = File.fromURL(`https://mega.nz/file/${sessdata}`);
-    filer.download((err, data) => {
-        if (err) throw err;
-        fs.writeFileSync(__dirname + '/auth_info_baileys/creds.json', data);
-        console.log("✅ Session downloaded");
-    });
+const authPath = path.join(__dirname, 'auth_info_baileys');
+if (!fs.existsSync(authPath)) fs.mkdirSync(authPath, { recursive: true });
+
+const credsFile = path.join(authPath, 'creds.json');
+
+// Inject SESSION_ID from config.js if creds.json does not exist
+if (config.SESSION_ID && !fs.existsSync(credsFile)) {
+    fs.writeFileSync(credsFile, Buffer.from(config.SESSION_ID, 'base64').toString('utf-8'));
+    console.log("✅ Session injected from config.js");
 }
 
 // ==================== CONNECT FUNCTION ====================
 async function connectToWA() {
     console.log("⏳ Connecting Senal-MD BOT...");
-    const { state, saveCreds } = await useMultiFileAuthState(__dirname + '/auth_info_baileys/');
+    const { state, saveCreds } = await useMultiFileAuthState(authPath);
     const { version } = await fetchLatestBaileysVersion();
 
     const conn = makeWASocket({
