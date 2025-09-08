@@ -15,6 +15,7 @@
     "express": "latest",
     "fs-extra": "latest",
     "path": "latest",
+    "mfiredlcore-vihangayt": "1.0.0",
     "node-fetch": "latest",
     "qrcode-terminal": "latest",
     "@ffmpeg-installer/ffmpeg": "1.1.0",
