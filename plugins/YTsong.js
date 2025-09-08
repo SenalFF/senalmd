@@ -1,6 +1,6 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
-const { ytmp3, ytmp4 } = require("@kelvdra/scraper");
+const { ytmp3 } = require("@kelvdra/scraper");
 
 /**
  * Normalize YouTube URL (e.g. youtu.be → youtube.com)
@@ -37,36 +37,49 @@ cmd({
 📅 *Uploaded:* ${data.ago}
 🔗 *Link:* ${data.url}
 
-⏬ Downloading MP3...
+⏬ Select how you want to receive the audio:
 `.trim();
 
-        await conn.sendMessage(from, {
-            image: { url: data.thumbnail },
-            caption
-        }, { quoted: mek });
-
-        await reply("🎧 Fetching audio...");
-
+        // Get direct download URL
         const result = await ytmp3(data.url, "mp3");
         if (!result?.download?.url) return reply("❌ Failed to fetch download link.");
 
-        const audio = {
-            url: result.download.url,
-        };
+        const audioUrl = result.download.url;
 
-        await conn.sendMessage(from, { audio, mimetype: "audio/mpeg" }, { quoted: mek });
+        // Button message options
+        const buttons = [
+            { buttonId: `voice_${audioUrl}`, buttonText: { displayText: "🎙 Voice Note" }, type: 1 },
+            { buttonId: `doc_${audioUrl}`, buttonText: { displayText: "📄 Document" }, type: 1 },
+        ];
 
         await conn.sendMessage(from, {
-            document: audio,
-            mimetype: "audio/mpeg",
-            fileName: `${data.title}.mp3`,
-            caption: "✅ MP3 sent by *SENAL MD* 🎵"
+            image: { url: data.thumbnail },
+            caption,
+            buttons,
+            headerType: 4
         }, { quoted: mek });
-
-        await reply("✅ Uploaded successfully.");
 
     } catch (err) {
         console.error(err);
-        reply("❌ An error occurred while downloading the song.");
+        reply("❌ An error occurred while processing the song.");
     }
+});
+
+// Handle button selection
+cmd({
+    pattern: "voice_",
+    fromMe: true,
+    onlyButton: true
+}, async (conn, mek, m, { from, text }) => {
+    const audioUrl = text.replace("voice_", "");
+    await conn.sendMessage(from, { audio: { url: audioUrl }, mimetype: "audio/mpeg", ptt: true }, { quoted: mek });
+});
+
+cmd({
+    pattern: "doc_",
+    fromMe: true,
+    onlyButton: true
+}, async (conn, mek, m, { from, text }) => {
+    const audioUrl = text.replace("doc_", "");
+    await conn.sendMessage(from, { document: { url: audioUrl }, mimetype: "audio/mpeg", fileName: "audio.mp3" }, { quoted: mek });
 });
