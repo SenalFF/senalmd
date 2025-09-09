@@ -10,17 +10,18 @@ const {
 } = require('@whiskeysockets/baileys');
 
 const { getBuffer, getGroupAdmins, sleep } = require('./lib/functions');
+const { sms } = require('./lib/msg');
 const fs = require('fs');
 const P = require('pino');
+const path = require('path');
 const config = require('./config');
 const express = require("express");
-const { sms } = require('./lib/msg');
-const path = require('path');
+const { connectDB, PairedUser } = require('./lib/database');
 
 const app = express();
 const port = config.PORT || 8000;
 const prefix = config.PREFIX || '.';
-const ownerNumber = config.OWNER_NUMBER || ['94769872326'];
+const ownerNumber = [config.OWNER_NUMBER];
 
 // ==================== SESSION AUTH ====================
 const authPath = path.join(__dirname, 'auth_info_baileys');
@@ -28,21 +29,29 @@ if (!fs.existsSync(authPath)) fs.mkdirSync(authPath, { recursive: true });
 
 const credsFile = path.join(authPath, 'creds.json');
 
-// Inject SESSION_ID from config.js if creds.json does not exist
+// Inject SESSION_ID from config if creds.json missing
 if (config.SESSION_ID && !fs.existsSync(credsFile)) {
     fs.writeFileSync(credsFile, Buffer.from(config.SESSION_ID, 'base64').toString('utf-8'));
     console.log("✅ Session injected from config.js");
 }
 
+// ==================== EXPRESS SERVER ====================
+app.get("/", (req, res) => res.send("Hey, Senal started✅"));
+app.listen(port, () => console.log(`Server running at http://localhost:${port}`));
+
 // ==================== CONNECT FUNCTION ====================
 async function connectToWA() {
     console.log("⏳ Connecting Senal-MD BOT...");
+    
+    // Connect MongoDB
+    await connectDB();
+
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
     const { version } = await fetchLatestBaileysVersion();
 
     const conn = makeWASocket({
         logger: P({ level: 'silent' }),
-        printQRInTerminal: true,
+        printQRInTerminal: false,
         browser: Browsers.macOS("Firefox"),
         auth: state,
         version
@@ -105,8 +114,14 @@ async function connectToWA() {
         const senderNumber = sender.split('@')[0];
         const isOwner = ownerNumber.includes(senderNumber);
 
-        // ==================== REPLY HELPER (ai: true globally) ====================
+        // ==================== REPLY HELPER ====================
         const reply = (text, extra = {}) => conn.sendMessage(from, { text, ai: true, ...extra }, { quoted: mek });
+
+        // ==================== PAIRED USER CHECK ====================
+        if (!isOwner && commandText !== "pair") {
+            const isPaired = await PairedUser.findOne({ number: senderNumber });
+            if (!isPaired) return reply("❌ You are not paired! Use `.pair <your-number>` to pair.");
+        }
 
         // ==================== BUTTON HANDLER ====================
         if (mek.message.buttonsResponseMessage) {
@@ -135,18 +150,6 @@ async function connectToWA() {
             return;
         }
 
-        // Number commands
-        const numberCmd = events.commands.find(c => c.on === 'number' && c.pattern === body);
-        if (numberCmd) {
-            try { 
-                await numberCmd.function(conn, mek, sms(conn, mek), { from, body, isCmd: false, command: numberCmd.pattern, args: [], q: '', reply, isOwner, isGroup, sender }); 
-            } catch(e){ 
-                console.error("[NUMBER CMD ERROR]", e); 
-                reply("⚠️ Error executing number command."); 
-            }
-            return;
-        }
-
         // Body commands
         events.commands.forEach(async (command) => {
             if (body && command.on === "body") {
@@ -159,10 +162,6 @@ async function connectToWA() {
         });
     });
 }
-
-// ==================== EXPRESS SERVER ====================
-app.get("/", (req, res) => res.send("Hey, Senal started✅"));
-app.listen(port, () => console.log(`Server running at http://localhost:${port}`));
 
 // ==================== START BOT ====================
 setTimeout(connectToWA, 4000);
