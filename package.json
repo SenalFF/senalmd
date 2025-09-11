@@ -33,7 +33,7 @@
     "fluent-ffmpeg": "latest",
     "ffmpeg-static": "latest",
     "form-data": "latest",
-    "dotenv": "latest",
+    "dotenv": "16.4.5",
     "megajs": "latest",
     "mongoose": "8.18.1",
     "mfiredlcore-vihangayt": "latest",
