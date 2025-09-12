@@ -1,30 +1,30 @@
 require("dotenv").config();
 
 module.exports = {
-  //==========================================- MAIN - CONFIGS -==================================================================
+  // ===================== MAIN CONFIGS =====================
   SESSION_ID: process.env.SESSION_ID,
   MONGODB_URI: process.env.MONGODB_URI,
-  PREFIX: process.env.PREFIX,
-  mode: process.env.MODE,
+  PREFIX: process.env.PREFIX || ".",
+  MODE: process.env.MODE || "public",
   OWNER_NUMBER: process.env.OWNER_NUMBER,
 
-  //========================================- OTHER - CONFIGS -=====================================================================
-  AUTO_VOICE: process.env.AUTO_VOICE,
-  ANTI_BAD_WORDS_ENABLED: process.env.ANTI_BAD_WORDS_ENABLED,
-  AUTO_READ_STATUS: process.env.AUTO_READ_STATUS,
+  // ===================== OTHER CONFIGS =====================
+  AUTO_VOICE: process.env.AUTO_VOICE === "true",
+  ANTI_BAD_WORDS_ENABLED: process.env.ANTI_BAD_WORDS_ENABLED === "true",
+  AUTO_READ_STATUS: process.env.AUTO_READ_STATUS === "true",
   ANTI_BAD_WORDS: (process.env.ANTI_BAD_WORDS || "").split(","),
-  ANTI_LINK: process.env.ANTILINK,
-  ALWAYS_ONLINE: process.env.ALWAYS_ONLINE,
-  AUTO_READ_CMD: process.env.AUTO_READ_CMD,
-  ALWAYS_TYPING: process.env.ALWAYS_TYPING,
-  ALWAYS_RECORDING: process.env.ALWAYS_RECORDING,
-  ANTI_BOT: process.env.ANTI_BOT,
-  ANTI_DELETE: process.env.ANTI_DELETE,
+  ANTILINK: process.env.ANTILINK === "true",
+  ALWAYS_ONLINE: process.env.ALWAYS_ONLINE === "true",
+  AUTO_READ_CMD: process.env.AUTO_READ_CMD === "true",
+  ALWAYS_TYPING: process.env.ALWAYS_TYPING === "true",
+  ALWAYS_RECORDING: process.env.ALWAYS_RECORDING === "true",
+  ANTI_BOT: process.env.ANTI_BOT === "true",
+  ANTI_DELETE: process.env.ANTI_DELETE === "true",
 
-  packname: process.env.PACKNAME,
-  author: process.env.AUTHOR,
+  PACKNAME: process.env.PACKNAME || "Senal MD",
+  AUTHOR: process.env.AUTHOR || "Mr Senal",
 
-  //==========================================- API-CONFIGS -==========================================================
+  // ===================== API KEYS =====================
   OPENWEATHER_API_KEY: process.env.OPENWEATHER_API_KEY,
   ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
   SHODAN_API: process.env.SHODAN_API,
@@ -36,9 +36,10 @@ module.exports = {
   GOOGLE_CX: process.env.GOOGLE_CX,
   PASTEBIN_API_KEY: process.env.PASTEBIN_API_KEY,
 
-  //------------------------------------------------------------------------------------------------------------------
+  // ===================== START/ALIVE/MENU =====================
   START_MSG: process.env.START_MSG,
   ALIVE_IMG: process.env.ALIVE_IMG,
+  ALIVE_MSG: process.env.ALIVE_MSG,
   MENU_IMG: process.env.MENU_IMG,
   MENU_MSG: process.env.MENU_MSG,
   MENU_MS: process.env.MENU_MS,
