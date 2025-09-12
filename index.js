@@ -1,3 +1,4 @@
+// ================= Required Modules =================
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -5,7 +6,7 @@ const {
   jidNormalizedUser,
   getContentType,
   fetchLatestBaileysVersion,
-  Browsers
+  Browsers,
 } = require("@whiskeysockets/baileys");
 
 const {
@@ -17,7 +18,7 @@ const {
   Json,
   runtime,
   sleep,
-  fetchJson
+  fetchJson,
 } = require("./lib/functions");
 
 const fs = require("fs");
@@ -28,12 +29,13 @@ const util = require("util");
 const { sms, downloadMediaMessage } = require("./lib/msg");
 const axios = require("axios");
 const { File } = require("megajs");
+const path = require("path");
 
 // ================= MongoDB =================
 const connectDB = require("./lib/mongodb");
 const { readEnv } = require("./lib/database");
 
-// Owner Number
+// ================= Owner =================
 const ownerNumber = [config.OWNER_NUMBER || "94769872326"];
 
 //=================== SESSION AUTH ============================
@@ -46,10 +48,7 @@ if (!fs.existsSync(__dirname + "/auth_info_baileys/creds.json")) {
   const filer = File.fromURL(`https://mega.nz/file/${sessdata}`);
   filer.download((err, data) => {
     if (err) throw err;
-    fs.writeFileSync(
-      __dirname + "/auth_info_baileys/creds.json",
-      data
-    );
+    fs.writeFileSync(__dirname + "/auth_info_baileys/creds.json", data);
     console.log("✅ Session downloaded successfully");
   });
 }
@@ -108,7 +107,6 @@ async function connectToWA() {
         console.log("✅ Bot connected to WhatsApp");
 
         // Load plugins
-        const path = require("path");
         fs.readdirSync("./plugins/").forEach((plugin) => {
           if (path.extname(plugin).toLowerCase() === ".js") {
             require("./plugins/" + plugin);
@@ -143,7 +141,7 @@ async function connectToWA() {
       if (
         mek.key &&
         mek.key.remoteJid === "status@broadcast" &&
-        config.AUTO_READ_STATUS
+        config.AUTO_READ_STATUS === "true"
       ) {
         await conn.readMessages([mek.key]);
       }
@@ -170,7 +168,7 @@ async function connectToWA() {
 
       const isCmd = body.startsWith(prefix);
       const commandText = isCmd
-        ? body.slice(prefix.length).trim().split(" ").shift().toLowerCase()
+        ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase()
         : "";
       const args = body.trim().split(/ +/).slice(isCmd ? 1 : 0);
       const q = args.join(" ");
@@ -187,29 +185,27 @@ async function connectToWA() {
       const reply = (text, extra = {}) =>
         conn.sendMessage(from, { text, ...extra }, { quoted: mek });
 
-      // Load commands module
+      // ===== Load commands =====
       const events = require("./command");
 
-      // Prefix commands
-      const cmd = isCmd
-        ? events.commands.find(
-            (c) =>
-              c.pattern === commandText ||
-              (c.alias && c.alias.includes(commandText))
-          )
-        : null;
+      // ===== Find matching prefix command =====
+      const cmd = events.commands.find((c) => {
+        if (!c.pattern) return false;
+        if (c.pattern.toLowerCase() === commandText) return true;
+        if (c.alias && c.alias.map((a) => a.toLowerCase()).includes(commandText))
+          return true;
+        return false;
+      });
 
-      // Number commands
+      // ===== Find number command =====
       const numberCmd = events.commands.find(
         (c) => c.on === "number" && c.pattern === body
       );
 
-      // Handle prefix command
+      // ===== Execute prefix command =====
       if (cmd) {
         if (cmd.react) {
-          await conn.sendMessage(from, {
-            react: { text: cmd.react, key: mek.key },
-          });
+          await conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
         }
         try {
           await cmd.function(conn, mek, m, {
@@ -237,7 +233,7 @@ async function connectToWA() {
         return;
       }
 
-      // Handle number command
+      // ===== Execute number command =====
       if (numberCmd) {
         try {
           await numberCmd.function(conn, mek, m, {
@@ -265,8 +261,8 @@ async function connectToWA() {
         return;
       }
 
-      // Body type commands
-      events.commands.map(async (command) => {
+      // ===== Execute body type commands =====
+      events.commands.forEach(async (command) => {
         if (body && command.on === "body") {
           try {
             await command.function(conn, mek, m, {
