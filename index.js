@@ -24,10 +24,8 @@ const {
 const fs = require("fs");
 const P = require("pino");
 const config = require("./config");
-const qrcode = require("qrcode-terminal");
 const util = require("util");
-const { sms, downloadMediaMessage } = require("./lib/msg");
-const axios = require("axios");
+const { sms } = require("./lib/msg");
 const { File } = require("megajs");
 const path = require("path");
 
@@ -149,27 +147,31 @@ async function connectToWA() {
       const m = sms(conn, mek);
       const type = getContentType(mek.message);
       const from = mek.key.remoteJid;
-      const quoted =
-        type === "extendedTextMessage" &&
-        mek.message.extendedTextMessage?.contextInfo
-          ? mek.message.extendedTextMessage.contextInfo.quotedMessage || []
-          : [];
 
-      const body =
-        type === "conversation"
-          ? mek.message.conversation
-          : type === "extendedTextMessage"
-          ? mek.message.extendedTextMessage.text
-          : type === "imageMessage" && mek.message.imageMessage.caption
-          ? mek.message.imageMessage.caption
-          : type === "videoMessage" && mek.message.videoMessage.caption
-          ? mek.message.videoMessage.caption
-          : "";
+      // ================= Parse Body =================
+      let body = "";
+      const contentType = getContentType(mek.message);
+
+      if (contentType === "conversation") {
+        body = mek.message.conversation;
+      } else if (contentType === "extendedTextMessage") {
+        body = mek.message.extendedTextMessage.text;
+      } else if (contentType === "imageMessage") {
+        body = mek.message.imageMessage.caption || "";
+      } else if (contentType === "videoMessage") {
+        body = mek.message.videoMessage.caption || "";
+      } else if (contentType === "buttonsResponseMessage") {
+        body = mek.message.buttonsResponseMessage.selectedButtonId;
+      } else if (contentType === "listResponseMessage") {
+        body =
+          mek.message.listResponseMessage.singleSelectReply.selectedRowId;
+      }
 
       const isCmd = body.startsWith(prefix);
       const commandText = isCmd
         ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase()
-        : "";
+        : body.toLowerCase(); // allow button IDs
+
       const args = body.trim().split(/ +/).slice(isCmd ? 1 : 0);
       const q = args.join(" ");
       const isGroup = from.endsWith("@g.us");
@@ -197,12 +199,6 @@ async function connectToWA() {
         return false;
       });
 
-      // ===== Find number command =====
-      const numberCmd = events.commands.find(
-        (c) => c.on === "number" && c.pattern === body
-      );
-
-      // ===== Execute prefix command =====
       if (cmd) {
         if (cmd.react) {
           await conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
@@ -210,7 +206,6 @@ async function connectToWA() {
         try {
           await cmd.function(conn, mek, m, {
             from,
-            quoted,
             body,
             isCmd,
             command: commandText,
@@ -232,62 +227,6 @@ async function connectToWA() {
         }
         return;
       }
-
-      // ===== Execute number command =====
-      if (numberCmd) {
-        try {
-          await numberCmd.function(conn, mek, m, {
-            from,
-            quoted,
-            body,
-            isCmd: false,
-            command: numberCmd.pattern,
-            args: [],
-            q: "",
-            isGroup,
-            sender,
-            senderNumber,
-            botNumber2: await jidNormalizedUser(conn.user.id),
-            botNumber,
-            pushname,
-            isMe,
-            isOwner,
-            reply,
-          });
-        } catch (e) {
-          console.error("[NUMBER CMD ERROR]", e);
-          reply("⚠️ An error occurred while executing the number command.");
-        }
-        return;
-      }
-
-      // ===== Execute body type commands =====
-      events.commands.forEach(async (command) => {
-        if (body && command.on === "body") {
-          try {
-            await command.function(conn, mek, m, {
-              from,
-              quoted,
-              body,
-              isCmd,
-              command: command.pattern,
-              args,
-              q,
-              isGroup,
-              sender,
-              senderNumber,
-              botNumber2: await jidNormalizedUser(conn.user.id),
-              botNumber,
-              pushname,
-              isMe,
-              isOwner,
-              reply,
-            });
-          } catch (e) {
-            console.error("[BODY CMD ERROR]", e);
-          }
-        }
-      });
     });
   } catch (err) {
     console.error("❌ Error connecting to WhatsApp:", err);
