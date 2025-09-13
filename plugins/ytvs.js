@@ -78,7 +78,7 @@ async function downloadStreams(url, quality) {
 
 // ================= Command: .video =================
 cmd({
-  pattern: "video",
+  pattern: "videodl",
   desc: "📥 YouTube Video Downloader",
   category: "download",
   react: "📹",
