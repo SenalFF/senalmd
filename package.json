@@ -30,6 +30,8 @@
     "file_size_url": "latest",
     "google-tts-api": "latest",
     "wa-sticker-formatter": "latest",
+    "@ffmpeg-installer/ffmpeg": "latest",
+    "ytdl-core": "latest",
     "fluent-ffmpeg": "latest",
     "ffmpeg-static": "latest",
     "form-data": "latest",
