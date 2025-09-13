@@ -5,13 +5,12 @@ const axios = require("axios");
 
 const sessions = {};
 
-// Download video into buffer
+// Download video
 async function downloadFile(url) {
   const res = await axios.get(url, { responseType: "arraybuffer" });
   return Buffer.from(res.data);
 }
 
-// Send inline video
 async function sendVideo(conn, from, mek, buffer, title) {
   await conn.sendMessage(
     from,
@@ -25,7 +24,6 @@ async function sendVideo(conn, from, mek, buffer, title) {
   );
 }
 
-// Send document
 async function sendDocument(conn, from, mek, buffer, title) {
   await conn.sendMessage(
     from,
@@ -39,7 +37,7 @@ async function sendDocument(conn, from, mek, buffer, title) {
   );
 }
 
-// ▶️ .video command
+// Step 1: Search video and select quality
 cmd(
   {
     pattern: "video",
@@ -49,18 +47,15 @@ cmd(
   },
   async (conn, mek, m, { q, reply }) => {
     const from = mek.key.remoteJid;
-
     if (!q) return reply("🔍 *Please enter a video name or YouTube link.*");
 
     try {
       await reply("🔎 Searching for your video...");
-
       const searchResult = await yts(q);
       const video = searchResult.videos[0];
       if (!video) return reply("❌ *Video not found.*");
 
-      // Save session
-      sessions[from] = { video, step: "choose_format" };
+      sessions[from] = { video, step: "choose_quality" };
 
       const info = `
 🎬 *SENAL MD Video Downloader*
@@ -71,12 +66,14 @@ cmd(
 📤 *Uploaded:* ${video.ago}
 🔗 *URL:* ${video.url}
 
-📁 *Choose how to receive file:*
+📁 *Select quality:*
 `;
 
       const buttons = [
-        { buttonId: "video1", buttonText: { displayText: "📹 Inline Video" }, type: 1 },
-        { buttonId: "video2", buttonText: { displayText: "📁 Document" }, type: 1 },
+        { buttonId: "q360", buttonText: { displayText: "360p" }, type: 1 },
+        { buttonId: "q480", buttonText: { displayText: "480p" }, type: 1 },
+        { buttonId: "q720", buttonText: { displayText: "720p" }, type: 1 },
+        { buttonId: "q1080", buttonText: { displayText: "1080p" }, type: 1 },
       ];
 
       await conn.sendMessage(
@@ -92,12 +89,47 @@ cmd(
       );
     } catch (err) {
       console.error("YT Video Error:", err);
-      return reply("❌ *Error while searching video.*");
+      reply("❌ *Error while searching video.*");
     }
   }
 );
 
-// 📽️ video1: send inline video
+// Step 2: Select file type (after quality)
+const qualities = ["360", "480", "720", "1080"];
+qualities.forEach((q) => {
+  cmd(
+    {
+      pattern: `q${q}`,
+      desc: `Select ${q}p quality`,
+      dontAddCommandList: true,
+    },
+    async (conn, mek, m, { reply }) => {
+      const from = mek.key.remoteJid;
+      const session = sessions[from];
+      if (!session || session.step !== "choose_quality") return;
+
+      session.quality = q;
+      session.step = "choose_format";
+
+      const buttons = [
+        { buttonId: "video1", buttonText: { displayText: "📹 Inline Video" }, type: 1 },
+        { buttonId: "video2", buttonText: { displayText: "📁 Document" }, type: 1 },
+      ];
+
+      await conn.sendMessage(
+        from,
+        {
+          text: `🎬 Selected *${q}p* quality\n📁 Now select file type:`,
+          buttons,
+          headerType: 1,
+        },
+        { quoted: mek }
+      );
+    }
+  );
+});
+
+// Step 3: Send inline video
 cmd(
   {
     pattern: "video1",
@@ -111,24 +143,23 @@ cmd(
 
     try {
       await reply("⏬ Fetching video download link...");
-      const result = await ytmp4(session.video.url, "720");
-      if (!result?.download?.url) return reply("❌ Couldn't get download URL.");
+      const result = await ytmp4(session.video.url, session.quality);
+      if (!result?.url) return reply("❌ Couldn't get video URL.");
 
-      const buffer = await downloadFile(result.download.url);
-
+      const buffer = await downloadFile(result.url);
       await reply("📤 Uploading inline video...");
       await sendVideo(conn, from, mek, buffer, session.video.title);
       await reply("✅ *Video sent successfully!*");
+
+      delete sessions[from];
     } catch (err) {
       console.error("Video1 error:", err);
-      await reply("❌ *Failed to send video.*");
+      reply("❌ *Failed to send video.*");
     }
-
-    delete sessions[from];
   }
 );
 
-// 📁 video2: send as document
+// Step 3: Send as document
 cmd(
   {
     pattern: "video2",
@@ -142,19 +173,18 @@ cmd(
 
     try {
       await reply("⏬ Fetching video download link...");
-      const result = await ytmp4(session.video.url, "720");
-      if (!result?.download?.url) return reply("❌ Couldn't get download URL.");
+      const result = await ytmp4(session.video.url, session.quality);
+      if (!result?.url) return reply("❌ Couldn't get video URL.");
 
-      const buffer = await downloadFile(result.download.url);
-
+      const buffer = await downloadFile(result.url);
       await reply("📤 Uploading document...");
       await sendDocument(conn, from, mek, buffer, session.video.title);
       await reply("✅ *Document sent successfully!*");
+
+      delete sessions[from];
     } catch (err) {
       console.error("Video2 error:", err);
-      await reply("❌ *Failed to send document.*");
+      reply("❌ *Failed to send document.*");
     }
-
-    delete sessions[from];
   }
 );
