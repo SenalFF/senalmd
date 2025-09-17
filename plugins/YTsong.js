@@ -40,11 +40,11 @@ cmd({
 ⏬ Select how you want to receive the audio:
 `.trim();
 
-        // Get direct download URL
-        const result = await ytmp3(data.url, "mp3");
-        if (!result?.download?.url) return reply("❌ Failed to fetch download link.");
+        // ✅ Correct usage of ytmp3
+        const result = await ytmp3(data.url, "mp3").catch(() => null);
+        if (!result?.url) return reply("❌ Failed to fetch download link.");
 
-        const audioUrl = result.download.url;
+        const audioUrl = result.url;
 
         // Button message options
         const buttons = [
