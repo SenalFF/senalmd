@@ -42,6 +42,8 @@
     "seedr": "latest",
     "adm-zip": "latest",
     "ytdl-core": "latest",
+    "uuid": "latest",
+    "youtube-dl-exec": "latest",
     "youtubedl-core": "latest",
     "@dark-yasiya/yt-dl.js": "latest",
     "nayan-media-downloader": "latest",
