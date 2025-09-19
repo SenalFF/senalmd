@@ -4,6 +4,7 @@ const yts = require("yt-search");
 const youtubedl = require("youtube-dl-exec");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const axios = require("axios");
 const { v4: uuidv4 } = require("uuid");
 
@@ -131,21 +132,28 @@ cmd(
       const tokenData = downloadTokens.get(token);
 
       if (!tokenData) {
-        return await conn.sendMessage(from, { text: "❌ Download token expired. Please request the song again." }, { quoted: mek });
+        return await conn.sendMessage(
+          from,
+          { text: "❌ Download token expired. Please request the song again." },
+          { quoted: mek }
+        );
       }
 
       const audio = tokenData.audio;
-      const tempFile = path.join("/tmp", `${audio.title}.${audio.format}`);
+      const tempFile = path.join(os.tmpdir(), `${audio.title}.${audio.format}`);
 
-      // Download file temporarily
-      const writer = fs.createWriteStream(tempFile);
-      const response = await axios({ url: audio.url, method: "GET", responseType: "stream" });
-      response.data.pipe(writer);
-      await new Promise((resolve, reject) => {
-        writer.on("finish", resolve);
-        writer.on("error", reject);
-      });
+      // Download the file only if it doesn't exist
+      if (!fs.existsSync(tempFile)) {
+        const writer = fs.createWriteStream(tempFile);
+        const response = await axios({ url: audio.url, method: "GET", responseType: "stream" });
+        response.data.pipe(writer);
+        await new Promise((resolve, reject) => {
+          writer.on("finish", resolve);
+          writer.on("error", reject);
+        });
+      }
 
+      // Send the file based on button type
       if (command === "playaudio") {
         await conn.sendMessage(from, {
           audio: fs.createReadStream(tempFile),
@@ -166,9 +174,11 @@ cmd(
         });
       }
 
-      // Delete temporary file and token
-      fs.unlinkSync(tempFile);
+      // Delete token after use
       downloadTokens.delete(token);
+
+      // Optional: keep temp file cached for reuse, delete manually if needed
+      // fs.unlinkSync(tempFile);
 
     } catch (err) {
       console.error("❌ buttonHandler error:", err);
