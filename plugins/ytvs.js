@@ -174,7 +174,7 @@ const getAudioDownloadUrl = async (youtubeUrl) => {
 // 🎵 SONG COMMAND
 cmd(
     {
-        pattern: "play",
+        pattern: "play2",
         desc: "🎧 Download YouTube Audio",
         category: "download",
         react: "🎵",
