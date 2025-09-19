@@ -45,8 +45,9 @@ const getAudioDownloadUrl = async (youtubeUrl) => {
 
     try {
         console.log("📥 Using yt-dlp...");
+
+        // Step 1: get direct audio URL
         const output = await youtubeDl(youtubeUrl, {
-            binary: "yt-dlp",
             getUrl: true,
             format: "bestaudio[ext=m4a]/bestaudio",
             quiet: true,
@@ -59,9 +60,8 @@ const getAudioDownloadUrl = async (youtubeUrl) => {
         if (output && typeof output === "string" && output.startsWith("http")) {
             console.log("✅ yt-dlp: Found audio URL");
 
-            // Get metadata
+            // Step 2: fetch metadata
             let infoOutput = await youtubeDl(youtubeUrl, {
-                binary: "yt-dlp",
                 dumpSingleJson: true,
                 quiet: true,
                 noWarnings: true,
