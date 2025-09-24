@@ -1,6 +1,6 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
-const { ytmp3 } = require("@kelvdra/scraper");
+const { ytmp3, playmp3 } = require("@kelvdra/scraper");
 
 /**
  * Normalize YouTube URL (e.g. youtu.be → youtube.com)
@@ -47,24 +47,39 @@ cmd({
 ⏬ Select how you want to receive the audio:
 `.trim();
 
-        let result, audioUrl;
+        let result = null, audioUrl = null, errorDetails = "";
+
+        // Try ytmp3 first
         try {
             console.log(`Attempting to fetch MP3 for: ${data.url}`);
             result = await ytmp3(data.url, "mp3");
             console.log("ytmp3 result:", result);
+            audioUrl = result?.url || result?.downloadUrl || result?.link || null;
         } catch (ytmp3Err) {
+            errorDetails += "ytmp3 error: " + ytmp3Err?.message + "; ";
             console.error("Error from ytmp3:", ytmp3Err);
-            return reply("❌ Failed to process the YouTube link with the scraper. (Scraper error)");
         }
 
-        // Try all common properties where a URL might exist
-        audioUrl = result?.url || result?.downloadUrl || result?.link || null;
+        // Fallback to playmp3 by song title if ytmp3 fails or url is missing
+        if (!audioUrl) {
+            try {
+                console.log(`ytmp3 failed or no url, trying playmp3: ${data.title}`);
+                result = await playmp3(data.title);
+                console.log("playmp3 result:", result);
+                audioUrl = result?.url || result?.downloadUrl || result?.link || null;
+            } catch (playmp3Err) {
+                errorDetails += "playmp3 error: " + playmp3Err?.message + "; ";
+                console.error("Error from playmp3:", playmp3Err);
+            }
+        }
 
         if (!audioUrl) {
             // Print all keys for debugging
-            console.log('ytmp3 unexpected result:', result);
+            console.log('Audio download failed, result:', result);
             return reply(
                 "❌ Failed to fetch the audio download link. The scraper might be having issues or YouTube changed something.\n" +
+                (errorDetails ? "Error details: " + errorDetails + "\n" : "") +
+                "Debug: " + JSON.stringify(result) + "\n" +
                 "Please try again later or report this to the bot owner."
             );
         }
