@@ -7,6 +7,8 @@ const {
   getContentType,
   fetchLatestBaileysVersion,
   Browsers,
+  downloadContentFromMessage, // ✅ added
+  proto, // ✅ added
 } = require("@whiskeysockets/baileys");
 
 const {
@@ -63,6 +65,24 @@ app.get("/", (req, res) => {
 app.listen(port, () =>
   console.log(`🌐 Server listening on http://localhost:${port}`)
 );
+
+// ================= Media Downloader Tool =================
+async function downloadMediaMessage(message, mediaType) {
+  try {
+    const stream = await downloadContentFromMessage(
+      message[mediaType],
+      mediaType.replace("Message", "") // e.g. "image", "video", "audio", "document"
+    );
+    let buffer = Buffer.from([]);
+    for await (const chunk of stream) {
+      buffer = Buffer.concat([buffer, chunk]);
+    }
+    return buffer;
+  } catch (err) {
+    console.error("❌ Error downloading media:", err);
+    return null;
+  }
+}
 
 // ================= Connect to WhatsApp =================
 async function connectToWA() {
@@ -186,6 +206,25 @@ async function connectToWA() {
 
       const reply = (text, extra = {}) =>
         conn.sendMessage(from, { text, ...extra }, { quoted: mek });
+
+      // ===== Auto media download + re-upload (example) =====
+      if (
+        mek.message.imageMessage ||
+        mek.message.videoMessage ||
+        mek.message.audioMessage ||
+        mek.message.documentMessage
+      ) {
+        const mediaType = type; // e.g. imageMessage
+        const buffer = await downloadMediaMessage(mek.message, mediaType);
+
+        if (buffer) {
+          await conn.sendMessage(from, {
+            document: buffer,
+            mimetype: "application/octet-stream",
+            fileName: `file-${Date.now()}`,
+          }, { quoted: mek });
+        }
+      }
 
       // ===== Load commands =====
       const events = require("./command");
