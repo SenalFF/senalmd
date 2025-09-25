@@ -1,188 +1,135 @@
-// play2.js - YouTube Audio Downloader Plugin
+// ================== Required Modules ==================
 const { cmd } = require("../command");
 const yts = require("yt-search");
-const youtubedl = require("youtube-dl-exec");
-const fs = require("fs");
-const path = require("path");
-const os = require("os");
-const axios = require("axios");
-const { v4: uuidv4 } = require("uuid");
+const { Innertube } = require("youtubei.js");
+const fetch = require("node-fetch"); // not needed if Node.js v18+
+let youtube;
 
-// In-memory storage for audio tokens
-const downloadTokens = new Map();
+// Init YouTube API once
+(async () => {
+    youtube = await Innertube.create({ fetch });
+    console.log("✅ YouTube client initialized");
+})();
 
-// Clean up expired tokens every 10 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [token, data] of downloadTokens.entries()) {
-    if (now - data.timestamp > 600000) downloadTokens.delete(token);
-  }
-}, 600000);
+/**
+ * Normalize YouTube URL (e.g. youtu.be → youtube.com)
+ */
+const normalizeYouTubeURL = (url) => {
+    if (url.startsWith("https://youtu.be/")) {
+        const videoId = url.split("/").pop().split("?")[0];
+        return `https://www.youtube.com/watch?v=${videoId}`;
+    }
+    return url;
+};
 
-// ------------------------
-// Helper: Search YouTube
-// ------------------------
-async function searchYouTube(query) {
-  const result = await yts(query);
-  if (!result || !result.videos || result.videos.length === 0) return null;
-  return result.videos[0];
+/**
+ * Get best audio stream URL from YouTube
+ */
+async function getMp3Url(videoId) {
+    const info = await youtube.getInfo(videoId);
+
+    const audioFormat = info.streaming_data?.adaptive_formats?.find(f =>
+        f.mimeType.includes("audio/mp4")
+    );
+
+    if (!audioFormat?.url) throw new Error("No audio stream found");
+
+    return {
+        title: info.basic_info.title,
+        author: info.basic_info.author,
+        duration: info.basic_info.duration,
+        url: audioFormat.url
+    };
 }
 
-// ------------------------
-// Helper: Get audio info via yt-dlp
-// ------------------------
-async function getAudioInfo(url) {
-  const info = await youtubedl(url, {
-    dumpSingleJson: true,
-    noWarnings: true,
-    noCheckCertificates: true,
-    preferFreeFormats: true,
-    youtubeSkipDashManifest: true,
-    format: "bestaudio[ext=m4a]/bestaudio"
-  });
-
-  const audioFormat = info.formats.find(f => f.url && f.acodec !== "none");
-  if (!audioFormat) throw new Error("No valid audio format found");
-
-  return {
-    title: info.title,
-    duration: info.duration,
-    uploader: info.uploader,
-    url: audioFormat.url,
-    format: audioFormat.ext,
-    thumbnail: info.thumbnails?.[0]?.url || null
-  };
-}
-
-// ------------------------
-// Helper: Store token
-// ------------------------
-function storeToken(audio) {
-  const token = uuidv4().substring(0, 8);
-  downloadTokens.set(token, { audio, timestamp: Date.now() });
-  return token;
-}
-
-// ------------------------
-// Main play2 command
-// ------------------------
-cmd(
-  {
+// 🎵 SONG COMMAND
+cmd({
     pattern: "play2",
     desc: "🎧 Download YouTube Audio",
     category: "download",
-    react: "🎵"
-  },
-  async (conn, mek, m, { from, q, reply }) => {
-    if (!q) return reply("❌ Please provide a YouTube link or song name.");
-
+    react: "🎵",
+}, async (conn, mek, m, { from, q, reply }) => {
     try {
-      let videoUrl;
+        if (!q) return reply("❗Please provide a YouTube link or song name.");
 
-      if (q.startsWith("http")) {
-        videoUrl = q;
-      } else {
-        const search = await searchYouTube(q);
-        if (!search) return reply("❌ No results found.");
-        videoUrl = search.url;
-      }
+        console.log(`Searching for: ${q}`);
+        const normalized = q.startsWith("http") ? normalizeYouTubeURL(q) : q;
+        const search = await yts(normalized);
+        const data = search.videos[0];
 
-      const audio = await getAudioInfo(videoUrl);
-      const token = storeToken(audio);
-
-      const buttons = [
-        { buttonId: `playaudio_${token}`, buttonText: { displayText: "🎶 Play Audio" }, type: 1 },
-        { buttonId: `playdoc_${token}`, buttonText: { displayText: "📄 Document" }, type: 1 },
-        { buttonId: `playvoice_${token}`, buttonText: { displayText: "🎤 Voice Note" }, type: 1 }
-      ];
-
-      const buttonMessage = {
-        text: `🎵 *${audio.title}*\n👤 ${audio.uploader}\n⏱ Duration: ${Math.floor(audio.duration / 60)}:${String(audio.duration % 60).padStart(2, "0")} min`,
-        footer: "@mr senal",
-        buttons,
-        headerType: 4,
-        contextInfo: {
-          externalAdReply: {
-            title: audio.title,
-            body: `By ${audio.uploader}`,
-            thumbnailUrl: audio.thumbnail,
-            mediaType: 2,
-            sourceUrl: videoUrl
-          }
+        if (!data?.url) {
+            console.log("No search results found for:", normalized);
+            return reply("❌ No results found for your query.");
         }
-      };
 
-      await conn.sendMessage(from, buttonMessage);
+        console.log(`Found video: ${data.title} - ${data.url}`);
+
+        const caption = `
+🎧 ━━━ 『 *SENAL MD - MP3 DOWNLOADER* 』━━━
+
+🎵 *Title:* ${data.title}
+🕒 *Duration:* ${data.timestamp}
+👁️ *Views:* ${data.views.toLocaleString()}
+📅 *Uploaded:* ${data.ago}
+🔗 *Link:* ${data.url}
+
+⏬ Select how you want to receive the audio:
+`.trim();
+
+        let result, audioUrl;
+        try {
+            console.log(`Fetching MP3 URL for: ${data.videoId}`);
+            result = await getMp3Url(data.videoId);
+            audioUrl = result.url;
+        } catch (err) {
+            console.error("Error fetching MP3:", err);
+            return reply("❌ Failed to fetch the audio stream. Please try again later.");
+        }
+
+        // Button message options
+        const buttons = [
+            { buttonId: `voice_${audioUrl}`, buttonText: { displayText: "🎙 Voice Note" }, type: 1 },
+            { buttonId: `doc_${audioUrl}`, buttonText: { displayText: "📄 Document" }, type: 1 },
+        ];
+
+        await conn.sendMessage(from, {
+            image: { url: data.thumbnail },
+            caption,
+            buttons,
+            headerType: 4
+        }, { quoted: mek });
 
     } catch (err) {
-      console.error("❌ play2 error:", err);
-      reply("❌ An error occurred while processing the song. Please try again later.");
+        console.error("General error in play command:", err);
+        reply("❌ An unexpected error occurred while processing the song. Please try again later.");
     }
-  }
-);
+});
 
-// ------------------------
-// Button Handlers
-// ------------------------
-cmd(
-  { pattern: "playaudio_|playdoc_|playvoice_", onlyButton: true },
-  async (conn, mek, m, { from, text }) => {
+// Handle button selection
+cmd({
+    pattern: "voice_",
+    fromMe: true,
+    onlyButton: true
+}, async (conn, mek, m, { from, text }) => {
+    const audioUrl = text.replace("voice_", "");
+    if (!audioUrl) return console.log("Voice button click without audioUrl");
     try {
-      const [command, token] = text.split("_");
-      const tokenData = downloadTokens.get(token);
-
-      if (!tokenData) {
-        return await conn.sendMessage(
-          from,
-          { text: "❌ Download token expired. Please request the song again." },
-          { quoted: mek }
-        );
-      }
-
-      const audio = tokenData.audio;
-      const tempFile = path.join(os.tmpdir(), `${audio.title}.${audio.format}`);
-
-      // Download the file only if it doesn't exist
-      if (!fs.existsSync(tempFile)) {
-        const writer = fs.createWriteStream(tempFile);
-        const response = await axios({ url: audio.url, method: "GET", responseType: "stream" });
-        response.data.pipe(writer);
-        await new Promise((resolve, reject) => {
-          writer.on("finish", resolve);
-          writer.on("error", reject);
-        });
-      }
-
-      // Send the file based on button type
-      if (command === "playaudio") {
-        await conn.sendMessage(from, {
-          audio: fs.createReadStream(tempFile),
-          mimetype: audio.format === "m4a" ? "audio/mp4" : "audio/mpeg",
-          fileName: `${audio.title}.${audio.format}`
-        });
-      } else if (command === "playdoc") {
-        await conn.sendMessage(from, {
-          document: fs.createReadStream(tempFile),
-          mimetype: audio.format === "m4a" ? "audio/mp4" : "audio/mpeg",
-          fileName: `${audio.title}.${audio.format}`
-        });
-      } else if (command === "playvoice") {
-        await conn.sendMessage(from, {
-          audio: fs.createReadStream(tempFile),
-          mimetype: "audio/ogg; codecs=opus",
-          ptt: true
-        });
-      }
-
-      // Delete token after use
-      downloadTokens.delete(token);
-
-      // Optional: keep temp file cached for reuse, delete manually if needed
-      // fs.unlinkSync(tempFile);
-
-    } catch (err) {
-      console.error("❌ buttonHandler error:", err);
-      await conn.sendMessage(from, { text: "❌ Failed to download or send the audio." });
+        await conn.sendMessage(from, { audio: { url: audioUrl }, mimetype: "audio/mpeg", ptt: true }, { quoted: mek });
+    } catch (e) {
+        console.error("Error sending voice note:", e);
     }
-  }
-);
+});
+
+cmd({
+    pattern: "doc_",
+    fromMe: true,
+    onlyButton: true
+}, async (conn, mek, m, { from, text }) => {
+    const audioUrl = text.replace("doc_", "");
+    if (!audioUrl) return console.log("Doc button click without audioUrl");
+    try {
+        await conn.sendMessage(from, { document: { url: audioUrl }, mimetype: "audio/mpeg", fileName: "audio.mp3" }, { quoted: mek });
+    } catch (e) {
+        console.error("Error sending document:", e);
+    }
+});
