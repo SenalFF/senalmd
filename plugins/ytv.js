@@ -2,7 +2,7 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
 const { Innertube } = require("youtubei.js");
-const fetch = require("node-fetch"); // not needed if Node.js v18+
+const fetch = require("node-fetch"); // optional if Node >= 18
 let youtube;
 
 // Init YouTube API once
@@ -23,23 +23,20 @@ const normalizeYouTubeURL = (url) => {
 };
 
 /**
- * Get best audio stream URL from YouTube
+ * Get audio stream using youtubei.js download()
  */
-async function getMp3Url(videoId) {
-    const info = await youtube.getInfo(videoId);
+async function getAudioStream(videoId) {
+    return youtube.download(videoId, {
+        type: "audio",
+        quality: "best"
+    });
+}
 
-    const audioFormat = info.streaming_data?.adaptive_formats?.find(f =>
-        f.mimeType.includes("audio/mp4")
-    );
-
-    if (!audioFormat?.url) throw new Error("No audio stream found");
-
-    return {
-        title: info.basic_info.title,
-        author: info.basic_info.author,
-        duration: info.basic_info.duration,
-        url: audioFormat.url
-    };
+/**
+ * Sanitize file name (remove illegal chars)
+ */
+function safeFileName(title) {
+    return title.replace(/[<>:"/\\|?*]+/g, "").trim();
 }
 
 // 🎵 SONG COMMAND
@@ -76,20 +73,11 @@ cmd({
 ⏬ Select how you want to receive the audio:
 `.trim();
 
-        let result, audioUrl;
-        try {
-            console.log(`Fetching MP3 URL for: ${data.videoId}`);
-            result = await getMp3Url(data.videoId);
-            audioUrl = result.url;
-        } catch (err) {
-            console.error("Error fetching MP3:", err);
-            return reply("❌ Failed to fetch the audio stream. Please try again later.");
-        }
-
         // Button message options
         const buttons = [
-            { buttonId: `voice_${audioUrl}`, buttonText: { displayText: "🎙 Voice Note" }, type: 1 },
-            { buttonId: `doc_${audioUrl}`, buttonText: { displayText: "📄 Document" }, type: 1 },
+            { buttonId: `voice_${data.videoId}_${encodeURIComponent(data.title)}`, buttonText: { displayText: "🎙 Voice Note" }, type: 1 },
+            { buttonId: `doc_${data.videoId}_${encodeURIComponent(data.title)}`, buttonText: { displayText: "📄 Document" }, type: 1 },
+            { buttonId: `audio_${data.videoId}_${encodeURIComponent(data.title)}`, buttonText: { displayText: "🎧 Audio File" }, type: 1 },
         ];
 
         await conn.sendMessage(from, {
@@ -105,31 +93,64 @@ cmd({
     }
 });
 
-// Handle button selection
+// Handle button: Voice Note
 cmd({
     pattern: "voice_",
     fromMe: true,
     onlyButton: true
 }, async (conn, mek, m, { from, text }) => {
-    const audioUrl = text.replace("voice_", "");
-    if (!audioUrl) return console.log("Voice button click without audioUrl");
+    const parts = text.split("_");
+    const videoId = parts[1];
+    const title = decodeURIComponent(parts.slice(2).join("_")) || "audio";
+    if (!videoId) return console.log("Voice button click without videoId");
     try {
-        await conn.sendMessage(from, { audio: { url: audioUrl }, mimetype: "audio/mpeg", ptt: true }, { quoted: mek });
+        const stream = await getAudioStream(videoId);
+        await conn.sendMessage(from, { audio: stream, mimetype: "audio/mpeg", ptt: true }, { quoted: mek });
     } catch (e) {
         console.error("Error sending voice note:", e);
     }
 });
 
+// Handle button: Document
 cmd({
     pattern: "doc_",
     fromMe: true,
     onlyButton: true
 }, async (conn, mek, m, { from, text }) => {
-    const audioUrl = text.replace("doc_", "");
-    if (!audioUrl) return console.log("Doc button click without audioUrl");
+    const parts = text.split("_");
+    const videoId = parts[1];
+    const title = decodeURIComponent(parts.slice(2).join("_")) || "audio";
+    if (!videoId) return console.log("Doc button click without videoId");
     try {
-        await conn.sendMessage(from, { document: { url: audioUrl }, mimetype: "audio/mpeg", fileName: "audio.mp3" }, { quoted: mek });
+        const stream = await getAudioStream(videoId);
+        await conn.sendMessage(from, { 
+            document: stream, 
+            mimetype: "audio/mpeg", 
+            fileName: `${safeFileName(title)}.mp3` 
+        }, { quoted: mek });
     } catch (e) {
         console.error("Error sending document:", e);
+    }
+});
+
+// Handle button: Normal Audio File
+cmd({
+    pattern: "audio_",
+    fromMe: true,
+    onlyButton: true
+}, async (conn, mek, m, { from, text }) => {
+    const parts = text.split("_");
+    const videoId = parts[1];
+    const title = decodeURIComponent(parts.slice(2).join("_")) || "audio";
+    if (!videoId) return console.log("Audio button click without videoId");
+    try {
+        const stream = await getAudioStream(videoId);
+        await conn.sendMessage(from, { 
+            audio: stream, 
+            mimetype: "audio/mpeg", 
+            fileName: `${safeFileName(title)}.mp3` 
+        }, { quoted: mek });
+    } catch (e) {
+        console.error("Error sending normal audio file:", e);
     }
 });
