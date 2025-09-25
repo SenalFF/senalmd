@@ -14,7 +14,7 @@
     "axios": "latest",
     "express": "latest",
     "fs-extra": "latest",
-    "youtubei.js": "latest",
+    "youtubei.js": "github:LuanRT/YouTube.js",
     "path": "latest",
     "mfiredlcore-vihangayt": "1.0.0",
     "node-fetch": "latest",
