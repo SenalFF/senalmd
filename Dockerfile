@@ -1,5 +1,5 @@
-# Use a supported and secure Node.js base image
-FROM node:lts-bullseye
+# Use a stable Node.js base image
+FROM node:20-bullseye
 
 # Set working directory
 WORKDIR /app
@@ -11,19 +11,15 @@ COPY package*.json ./
 RUN npm install
 
 # Install required system packages
-RUN apt-get update && \
-    apt-get install -y \
-        ffmpeg \
-        imagemagick \
-        webp && \
-    apt-get upgrade -y && \
+RUN apt-get update && apt-get upgrade -y && \
+    apt-get install -y ffmpeg imagemagick libwebp-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy remaining project files
 COPY . .
 
-# Expose port if needed (optional)
+# Expose port
 EXPOSE 3000
 
-# Default command (change if needed)
+# Default command
 CMD ["node", "index.js"]
