@@ -1,6 +1,6 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
-const { ytmp3, playmp3 } = require("@kelvdra/scraper");
+const { ytmp3, ytmp4 } = require("@kelvdra/scraper");
 
 /**
  * Normalize YouTube URL (e.g. youtu.be → youtube.com)
@@ -23,17 +23,10 @@ cmd({
     try {
         if (!q) return reply("❗Please provide a YouTube link or song name.");
 
-        console.log(`Searching for: ${q}`);
         const normalized = q.startsWith("http") ? normalizeYouTubeURL(q) : q;
         const search = await yts(normalized);
         const data = search.videos[0];
-
-        if (!data?.url) {
-            console.log("No search results found for:", normalized);
-            return reply("❌ No results found for your query.");
-        }
-
-        console.log(`Found video: ${data.title} - ${data.url}`);
+        if (!data?.url) return reply("❌ No results found.");
 
         const caption = `
 🎧 ━━━ 『 *SENAL MD - MP3 DOWNLOADER* 』━━━
@@ -44,90 +37,36 @@ cmd({
 📅 *Uploaded:* ${data.ago}
 🔗 *Link:* ${data.url}
 
-⏬ Select how you want to receive the audio:
+⏬ Downloading MP3...
 `.trim();
-
-        let result = null, audioUrl = null, errorDetails = "";
-
-        // Try ytmp3 first
-        try {
-            console.log(`Attempting to fetch MP3 for: ${data.url}`);
-            result = await ytmp3(data.url, "mp3");
-            console.log("ytmp3 result:", result);
-            audioUrl = result?.url || result?.downloadUrl || result?.link || null;
-        } catch (ytmp3Err) {
-            errorDetails += "ytmp3 error: " + ytmp3Err?.message + "; ";
-            console.error("Error from ytmp3:", ytmp3Err);
-        }
-
-        // Fallback to playmp3 by song title if ytmp3 fails or url is missing
-        if (!audioUrl) {
-            try {
-                console.log(`ytmp3 failed or no url, trying playmp3: ${data.title}`);
-                result = await playmp3(data.title);
-                console.log("playmp3 result:", result);
-                audioUrl = result?.url || result?.downloadUrl || result?.link || null;
-            } catch (playmp3Err) {
-                errorDetails += "playmp3 error: " + playmp3Err?.message + "; ";
-                console.error("Error from playmp3:", playmp3Err);
-            }
-        }
-
-        if (!audioUrl) {
-            // Print all keys for debugging
-            console.log('Audio download failed, result:', result);
-            return reply(
-                "❌ Failed to fetch the audio download link. The scraper might be having issues or YouTube changed something.\n" +
-                (errorDetails ? "Error details: " + errorDetails + "\n" : "") +
-                "Debug: " + JSON.stringify(result) + "\n" +
-                "Please try again later or report this to the bot owner."
-            );
-        }
-
-        // Button message options
-        const buttons = [
-            { buttonId: `voice_${audioUrl}`, buttonText: { displayText: "🎙 Voice Note" }, type: 1 },
-            { buttonId: `doc_${audioUrl}`, buttonText: { displayText: "📄 Document" }, type: 1 },
-        ];
 
         await conn.sendMessage(from, {
             image: { url: data.thumbnail },
-            caption,
-            buttons,
-            headerType: 4
+            caption
         }, { quoted: mek });
 
+        await reply("🎧 Fetching audio...");
+
+        const result = await ytmp3(data.url, "mp3");
+        if (!result?.download?.url) return reply("❌ Failed to fetch download link.");
+
+        const audio = {
+            url: result.download.url,
+        };
+
+        await conn.sendMessage(from, { audio, mimetype: "audio/mpeg" }, { quoted: mek });
+
+        await conn.sendMessage(from, {
+            document: audio,
+            mimetype: "audio/mpeg",
+            fileName: `${data.title}.mp3`,
+            caption: "✅ MP3 sent by *SENAL MD* 🎵"
+        }, { quoted: mek });
+
+        await reply("✅ Uploaded successfully.");
+
     } catch (err) {
-        console.error("General error in play command:", err);
-        reply("❌ An unexpected error occurred while processing the song. Please try again later.");
-    }
-});
-
-// Handle button selection
-cmd({
-    pattern: "voice_",
-    fromMe: true,
-    onlyButton: true
-}, async (conn, mek, m, { from, text }) => {
-    const audioUrl = text.replace("voice_", "");
-    if (!audioUrl) return console.log("Voice button click without audioUrl");
-    try {
-        await conn.sendMessage(from, { audio: { url: audioUrl }, mimetype: "audio/mpeg", ptt: true }, { quoted: mek });
-    } catch (e) {
-        console.error("Error sending voice note:", e);
-    }
-});
-
-cmd({
-    pattern: "doc_",
-    fromMe: true,
-    onlyButton: true
-}, async (conn, mek, m, { from, text }) => {
-    const audioUrl = text.replace("doc_", "");
-    if (!audioUrl) return console.log("Doc button click without audioUrl");
-    try {
-        await conn.sendMessage(from, { document: { url: audioUrl }, mimetype: "audio/mpeg", fileName: "audio.mp3" }, { quoted: mek });
-    } catch (e) {
-        console.error("Error sending document:", e);
+        console.error(err);
+        reply("❌ An error occurred while downloading the song.");
     }
 });
