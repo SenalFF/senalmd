@@ -1,6 +1,5 @@
 // ================== Required Modules ==================
-const { cmd } = require("../command");
-const { Innertube, FilterVideos } = require("youtubei.js"); // Updated to use Innertube for search as well (removed yt-search dependency)
+const { cmd } = require("../command"); // Updated to use Innertube for search as well (removed yt-search dependency)
 const fetch = require("node-fetch"); // optional if Node >= 18
 let youtube;
 
