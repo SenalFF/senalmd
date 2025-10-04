@@ -132,13 +132,14 @@ async function connectToWA() {
         });
         console.log("✅ Plugins loaded");
 
-        // Send alive message to owner
+        // Send alive message to owner with AI icon enabled
         let upMsg =
           envConfig.ALIVE_MSG ||
           `Senal MD connected ✅\nPrefix: ${prefix}`;
         conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
           image: { url: envConfig.ALIVE_IMG },
           caption: upMsg,
+          ai: true, // AI icon enabled here
         });
       }
     });
@@ -204,8 +205,9 @@ async function connectToWA() {
       const isMe = botNumber.includes(senderNumber);
       const isOwner = ownerNumber.includes(senderNumber) || isMe;
 
+      // Reply function with AI icon enabled
       const reply = (text, extra = {}) =>
-        conn.sendMessage(from, { text, ...extra }, { quoted: mek });
+        conn.sendMessage(from, { text, ai: true, ...extra }, { quoted: mek });
 
       // ===== Auto media download + re-upload (example) =====
       if (
@@ -218,11 +220,16 @@ async function connectToWA() {
         const buffer = await downloadMediaMessage(mek.message, mediaType);
 
         if (buffer) {
-          await conn.sendMessage(from, {
-            document: buffer,
-            mimetype: "application/octet-stream",
-            fileName: `file-${Date.now()}`,
-          }, { quoted: mek });
+          await conn.sendMessage(
+            from,
+            {
+              document: buffer,
+              mimetype: "application/octet-stream",
+              fileName: `file-${Date.now()}`,
+              ai: true, // AI icon enabled here as well
+            },
+            { quoted: mek }
+          );
         }
       }
 
