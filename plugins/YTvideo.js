@@ -2,14 +2,14 @@ const { cmd } = require("../command");
 const yts = require("yt-search");
 const axios = require("axios");
 
-const formats = ["144", "240", "360", "480", "720", "1080", "mp3"];
+const formats = ["144", "240", "360", "480", "720", "1080"];
 
-// Global map to track pending downloads (to avoid duplicate processing)
-const pendingDownloads = new Map();
+// Module-level flag to ensure event listener is registered only once
+let listenerRegistered = false;
 
 cmd({
   pattern: "video",
-  desc: "📹 Download YouTube Video or Audio via Senal YT DL",
+  desc: "📹 Download YouTube Video via Senal YT DL",
   category: "download",
   react: "📹",
   filename: __filename
@@ -29,18 +29,14 @@ cmd({
 ⏱ *Duration:* ${data.timestamp}
     `.trim();
 
-    // Buttons for available formats
+    // Buttons for available formats (video only)
     const buttons = formats.map(f => ({
       buttonId: `dl_${data.videoId}_${f}`,
-      buttonText: { displayText: f === "mp3" ? "🎵 MP3" : `${f}p` },
+      buttonText: { displayText: `${f}p` },
       type: 1
     }));
 
     buttons.push({ buttonId: "api_info_vid", buttonText: { displayText: "ℹ️ API Info" }, type: 1 });
-
-    // Store pending data for this interaction (use message key or timestamp for uniqueness)
-    const interactionId = `${from}_${Date.now()}`;
-    pendingDownloads.set(interactionId, { videoId: data.videoId, title: data.title });
 
     await conn.sendMessage(from, {
       image: { url: data.thumbnail },
@@ -50,54 +46,43 @@ cmd({
       headerType: 4
     }, { quoted: m });
 
-    // Auto-cleanup pending entry after 5 minutes
-    setTimeout(() => pendingDownloads.delete(interactionId), 5 * 60 * 1000);
-
   } catch (err) {
     console.error("Error in YT Video command:", err);
     reply("❌ An error occurred while processing your video.");
   }
-});
 
-// Global event listener (set up once per plugin load)
-conn.ev.on("messages.upsert", async (messageUpdate) => {
-  const mek = messageUpdate.messages[0];
-  if (!mek?.message?.buttonsResponseMessage || mek.key.fromMe) return;
+  // Register the global event listener only once (on first command execution)
+  if (!listenerRegistered) {
+    listenerRegistered = true;
+    console.log("📡 Registering YT Video button event listener...");
 
-  const btnId = mek.message.buttonsResponseMessage.selectedButtonId;
-  if (!btnId) return;
+    conn.ev.on("messages.upsert", async (messageUpdate) => {
+      const mek = messageUpdate.messages[0];
+      if (!mek?.message?.buttonsResponseMessage || mek.key.fromMe) return;
 
-  const remoteJid = mek.key.remoteJid;
+      const btnId = mek.message.buttonsResponseMessage.selectedButtonId;
+      if (!btnId) return;
 
-  try {
-    if (btnId.startsWith("dl_")) {
-      const [, videoId, format] = btnId.split("_");
+      const remoteJid = mek.key.remoteJid;
 
-      // Check if this is a valid pending interaction (basic check; enhance if needed)
-      if (!pendingDownloads.has(`${remoteJid}_${videoId}`)) {
-        // Fallback: try to fetch title via search if not in pending (but ideally store better)
-        const search = await yts(`https://www.youtube.com/watch?v=${videoId}`);
-        const data = search.videos[0];
-        if (!data) return conn.sendMessage(remoteJid, { text: "❌ Invalid or expired request." }, { quoted: mek });
+      try {
+        if (btnId.startsWith("dl_")) {
+          const [, videoId, format] = btnId.split("_");
 
-        const apiUrl = format === "mp3"
-          ? `https://senalytdl.vercel.app/mp3?id=${videoId}`
-          : `https://senalytdl.vercel.app/download?id=${videoId}&format=${format}`;
+          const apiUrl = `https://senalytdl.vercel.app/download?id=${videoId}&format=${format}`;
 
-        const { data: res } = await axios.get(apiUrl);
-        if (!res.downloadUrl) return conn.sendMessage(remoteJid, { text: "❌ Download URL not available." }, { quoted: mek });
+          const { data: res } = await axios.get(apiUrl);
+          if (!res.downloadUrl) return conn.sendMessage(remoteJid, { text: "❌ Download URL not available." }, { quoted: mek });
 
-        const title = res.title || data.title;
+          // Fallback to search for title if API doesn't provide it
+          let title = res.title;
+          if (!title) {
+            const search = await yts(`https://www.youtube.com/watch?v=${videoId}`);
+            const data = search.videos[0];
+            title = data?.title || "Unknown Title";
+          }
 
-        if (format === "mp3") {
-          // Send only as document to avoid "looping" multiple files; audio playback can be handled by WhatsApp if needed
-          await conn.sendMessage(remoteJid, { 
-            document: { url: res.downloadUrl }, 
-            mimetype: "audio/mpeg", 
-            fileName: `${title}.mp3`, 
-            caption: "✅ MP3 sent by *Mr Senal*" 
-          }, { quoted: mek });
-        } else {
+          // Send both video (playable) and document (downloadable)
           await conn.sendMessage(remoteJid, { 
             video: { url: res.downloadUrl }, 
             mimetype: "video/mp4" 
@@ -109,28 +94,24 @@ conn.ev.on("messages.upsert", async (messageUpdate) => {
             caption: `✅ Video ${format}p sent by *Mr Senal*` 
           }, { quoted: mek });
         }
-      } else {
-        // If pending, process similarly (but in this setup, we use fallback for simplicity)
-        // You can refine this to store more precisely
-      }
-    }
 
-    if (btnId === "api_info_vid") {
-      await conn.sendMessage(remoteJid, {
-        text: `
+        if (btnId === "api_info_vid") {
+          await conn.sendMessage(remoteJid, {
+            text: `
 🧠 *Senal YT DL API Info*
 👨‍💻 Developer: Mr Senal
 📦 Project: Senal YT DL v2.0
 🔗 Base URL: https://senalytdl.vercel.app/
 🎥 Endpoints:
-- /mp3?id=VIDEO_ID
 - /download?id=VIDEO_ID&format=FORMAT
 Available formats: ${formats.join(", ")}
-        `.trim()
-      }, { quoted: mek });
-    }
-  } catch (err) {
-    console.error("YT Video button error:", err);
-    conn.sendMessage(remoteJid, { text: "❌ An error occurred during download." }, { quoted: mek });
+            `.trim()
+          }, { quoted: mek });
+        }
+      } catch (err) {
+        console.error("YT Video button error:", err);
+        conn.sendMessage(remoteJid, { text: "❌ An error occurred during download." }, { quoted: mek });
+      }
+    });
   }
 });
