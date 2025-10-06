@@ -117,7 +117,7 @@ async function connectToWA() {
     // ================= Handle Incoming Messages =================
     conn.ev.on("messages.upsert", async (mek) => {
       mek = mek.messages[0];
-      if (!mek.message) return;
+      if (!mek?.message) return;
 
       // Handle ephemeral messages
       mek.message =
@@ -176,6 +176,21 @@ async function connectToWA() {
       // ===== Load commands =====
       const events = require("./command");
 
+      // ===== BUTTON HANDLER (GLOBAL SAFE) =====
+      if (contentType === "buttonsResponseMessage") {
+        const btnId = mek.message.buttonsResponseMessage.selectedButtonId;
+        for (const plugin of events.commands) {
+          if (plugin.buttonHandler) {
+            try {
+              await plugin.buttonHandler(conn, mek, btnId);
+            } catch (err) {
+              console.error("Button handler error:", err);
+            }
+          }
+        }
+      }
+
+      // ===== COMMAND EXECUTION =====
       const cmd = events.commands.find((c) => {
         if (!c.pattern) return false;
         if (c.pattern.toLowerCase() === commandText) return true;
