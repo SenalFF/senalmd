@@ -2,7 +2,6 @@ const { cmd } = require("../command");
 const yts = require("yt-search");
 const axios = require("axios");
 
-// Available formats
 const formats = ["144", "240", "360", "480", "720", "1080", "mp3"];
 
 cmd({
@@ -10,9 +9,11 @@ cmd({
   desc: "📹 Download YouTube Video or Audio via Senal YT DL",
   category: "download",
   react: "📹",
-  async function(conn, mek, m, { from, q, reply }) {
-    if (!q) return reply("❗Please provide a YouTube link or video name.");
+  filename: __filename
+}, async (conn, m, store, { from, args, q, reply }) => {
+  if (!q) return reply("❗Please provide a YouTube link or video name.");
 
+  try {
     // Search YouTube
     const search = await yts(q);
     const data = search.videos[0];
@@ -25,12 +26,13 @@ cmd({
 ⏱ *Duration:* ${data.timestamp}
     `.trim();
 
-    // Dynamic buttons for each format
+    // Buttons for available formats
     const buttons = formats.map(f => ({
       buttonId: `dl_${data.videoId}_${f}`,
       buttonText: { displayText: f === "mp3" ? "🎵 MP3" : `${f}p` },
       type: 1
     }));
+
     buttons.push({ buttonId: "api_info_vid", buttonText: { displayText: "ℹ️ API Info" }, type: 1 });
 
     await conn.sendMessage(from, {
@@ -39,23 +41,20 @@ cmd({
       footer: "🚀 Powered by Senal YT DL",
       buttons,
       headerType: 4
-    }, { quoted: mek });
+    }, { quoted: m });
 
-    // Save last video for button handler
-    this.lastVideo = {
-      videoId: data.videoId,
-      title: data.title
-    };
+  } catch (err) {
+    console.error("Error in YT Video command:", err);
+    reply("❌ An error occurred while processing your video.");
   }
-});
 
-// ===== Button Handler =====
-cmd({
-  pattern: null, // no command trigger
-  buttonHandler: async (conn, mek, btnId) => {
-    const plugin = require("./ytvideo");
-    const data = plugin.lastVideo;
-    if (!data) return;
+  // ===== Handle Button Clicks =====
+  conn.ev.on("messages.upsert", async (messageUpdate) => {
+    const mek = messageUpdate.messages[0];
+    if (!mek?.message?.buttonsResponseMessage) return;
+
+    const btnId = mek.message.buttonsResponseMessage.selectedButtonId;
+    if (!btnId) return;
 
     try {
       if (btnId.startsWith("dl_")) {
@@ -67,28 +66,14 @@ cmd({
         const { data: res } = await axios.get(apiUrl);
         if (!res.downloadUrl) return;
 
+        const remoteJid = mek.key.remoteJid;
+
         if (format === "mp3") {
-          await conn.sendMessage(mek.key.remoteJid, {
-            audio: { url: res.downloadUrl },
-            mimetype: "audio/mpeg"
-          }, { quoted: mek });
-          await conn.sendMessage(mek.key.remoteJid, {
-            document: { url: res.downloadUrl },
-            mimetype: "audio/mpeg",
-            fileName: `${res.title}.mp3`,
-            caption: "✅ MP3 sent by *Mr Senal*"
-          }, { quoted: mek });
+          await conn.sendMessage(remoteJid, { audio: { url: res.downloadUrl }, mimetype: "audio/mpeg" }, { quoted: mek });
+          await conn.sendMessage(remoteJid, { document: { url: res.downloadUrl }, mimetype: "audio/mpeg", fileName: `${res.title}.mp3`, caption: "✅ MP3 sent by *Mr Senal*" }, { quoted: mek });
         } else {
-          await conn.sendMessage(mek.key.remoteJid, {
-            video: { url: res.downloadUrl },
-            mimetype: "video/mp4"
-          }, { quoted: mek });
-          await conn.sendMessage(mek.key.remoteJid, {
-            document: { url: res.downloadUrl },
-            mimetype: "video/mp4",
-            fileName: `${res.title}_${format}.mp4`,
-            caption: `✅ Video ${format}p sent by *Mr Senal*`
-          }, { quoted: mek });
+          await conn.sendMessage(remoteJid, { video: { url: res.downloadUrl }, mimetype: "video/mp4" }, { quoted: mek });
+          await conn.sendMessage(remoteJid, { document: { url: res.downloadUrl }, mimetype: "video/mp4", fileName: `${res.title}_${format}.mp4`, caption: `✅ Video ${format}p sent by *Mr Senal*` }, { quoted: mek });
         }
       }
 
@@ -109,5 +94,5 @@ Available formats: ${formats.join(", ")}
     } catch (err) {
       console.error("YT Video button error:", err);
     }
-  }
+  });
 });
