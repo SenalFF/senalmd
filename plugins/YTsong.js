@@ -2,68 +2,79 @@ const { cmd } = require("../command");
 const yts = require("yt-search");
 const axios = require("axios");
 
-// 🎵 SONG COMMAND
 cmd({
-    pattern: "play",
-    desc: "🎧 Download YouTube Audio (via Senal YT DL API)",
-    category: "download",
-    react: "🎵",
+  pattern: "play",
+  desc: "🎧 Download YouTube Audio via Senal YT DL",
+  category: "download",
+  react: "🎵",
 }, async (conn, mek, m, { from, q, reply }) => {
-    try {
-        if (!q) return reply("❗ Please provide a YouTube link or song name.");
+  try {
+    if (!q) return reply("❗Please provide a YouTube link or song name.");
 
-        // 🔍 Search or normalize link
-        const isLink = q.startsWith("http");
-        const search = await yts(isLink ? q : q);
-        const data = search.videos[0];
-        if (!data?.videoId) return reply("❌ No results found.");
+    const search = await yts(q);
+    const data = search.videos[0];
+    if (!data?.videoId) return reply("❌ No results found.");
 
-        const caption = `
-🎧 ━━━ 『 *SENAL MD - MP3 DOWNLOADER* 』━━━
+    // Get from Senal YT DL API
+    const api = `https://senalytdl.vercel.app/mp3?id=${data.videoId}`;
+    const { data: res } = await axios.get(api);
 
-🎵 *Title:* ${data.title}
-🕒 *Duration:* ${data.timestamp}
-👁️ *Views:* ${data.views.toLocaleString()}
-📅 *Uploaded:* ${data.ago}
-📺 *Channel:* ${data.author.name}
-🔗 *Link:* ${data.url}
+    if (!res.downloadUrl) return reply("❌ Failed to fetch download link from Senal YT DL.");
 
-⏬ Downloading MP3 via Senal YT DL...
-`.trim();
+    const caption = `
+🎧 *${res.title}*
+👤 *Developer:* Mr Senal
+💾 *Format:* MP3 (${res.quality} kbps)
+⏱ *Duration:* ${Math.floor(res.duration / 60)}:${(res.duration % 60).toString().padStart(2, "0")}
+🔗 *Source:* YouTube
+    `.trim();
 
+    // 🎵 Buttons
+    const buttons = [
+      { buttonId: `playnow_${data.videoId}`, buttonText: { displayText: "▶️ Play Audio" }, type: 1 },
+      { buttonId: `down_${data.videoId}`, buttonText: { displayText: "⬇️ Download Audio" }, type: 1 },
+      { buttonId: "api_info", buttonText: { displayText: "ℹ️ API Info" }, type: 1 }
+    ];
+
+    await conn.sendMessage(from, {
+      image: { url: res.thumbnail },
+      caption,
+      footer: "🚀 Powered by Senal YT DL",
+      buttons,
+      headerType: 4
+    }, { quoted: mek });
+
+    // 🎶 Button responses
+    conn.ev.on("messages.upsert", async (msg) => {
+      const btn = msg.messages[0]?.message?.buttonsResponseMessage?.selectedButtonId;
+      if (!btn) return;
+
+      if (btn.startsWith("playnow_")) {
+        await conn.sendMessage(from, { audio: { url: res.downloadUrl }, mimetype: "audio/mpeg" }, { quoted: mek });
+      }
+
+      if (btn.startsWith("down_")) {
         await conn.sendMessage(from, {
-            image: { url: data.thumbnail },
-            caption
+          document: { url: res.downloadUrl },
+          mimetype: "audio/mpeg",
+          fileName: `${res.title}.mp3`,
+          caption: "✅ MP3 downloaded from *Senal YT DL*"
         }, { quoted: mek });
+      }
 
-        await reply("🎧 Fetching MP3 from Senal YT DL...");
+      if (btn === "api_info") {
+        await reply(`
+🧠 *Senal YT DL API Info*
+👨‍💻 Developer: Mr Senal
+📦 Project: Senal YT DL v2.0
+🔗 Endpoint: ${api}
+🎵 Powered by https://senalytdl.vercel.app/
+        `.trim());
+      }
+    });
 
-        // 🌐 Call your API
-        const apiUrl = `https://senalytdl.vercel.app/mp3?id=${data.videoId}`;
-        const response = await axios.get(apiUrl, { timeout: 15000 });
-        const result = response.data;
-
-        if (!result.downloadURL) {
-            return reply("❌ Failed to fetch download link from Senal YT DL.");
-        }
-
-        const audio = { url: result.downloadURL };
-
-        // 🎶 Send MP3
-        await conn.sendMessage(from, { audio, mimetype: "audio/mpeg" }, { quoted: mek });
-
-        // 📄 Optional: also send as document
-        await conn.sendMessage(from, {
-            document: audio,
-            mimetype: "audio/mpeg",
-            fileName: `${data.title}.mp3`,
-            caption: "✅ MP3 sent by *SENAL MD* 🎵"
-        }, { quoted: mek });
-
-        await reply("✅ Song downloaded successfully via *Senal YT DL*.");
-
-    } catch (err) {
-        console.error(err);
-        reply("❌ Error: Failed to process your request.");
-    }
+  } catch (err) {
+    console.error(err);
+    reply("❌ An error occurred while downloading the song.");
+  }
 });
