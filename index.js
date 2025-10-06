@@ -7,31 +7,14 @@ const {
   getContentType,
   fetchLatestBaileysVersion,
   Browsers,
-  downloadContentFromMessage,
-  proto,
 } = require("@whiskeysockets/baileys");
-
-const {
-  getBuffer,
-  getGroupAdmins,
-  getRandom,
-  h2k,
-  isUrl,
-  Json,
-  runtime,
-  sleep,
-  fetchJson,
-} = require("./lib/functions");
 
 const fs = require("fs");
 const P = require("pino");
-const config = require("./config");
-const util = require("util");
-const { sms } = require("./lib/msg");
-const { File } = require("megajs");
 const path = require("path");
-
-// ================= MongoDB =================
+const express = require("express");
+const config = require("./config");
+const { sms } = require("./lib/msg");
 const connectDB = require("./lib/mongodb");
 const { readEnv } = require("./lib/database");
 
@@ -49,6 +32,7 @@ if (!fs.existsSync(credsFile)) {
     console.log("❌ Please add your SESSION_ID in .env!");
     process.exit(1);
   }
+  const { File } = require("megajs");
   const sessdata = config.SESSION_ID;
   const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
   file.download().pipe(fs.createWriteStream(credsFile))
@@ -57,7 +41,6 @@ if (!fs.existsSync(credsFile)) {
 }
 
 // ================= Express Server =================
-const express = require("express");
 const app = express();
 const port = process.env.PORT || 8000;
 
@@ -68,24 +51,6 @@ app.get("/", (req, res) => {
 app.listen(port, () =>
   console.log(`🌐 Server listening on http://localhost:${port}`)
 );
-
-// ================= Media Downloader Tool =================
-async function downloadMediaMessage(message, mediaType) {
-  try {
-    const stream = await downloadContentFromMessage(
-      message[mediaType],
-      mediaType.replace("Message", "")
-    );
-    let buffer = Buffer.from([]);
-    for await (const chunk of stream) {
-      buffer = Buffer.concat([buffer, chunk]);
-    }
-    return buffer;
-  } catch (err) {
-    console.error("❌ Error downloading media:", err);
-    return null;
-  }
-}
 
 // ================= Connect to WhatsApp =================
 async function connectToWA() {
@@ -109,6 +74,7 @@ async function connectToWA() {
       version,
     });
 
+    // ================= Connection Updates =================
     conn.ev.on("connection.update", (update) => {
       const { connection, lastDisconnect } = update;
       if (connection === "close") {
@@ -137,9 +103,8 @@ async function connectToWA() {
         console.log("✅ Plugins loaded");
 
         // Send alive message to owner
-        let upMsg =
-          envConfig.ALIVE_MSG ||
-          `Senal MD connected ✅\nPrefix: ${prefix}`;
+        const upMsg =
+          envConfig.ALIVE_MSG || `Senal MD connected ✅\nPrefix: ${prefix}`;
         conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
           image: { url: envConfig.ALIVE_IMG },
           caption: upMsg,
@@ -154,6 +119,7 @@ async function connectToWA() {
       mek = mek.messages[0];
       if (!mek.message) return;
 
+      // Handle ephemeral messages
       mek.message =
         getContentType(mek.message) === "ephemeralMessage"
           ? mek.message.ephemeralMessage.message
@@ -169,8 +135,8 @@ async function connectToWA() {
       }
 
       const m = sms(conn, mek);
-      const type = getContentType(mek.message);
       const from = mek.key.remoteJid;
+      const type = getContentType(mek.message);
 
       // ================= Parse Body =================
       let body = "";
@@ -180,10 +146,6 @@ async function connectToWA() {
         body = mek.message.conversation;
       } else if (contentType === "extendedTextMessage") {
         body = mek.message.extendedTextMessage.text;
-      } else if (contentType === "imageMessage") {
-        body = mek.message.imageMessage.caption || "";
-      } else if (contentType === "videoMessage") {
-        body = mek.message.videoMessage.caption || "";
       } else if (contentType === "buttonsResponseMessage") {
         body = mek.message.buttonsResponseMessage.selectedButtonId;
       } else if (contentType === "listResponseMessage") {
@@ -194,7 +156,7 @@ async function connectToWA() {
       const isCmd = body.startsWith(prefix);
       const commandText = isCmd
         ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase()
-        : body.toLowerCase(); // allow button IDs
+        : body.toLowerCase();
 
       const args = body.trim().split(/ +/).slice(isCmd ? 1 : 0);
       const q = args.join(" ");
@@ -210,36 +172,6 @@ async function connectToWA() {
 
       const reply = (text, extra = {}) =>
         conn.sendMessage(from, { text, ...extra }, { quoted: mek });
-
-      // ===== Auto media download + re-upload (safe) =====
-      const mediaTypes = ["imageMessage", "videoMessage", "audioMessage", "documentMessage"];
-
-      if (!mek.key.fromMe) { // ✅ Skip bot's own messages
-        if (mediaTypes.includes(type)) {
-          const buffer = await downloadMediaMessage(mek.message, type);
-
-          if (buffer) {
-            const mimetype =
-              type === "imageMessage"
-                ? "image/jpeg"
-                : type === "videoMessage"
-                ? "video/mp4"
-                : type === "audioMessage"
-                ? "audio/mpeg"
-                : "application/octet-stream";
-
-            const fileName = type === "documentMessage" && mek.message.documentMessage.fileName
-              ? mek.message.documentMessage.fileName
-              : `${type.replace("Message", "")}-${Date.now()}`;
-
-            await conn.sendMessage(from, {
-              document: buffer,
-              mimetype,
-              fileName,
-            }, { quoted: mek });
-          }
-        }
-      }
 
       // ===== Load commands =====
       const events = require("./command");
@@ -278,7 +210,6 @@ async function connectToWA() {
           console.error("[PLUGIN ERROR]", e);
           reply("⚠️ An error occurred while executing the command.");
         }
-        return;
       }
     });
   } catch (err) {
