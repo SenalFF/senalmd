@@ -1,32 +1,22 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
-const { ytmp3, ytmp4 } = require("@kelvdra/scraper");
-
-/**
- * Normalize YouTube URL (e.g. youtu.be → youtube.com)
- */
-const normalizeYouTubeURL = (url) => {
-    if (url.startsWith("https://youtu.be/")) {
-        const videoId = url.split("/").pop().split("?")[0];
-        return `https://www.youtube.com/watch?v=${videoId}`;
-    }
-    return url;
-};
+const axios = require("axios");
 
 // 🎵 SONG COMMAND
 cmd({
     pattern: "play",
-    desc: "🎧 Download YouTube Audio",
+    desc: "🎧 Download YouTube Audio (via Senal YT DL API)",
     category: "download",
     react: "🎵",
 }, async (conn, mek, m, { from, q, reply }) => {
     try {
-        if (!q) return reply("❗Please provide a YouTube link or song name.");
+        if (!q) return reply("❗ Please provide a YouTube link or song name.");
 
-        const normalized = q.startsWith("http") ? normalizeYouTubeURL(q) : q;
-        const search = await yts(normalized);
+        // 🔍 Search or normalize link
+        const isLink = q.startsWith("http");
+        const search = await yts(isLink ? q : q);
         const data = search.videos[0];
-        if (!data?.url) return reply("❌ No results found.");
+        if (!data?.videoId) return reply("❌ No results found.");
 
         const caption = `
 🎧 ━━━ 『 *SENAL MD - MP3 DOWNLOADER* 』━━━
@@ -35,9 +25,10 @@ cmd({
 🕒 *Duration:* ${data.timestamp}
 👁️ *Views:* ${data.views.toLocaleString()}
 📅 *Uploaded:* ${data.ago}
+📺 *Channel:* ${data.author.name}
 🔗 *Link:* ${data.url}
 
-⏬ Downloading MP3...
+⏬ Downloading MP3 via Senal YT DL...
 `.trim();
 
         await conn.sendMessage(from, {
@@ -45,17 +36,23 @@ cmd({
             caption
         }, { quoted: mek });
 
-        await reply("🎧 Fetching audio...");
+        await reply("🎧 Fetching MP3 from Senal YT DL...");
 
-        const result = await ytmp3(data.url, "mp3");
-        if (!result?.download?.url) return reply("❌ Failed to fetch download link.");
+        // 🌐 Call your API
+        const apiUrl = `https://senalytdl.vercel.app/mp3?id=${data.videoId}`;
+        const response = await axios.get(apiUrl, { timeout: 15000 });
+        const result = response.data;
 
-        const audio = {
-            url: result.download.url,
-        };
+        if (!result.downloadURL) {
+            return reply("❌ Failed to fetch download link from Senal YT DL.");
+        }
 
+        const audio = { url: result.downloadURL };
+
+        // 🎶 Send MP3
         await conn.sendMessage(from, { audio, mimetype: "audio/mpeg" }, { quoted: mek });
 
+        // 📄 Optional: also send as document
         await conn.sendMessage(from, {
             document: audio,
             mimetype: "audio/mpeg",
@@ -63,10 +60,10 @@ cmd({
             caption: "✅ MP3 sent by *SENAL MD* 🎵"
         }, { quoted: mek });
 
-        await reply("✅ Uploaded successfully.");
+        await reply("✅ Song downloaded successfully via *Senal YT DL*.");
 
     } catch (err) {
         console.error(err);
-        reply("❌ An error occurred while downloading the song.");
+        reply("❌ Error: Failed to process your request.");
     }
 });
