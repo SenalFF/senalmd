@@ -10,8 +10,7 @@ cmd({
   desc: "📹 Download YouTube Video or Audio via Senal YT DL",
   category: "download",
   react: "📹",
-}, async (conn, mek, m, { from, q, reply }) => {
-  try {
+  async function(conn, mek, m, { from, q, reply }) {
     if (!q) return reply("❗Please provide a YouTube link or video name.");
 
     // Search YouTube
@@ -32,8 +31,6 @@ cmd({
       buttonText: { displayText: f === "mp3" ? "🎵 MP3" : `${f}p` },
       type: 1
     }));
-
-    // Add API info button
     buttons.push({ buttonId: "api_info_vid", buttonText: { displayText: "ℹ️ API Info" }, type: 1 });
 
     await conn.sendMessage(from, {
@@ -44,56 +41,60 @@ cmd({
       headerType: 4
     }, { quoted: mek });
 
-  } catch (err) {
-    console.error(err);
-    reply("❌ An error occurred while processing your video.");
+    // Save last video for button handler
+    this.lastVideo = {
+      videoId: data.videoId,
+      title: data.title
+    };
   }
 });
 
-// === GLOBAL BUTTON LISTENER for Video & Audio ===
-conn.ev.on("messages.upsert", async (msg) => {
-  try {
-    const m = msg.messages[0];
-    if (!m) return;
+// ===== Button Handler =====
+cmd({
+  pattern: null, // no command trigger
+  buttonHandler: async (conn, mek, btnId) => {
+    const plugin = require("./ytvideo");
+    const data = plugin.lastVideo;
+    if (!data) return;
 
-    const btn = m.message?.buttonsResponseMessage?.selectedButtonId;
-    if (!btn) return;
+    try {
+      if (btnId.startsWith("dl_")) {
+        const [, videoId, format] = btnId.split("_");
+        const apiUrl = format === "mp3"
+          ? `https://senalytdl.vercel.app/mp3?id=${videoId}`
+          : `https://senalytdl.vercel.app/download?id=${videoId}&format=${format}`;
 
-    // Download / Play Video or Audio
-    if (btn.startsWith("dl_")) {
-      const [ , videoId, format ] = btn.split("_");
-      const apiUrl = format === "mp3"
-        ? `https://senalytdl.vercel.app/mp3?id=${videoId}`
-        : `https://senalytdl.vercel.app/download?id=${videoId}&format=${format}`;
+        const { data: res } = await axios.get(apiUrl);
+        if (!res.downloadUrl) return;
 
-      const { data: res } = await axios.get(apiUrl);
-      if (!res.downloadUrl) return;
-
-      if (format === "mp3") {
-        // Send audio document + play
-        await conn.sendMessage(m.key.remoteJid, { audio: { url: res.downloadUrl }, mimetype: "audio/mpeg" }, { quoted: m });
-        await conn.sendMessage(m.key.remoteJid, {
-          document: { url: res.downloadUrl },
-          mimetype: "audio/mpeg",
-          fileName: `${res.title}.mp3`,
-          caption: "✅ MP3 sent by *Mr Senal*"
-        }, { quoted: m });
-      } else {
-        // Send video document + playable
-        await conn.sendMessage(m.key.remoteJid, { video: { url: res.downloadUrl }, mimetype: "video/mp4" }, { quoted: m });
-        await conn.sendMessage(m.key.remoteJid, {
-          document: { url: res.downloadUrl },
-          mimetype: "video/mp4",
-          fileName: `${res.title}_${format}.mp4`,
-          caption: `✅ Video ${format}p sent by *Mr Senal*`
-        }, { quoted: m });
+        if (format === "mp3") {
+          await conn.sendMessage(mek.key.remoteJid, {
+            audio: { url: res.downloadUrl },
+            mimetype: "audio/mpeg"
+          }, { quoted: mek });
+          await conn.sendMessage(mek.key.remoteJid, {
+            document: { url: res.downloadUrl },
+            mimetype: "audio/mpeg",
+            fileName: `${res.title}.mp3`,
+            caption: "✅ MP3 sent by *Mr Senal*"
+          }, { quoted: mek });
+        } else {
+          await conn.sendMessage(mek.key.remoteJid, {
+            video: { url: res.downloadUrl },
+            mimetype: "video/mp4"
+          }, { quoted: mek });
+          await conn.sendMessage(mek.key.remoteJid, {
+            document: { url: res.downloadUrl },
+            mimetype: "video/mp4",
+            fileName: `${res.title}_${format}.mp4`,
+            caption: `✅ Video ${format}p sent by *Mr Senal*`
+          }, { quoted: mek });
+        }
       }
-    }
 
-    // API Info button
-    if (btn === "api_info_vid") {
-      await conn.sendMessage(m.key.remoteJid, {
-        text: `
+      if (btnId === "api_info_vid") {
+        await conn.sendMessage(mek.key.remoteJid, {
+          text: `
 🧠 *Senal YT DL API Info*
 👨‍💻 Developer: Mr Senal
 📦 Project: Senal YT DL v2.0
@@ -102,11 +103,11 @@ conn.ev.on("messages.upsert", async (msg) => {
 - /mp3?id=VIDEO_ID
 - /download?id=VIDEO_ID&format=FORMAT
 Available formats: ${formats.join(", ")}
-        `.trim()
-      }, { quoted: m });
+          `.trim()
+        }, { quoted: mek });
+      }
+    } catch (err) {
+      console.error("YT Video button error:", err);
     }
-
-  } catch (err) {
-    console.error("Button listener error:", err);
   }
 });
