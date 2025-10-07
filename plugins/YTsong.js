@@ -3,7 +3,8 @@ const yts = require("yt-search");
 const axios = require("axios");
 
 cmd({
-  pattern: "play",
+  pattern: "yta",
+  alias: ["ytsong", "ytaudio", "song", "audio"],
   desc: "🎧 Download YouTube Audio via Senal YT DL",
   category: "download",
   react: "🎵",
