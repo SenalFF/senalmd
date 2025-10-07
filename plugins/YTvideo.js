@@ -3,8 +3,8 @@ const yts = require('yt-search');
 const axios = require('axios');
 
 cmd({
-  pattern: "ytdl",
-  alias: ["yt", "ytvideo", "video", "play"],
+  pattern: "ytv",
+  alias: ["yt", "ytvideo", "video", ],
   desc: "Download YouTube videos with multiple quality options",
   category: "downloader",
   react: "🎥",
@@ -22,13 +22,14 @@ async (conn, mek, m, { from, args, q, reply }) => {
 
     const videoId = video.videoId;
 
-    // 🎛 Quality Buttons
+    // 🎛 Quality + API Info Buttons
     const buttons = [
       { buttonId: `ytdl_${videoId}_144`, buttonText: { displayText: "📱 144p" }, type: 1 },
       { buttonId: `ytdl_${videoId}_240`, buttonText: { displayText: "📲 240p" }, type: 1 },
       { buttonId: `ytdl_${videoId}_360`, buttonText: { displayText: "📺 360p" }, type: 1 },
       { buttonId: `ytdl_${videoId}_720`, buttonText: { displayText: "🎬 720p" }, type: 1 },
       { buttonId: `ytdl_${videoId}_1080`, buttonText: { displayText: "🎞️ 1080p" }, type: 1 },
+      { buttonId: `api_info`, buttonText: { displayText: "ℹ️ API Info" }, type: 1 }
     ];
 
     const caption = `🎬 *Senal YT Downloader*\n\n` +
@@ -42,6 +43,7 @@ async (conn, mek, m, { from, args, q, reply }) => {
     await conn.sendMessage(from, {
       image: { url: video.thumbnail },
       caption,
+      footer: "🔗 Powered by Senal API",
       buttons,
       headerType: 4
     }, { quoted: mek });
@@ -53,20 +55,36 @@ async (conn, mek, m, { from, args, q, reply }) => {
 });
 
 
-// ✅ BUTTON HANDLER (works with global button system)
+// ✅ BUTTON HANDLER
 cmd({
   buttonHandler: async (conn, mek, btnId) => {
-    if (!btnId.startsWith("ytdl_")) return;
+    const remoteJid = mek.key.remoteJid;
 
     try {
+      // ℹ️ API Info Button
+      if (btnId === "api_info") {
+        await conn.sendMessage(remoteJid, {
+          text: `
+🧠 *Senal YT DL API Info*
+👨‍💻 Developer: Mr Senal
+📦 Project: Senal YT DL v2.0
+🔗 Base URL: https://senalytdl.vercel.app/
+🎥 Video Endpoint: /download?id=VIDEO_ID&format=QUALITY
+🎵 Audio Endpoint: /mp3?id=VIDEO_ID
+💬 Example: https://senalytdl.vercel.app/download?id=dQw4w9WgXcQ&format=720
+          `.trim()
+        }, { quoted: mek });
+        return;
+      }
+
+      // 🎞 Handle Video Download Buttons
+      if (!btnId.startsWith("ytdl_")) return;
       const [_, videoId, format] = btnId.split("_");
-      const remoteJid = mek.key.remoteJid;
 
       await conn.sendMessage(remoteJid, {
         text: `⏳ *Downloading ${format}p video... Please wait sir!*`
       }, { quoted: mek });
 
-      // 🔗 Your API Endpoint
       const apiUrl = `https://senalytdl.vercel.app/download?id=${videoId}&format=${format}`;
       const { data } = await axios.get(apiUrl);
 
@@ -76,16 +94,18 @@ cmd({
         }, { quoted: mek });
       }
 
+      // 📄 Always send as document
       await conn.sendMessage(remoteJid, {
-        video: { url: data.downloadUrl },
+        document: { url: data.downloadUrl },
         mimetype: "video/mp4",
-        caption: `✅ *${format}p video downloaded by Mr Senal*`
+        fileName: `${format}p_${videoId}.mp4`,
+        caption: `✅ *${format}p video downloaded by Mr Senal*\n🎬 From: https://youtu.be/${videoId}`
       }, { quoted: mek });
 
     } catch (err) {
-      console.error("YT Button Error:", err);
-      conn.sendMessage(mek.key.remoteJid, {
-        text: "❌ Error downloading video."
+      console.error("Button handler error:", err);
+      await conn.sendMessage(remoteJid, {
+        text: "❌ Something went wrong while handling the button."
       }, { quoted: mek });
     }
   }
