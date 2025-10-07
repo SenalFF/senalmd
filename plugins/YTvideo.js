@@ -16,14 +16,12 @@ async (conn, mek, m, { from, args, q, reply }) => {
 
     reply("⏳ *Searching YouTube... Please wait sir!*");
 
-    // 🔍 Search YouTube
     const search = await yts(q);
     const video = search.videos[0];
-    if (!video) return reply("❌ No video found for that search.");
+    if (!video) return reply("❌ No video found.");
 
     const videoId = video.videoId;
 
-    // 🎚️ Quality selection buttons (added 144p + 240p)
     const buttons = [
       { buttonId: `yt_${videoId}_144`, buttonText: { displayText: "📱 144p" }, type: 1 },
       { buttonId: `yt_${videoId}_240`, buttonText: { displayText: "📲 240p" }, type: 1 },
@@ -53,37 +51,38 @@ async (conn, mek, m, { from, args, q, reply }) => {
   }
 });
 
-// 🎯 Handle button response (download selected quality)
+// ✅ Global button click handler (only one, avoids duplicates)
 cmd({
-  pattern: "yt_",
+  pattern: "global_button_handler",
   fromMe: false
-}, async (conn, mek, m, { from, body, reply }) => {
-  try {
-    const parts = body.split("_");
-    if (parts.length < 3) return;
+}, async (conn) => {
+  conn.ev.on("messages.upsert", async (msgUpdate) => {
+    const mek = msgUpdate.messages[0];
+    if (!mek?.message?.buttonsResponseMessage) return;
 
-    const videoId = parts[1];
-    const quality = parts[2];
+    const btnId = mek.message.buttonsResponseMessage.selectedButtonId;
+    if (!btnId || !btnId.startsWith("yt_")) return;
 
-    reply(`⏳ *Downloading ${quality} video... Please wait sir!*`);
+    try {
+      const remoteJid = mek.key.remoteJid;
+      const [, videoId, format] = btnId.split("_");
 
-    const apiUrl = `https://senalytdl.vercel.app/download?id=${videoId}&format=${quality}`;
-    const { data } = await axios.get(apiUrl);
+      await conn.sendMessage(remoteJid, { text: `⏳ *Downloading ${format}p video... Please wait sir!*` }, { quoted: mek });
 
-    if (!data || !data.downloadUrl) return reply("❌ Failed to get download link.");
+      const apiUrl = `https://senalytdl.vercel.app/download?id=${videoId}&format=${format}`;
+      const { data } = await axios.get(apiUrl);
 
-    const caption = `🎥 *Senal YouTube Downloader*\n\n` +
-                    `📦 *Quality:* ${quality}\n` +
-                    `✅ Sent by *Mr Senal*`;
+      if (!data.downloadUrl) return conn.sendMessage(remoteJid, { text: "❌ Failed to get download link." }, { quoted: mek });
 
-    await conn.sendMessage(from, {
-      video: { url: data.downloadUrl },
-      mimetype: "video/mp4",
-      caption
-    }, { quoted: mek });
+      await conn.sendMessage(remoteJid, {
+        video: { url: data.downloadUrl },
+        mimetype: "video/mp4",
+        caption: `✅ *${format}p video sent by Mr Senal*`
+      }, { quoted: mek });
 
-  } catch (err) {
-    console.error("Error in quality button:", err);
-    reply("❌ Error downloading video.");
-  }
+    } catch (err) {
+      console.error("YT Button Error:", err);
+      conn.sendMessage(mek.key.remoteJid, { text: "❌ Error downloading video." }, { quoted: mek });
+    }
+  });
 });
