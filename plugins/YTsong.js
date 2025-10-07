@@ -1,7 +1,6 @@
 const { cmd } = require("../command");
 const yts = require("yt-search");
 const axios = require("axios");
-const { getBuffer } = require("../lib/functions"); // make sure this exists
 
 cmd({
   pattern: "play",
@@ -9,18 +8,20 @@ cmd({
   category: "download",
   react: "🎵",
   filename: __filename
-}, async (conn, mek, m, { from, q, reply }) => {
-  if (!q) return reply("❗Please provide a YouTube link or song name.");
-
+}, 
+async (conn, mek, m, { from, q, reply }) => {
   try {
-    // Search YouTube
+    if (!q) return reply("❗Please provide a YouTube link or song name.");
+
+    reply("⏳ *Searching YouTube... Please wait sir!*");
+
     const search = await yts(q);
     const data = search.videos[0];
     if (!data?.videoId) return reply("❌ No results found.");
 
-    // Get API info
-    const api = `https://senalytdl.vercel.app/mp3?id=${data.videoId}`;
-    const { data: res } = await axios.get(api);
+    // 🔗 Fetch MP3 info from your API
+    const apiUrl = `https://senalytdl.vercel.app/mp3?id=${data.videoId}`;
+    const { data: res } = await axios.get(apiUrl);
     if (!res.downloadUrl) return reply("❌ Failed to fetch audio.");
 
     const caption = `
@@ -31,7 +32,6 @@ cmd({
 🔗 *Source:* YouTube
     `.trim();
 
-    // Buttons
     const buttons = [
       { buttonId: `playnow_${data.videoId}`, buttonText: { displayText: "▶️ Play Audio" }, type: 1 },
       { buttonId: `down_${data.videoId}`, buttonText: { displayText: "⬇️ Download Audio" }, type: 1 },
@@ -52,57 +52,60 @@ cmd({
   }
 });
 
-// ================= Handle Button Clicks =================
-conn.ev.on("messages.upsert", async msgUpdate => {
-  const m = msgUpdate.messages[0];
-  if (!m?.message?.buttonsResponseMessage) return;
-  const btn = m.message.buttonsResponseMessage.selectedButtonId;
-  if (!btn) return;
+// ✅ Global button handler (integrated with your main system)
+cmd({
+  buttonHandler: async (conn, mek, btnId) => {
+    const remoteJid = mek.key.remoteJid;
 
-  const remoteJid = m.key.remoteJid;
+    try {
+      // ▶️ Play Audio
+      if (btnId.startsWith("playnow_")) {
+        const videoId = btnId.split("_")[1];
+        await conn.sendMessage(remoteJid, { text: "⏳ *Fetching and sending audio...*" }, { quoted: mek });
 
-  try {
-    // Play audio directly
-    if (btn.startsWith("playnow_")) {
-      const videoId = btn.split("_")[1];
-      const { data: res } = await axios.get(`https://senalytdl.vercel.app/mp3?id=${videoId}`);
-      if (!res.downloadUrl) return;
+        const { data: res } = await axios.get(`https://senalytdl.vercel.app/mp3?id=${videoId}`);
+        if (!res.downloadUrl) return conn.sendMessage(remoteJid, { text: "❌ Failed to fetch audio." }, { quoted: mek });
 
-      const buffer = await getBuffer(res.downloadUrl);
+        await conn.sendMessage(remoteJid, {
+          audio: { url: res.downloadUrl },
+          mimetype: "audio/mpeg",
+          ptt: false,
+          caption: `🎵 *${res.title}*\n✅ Sent by *Mr Senal*`
+        }, { quoted: mek });
+      }
 
-      await conn.sendMessage(remoteJid, { audio: buffer, mimetype: "audio/mpeg" }, { quoted: m });
-    }
+      // ⬇️ Download Audio as document
+      else if (btnId.startsWith("down_")) {
+        const videoId = btnId.split("_")[1];
+        await conn.sendMessage(remoteJid, { text: "⏳ *Downloading audio...*" }, { quoted: mek });
 
-    // Download as document
-    if (btn.startsWith("down_")) {
-      const videoId = btn.split("_")[1];
-      const { data: res } = await axios.get(`https://senalytdl.vercel.app/mp3?id=${videoId}`);
-      if (!res.downloadUrl) return;
+        const { data: res } = await axios.get(`https://senalytdl.vercel.app/mp3?id=${videoId}`);
+        if (!res.downloadUrl) return conn.sendMessage(remoteJid, { text: "❌ Failed to fetch audio." }, { quoted: mek });
 
-      const buffer = await getBuffer(res.downloadUrl);
+        await conn.sendMessage(remoteJid, {
+          document: { url: res.downloadUrl },
+          mimetype: "audio/mpeg",
+          fileName: `${res.title}.mp3`,
+          caption: "✅ MP3 file sent by *Mr Senal*"
+        }, { quoted: mek });
+      }
 
-      await conn.sendMessage(remoteJid, {
-        document: buffer,
-        mimetype: "audio/mpeg",
-        fileName: `${res.title}.mp3`,
-        caption: "✅ MP3 sent by *Mr Senal*"
-      }, { quoted: m });
-    }
-
-    // API Info
-    if (btn === "api_info") {
-      await conn.sendMessage(remoteJid, {
-        text: `
+      // ℹ️ API Info
+      else if (btnId === "api_info") {
+        await conn.sendMessage(remoteJid, {
+          text: `
 🧠 *Senal YT DL API Info*
 👨‍💻 Developer: Mr Senal
 📦 Project: Senal YT DL v2.0
 🔗 Base URL: https://senalytdl.vercel.app/
 🎵 Endpoint: /mp3?id=VIDEO_ID
-        `.trim()
-      }, { quoted: m });
-    }
+          `.trim()
+        }, { quoted: mek });
+      }
 
-  } catch (err) {
-    console.error("Button handler error:", err);
+    } catch (err) {
+      console.error("Button handler error:", err);
+      await conn.sendMessage(remoteJid, { text: "❌ Something went wrong while handling the button." }, { quoted: mek });
+    }
   }
 });
