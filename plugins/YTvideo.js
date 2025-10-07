@@ -22,21 +22,22 @@ async (conn, mek, m, { from, args, q, reply }) => {
 
     const videoId = video.videoId;
 
+    // 🎛 Quality Buttons
     const buttons = [
-      { buttonId: `yt_${videoId}_144`, buttonText: { displayText: "📱 144p" }, type: 1 },
-      { buttonId: `yt_${videoId}_240`, buttonText: { displayText: "📲 240p" }, type: 1 },
-      { buttonId: `yt_${videoId}_360`, buttonText: { displayText: "📺 360p" }, type: 1 },
-      { buttonId: `yt_${videoId}_720`, buttonText: { displayText: "🎬 720p" }, type: 1 },
-      { buttonId: `yt_${videoId}_1080`, buttonText: { displayText: "🎞️ 1080p" }, type: 1 },
+      { buttonId: `ytdl_${videoId}_144`, buttonText: { displayText: "📱 144p" }, type: 1 },
+      { buttonId: `ytdl_${videoId}_240`, buttonText: { displayText: "📲 240p" }, type: 1 },
+      { buttonId: `ytdl_${videoId}_360`, buttonText: { displayText: "📺 360p" }, type: 1 },
+      { buttonId: `ytdl_${videoId}_720`, buttonText: { displayText: "🎬 720p" }, type: 1 },
+      { buttonId: `ytdl_${videoId}_1080`, buttonText: { displayText: "🎞️ 1080p" }, type: 1 },
     ];
 
     const caption = `🎬 *Senal YT Downloader*\n\n` +
-                    `🎥 *Title:* ${video.title}\n` +
-                    `📺 *Channel:* ${video.author.name}\n` +
-                    `⏱️ *Duration:* ${video.timestamp}\n` +
-                    `👁️ *Views:* ${video.views}\n` +
-                    `📎 *Link:* https://youtu.be/${videoId}\n\n` +
-                    `Select your *video quality* below 👇`;
+      `🎥 *Title:* ${video.title}\n` +
+      `📺 *Channel:* ${video.author.name}\n` +
+      `⏱️ *Duration:* ${video.timestamp}\n` +
+      `👁️ *Views:* ${video.views}\n` +
+      `📎 *Link:* https://youtu.be/${videoId}\n\n` +
+      `Select your *video quality* below 👇`;
 
     await conn.sendMessage(from, {
       image: { url: video.thumbnail },
@@ -51,38 +52,41 @@ async (conn, mek, m, { from, args, q, reply }) => {
   }
 });
 
-// ✅ Global button click handler (only one, avoids duplicates)
-cmd({
-  pattern: "global_button_handler",
-  fromMe: false
-}, async (conn) => {
-  conn.ev.on("messages.upsert", async (msgUpdate) => {
-    const mek = msgUpdate.messages[0];
-    if (!mek?.message?.buttonsResponseMessage) return;
 
-    const btnId = mek.message.buttonsResponseMessage.selectedButtonId;
-    if (!btnId || !btnId.startsWith("yt_")) return;
+// ✅ BUTTON HANDLER (works with global button system)
+cmd({
+  buttonHandler: async (conn, mek, btnId) => {
+    if (!btnId.startsWith("ytdl_")) return;
 
     try {
+      const [_, videoId, format] = btnId.split("_");
       const remoteJid = mek.key.remoteJid;
-      const [, videoId, format] = btnId.split("_");
 
-      await conn.sendMessage(remoteJid, { text: `⏳ *Downloading ${format}p video... Please wait sir!*` }, { quoted: mek });
+      await conn.sendMessage(remoteJid, {
+        text: `⏳ *Downloading ${format}p video... Please wait sir!*`
+      }, { quoted: mek });
 
+      // 🔗 Your API Endpoint
       const apiUrl = `https://senalytdl.vercel.app/download?id=${videoId}&format=${format}`;
       const { data } = await axios.get(apiUrl);
 
-      if (!data.downloadUrl) return conn.sendMessage(remoteJid, { text: "❌ Failed to get download link." }, { quoted: mek });
+      if (!data.downloadUrl) {
+        return conn.sendMessage(remoteJid, {
+          text: "❌ Failed to get download link."
+        }, { quoted: mek });
+      }
 
       await conn.sendMessage(remoteJid, {
         video: { url: data.downloadUrl },
         mimetype: "video/mp4",
-        caption: `✅ *${format}p video sent by Mr Senal*`
+        caption: `✅ *${format}p video downloaded by Mr Senal*`
       }, { quoted: mek });
 
     } catch (err) {
       console.error("YT Button Error:", err);
-      conn.sendMessage(mek.key.remoteJid, { text: "❌ Error downloading video." }, { quoted: mek });
+      conn.sendMessage(mek.key.remoteJid, {
+        text: "❌ Error downloading video."
+      }, { quoted: mek });
     }
-  });
+  }
 });
