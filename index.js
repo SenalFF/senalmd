@@ -21,32 +21,9 @@ const { readEnv } = require("./lib/database");
 // ================= Owner =================
 const ownerNumber = [config.OWNER_NUMBER || "94769872326"];
 
-// ================= Bot Info =================
-const botName = "Senal MD";
-const chama = {
-  key: {
-    remoteJid: "status@broadcast",
-    participant: "0@s.whatsapp.net",
-    fromMe: false,
-    id: "META_AI_FAKE_ID_TS",
-  },
-  message: {
-    contactMessage: {
-      displayName: botName,
-      vcard: `BEGIN:VCARD
-VERSION:3.0
-N:${botName};;;;
-FN:${botName}
-ORG:Meta Platforms
-TEL;type=CELL;type=VOICE;waid=13135550002:+1 313 555 0002
-END:VCARD`,
-    },
-  },
-};
-
 //=================== SESSION AUTH ============================
-const authPath = path.join(__dirname, "/auth_info_baileys");
-const credsFile = path.join(authPath, "creds.json");
+const authPath = __dirname + "/auth_info_baileys";
+const credsFile = authPath + "/creds.json";
 
 if (!fs.existsSync(authPath)) fs.mkdirSync(authPath);
 
@@ -58,22 +35,31 @@ if (!fs.existsSync(credsFile)) {
   const { File } = require("megajs");
   const sessdata = config.SESSION_ID;
   const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
-  file.download().pipe(fs.createWriteStream(credsFile))
+  file
+    .download()
+    .pipe(fs.createWriteStream(credsFile))
     .on("finish", () => console.log("✅ Session downloaded successfully"))
-    .on("error", (err) => { throw err });
+    .on("error", (err) => {
+      throw err;
+    });
 }
 
 // ================= Express Server =================
 const app = express();
 const port = process.env.PORT || 8000;
 
-app.get("/", (req, res) => res.send("Hey, Senal MD started ✅"));
+app.get("/", (req, res) => {
+  res.send("✅ Senal MD Bot is running successfully!");
+});
 
-app.listen(port, () => console.log(`🌐 Server listening on http://localhost:${port}`));
+app.listen(port, () =>
+  console.log(`🌐 Server listening on http://localhost:${port}`)
+);
 
 // ================= Connect to WhatsApp =================
 async function connectToWA() {
   try {
+    // Connect MongoDB
     await connectDB();
     const envConfig = await readEnv();
     const prefix = envConfig.PREFIX || ".";
@@ -93,19 +79,21 @@ async function connectToWA() {
     });
 
     // ================= Connection Updates =================
-    conn.ev.on("connection.update", (update) => {
+    conn.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect } = update;
+
       if (connection === "close") {
-        if (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut) {
-          console.log("🔄 Reconnecting...");
+        const reason = lastDisconnect?.error?.output?.statusCode;
+        if (reason !== DisconnectReason.loggedOut) {
+          console.log("🔄 Reconnecting Senal MD...");
           connectToWA();
         } else {
           console.log("❌ Logged out from WhatsApp");
         }
       } else if (connection === "open") {
-        console.log("✅ Bot connected to WhatsApp");
+        console.log("✅ Senal MD Connected to WhatsApp!");
 
-        // Load plugins
+        // Load plugins safely
         fs.readdirSync("./plugins/").forEach((plugin) => {
           if (path.extname(plugin).toLowerCase() === ".js") {
             try {
@@ -115,23 +103,40 @@ async function connectToWA() {
             }
           }
         });
-        console.log("✅ Plugins loaded");
+        console.log("✅ Plugins loaded successfully!");
 
-        // Send alive message with contact to owner
-        const upMsg = envConfig.ALIVE_MSG || `Senal MD connected ✅\nPrefix: ${prefix}`;
-        const aliveImg = envConfig.ALIVE_IMG || null;
+        // ====== Send alive message or contact card ======
+        try {
+          const botName = "Senal MD";
+          const upMsg = envConfig.ALIVE_MSG || `✅ *Senal MD Connected Successfully!*\nPrefix: ${prefix}`;
 
-        if (aliveImg) {
-          conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-            image: { url: aliveImg },
-            caption: upMsg,
-          });
-        } else {
-          conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { text: upMsg });
+          if (envConfig.ALIVE_IMG) {
+            // If image link exists, send alive message with image
+            await conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
+              image: { url: envConfig.ALIVE_IMG },
+              caption: upMsg,
+            });
+          } else {
+            // Otherwise, send contact card as fallback
+            const chama = {
+              message: {
+                contactMessage: {
+                  displayName: botName,
+                  vcard: `BEGIN:VCARD
+VERSION:3.0
+N:${botName};;;;
+FN:${botName}
+ORG:Meta Platforms
+TEL;type=CELL;type=VOICE;waid=13135550002:+1 313 555 0002
+END:VCARD`,
+                },
+              },
+            };
+            await conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", chama.message);
+          }
+        } catch (e) {
+          console.error("⚠️ Error sending alive/contact message:", e);
         }
-
-        // Send Senal MD contact to owner
-        conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", chama.message);
       }
     });
 
@@ -165,10 +170,15 @@ async function connectToWA() {
       let body = "";
       const contentType = getContentType(mek.message);
 
-      if (contentType === "conversation") body = mek.message.conversation;
-      else if (contentType === "extendedTextMessage") body = mek.message.extendedTextMessage.text;
-      else if (contentType === "buttonsResponseMessage") body = mek.message.buttonsResponseMessage.selectedButtonId;
-      else if (contentType === "listResponseMessage") body = mek.message.listResponseMessage.singleSelectReply.selectedRowId;
+      if (contentType === "conversation") {
+        body = mek.message.conversation;
+      } else if (contentType === "extendedTextMessage") {
+        body = mek.message.extendedTextMessage.text;
+      } else if (contentType === "buttonsResponseMessage") {
+        body = mek.message.buttonsResponseMessage.selectedButtonId;
+      } else if (contentType === "listResponseMessage") {
+        body = mek.message.listResponseMessage.singleSelectReply.selectedRowId;
+      }
 
       const isCmd = body.startsWith(prefix);
       const commandText = isCmd
@@ -211,7 +221,8 @@ async function connectToWA() {
       const cmd = events.commands.find((c) => {
         if (!c.pattern) return false;
         if (c.pattern.toLowerCase() === commandText) return true;
-        if (c.alias && c.alias.map((a) => a.toLowerCase()).includes(commandText)) return true;
+        if (c.alias && c.alias.map((a) => a.toLowerCase()).includes(commandText))
+          return true;
         return false;
       });
 
@@ -249,4 +260,6 @@ async function connectToWA() {
 }
 
 // Start bot after 4 seconds
-setTimeout(() => connectToWA(), 4000);
+setTimeout(() => {
+  connectToWA();
+}, 4000);
