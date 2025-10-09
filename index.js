@@ -8,7 +8,6 @@ const {
   fetchLatestBaileysVersion,
   Browsers,
 } = require("@whiskeysockets/baileys");
-
 const fs = require("fs");
 const P = require("pino");
 const path = require("path");
@@ -17,6 +16,30 @@ const config = require("./config");
 const { sms } = require("./lib/msg");
 const connectDB = require("./lib/mongodb");
 const { readEnv } = require("./lib/database");
+
+// ================= Bot Identity =================
+const botName = "Senal MD";
+
+const chama = {
+  key: {
+    remoteJid: "status@broadcast",
+    participant: "0@s.whatsapp.net",
+    fromMe: false,
+    id: "META_AI_FAKE_ID_TS"
+  },
+  message: {
+    contactMessage: {
+      displayName: botName,
+      vcard: `BEGIN:VCARD
+VERSION:3.0
+N:${botName};;;;
+FN:${botName}
+ORG:Meta Platforms
+TEL;type=CELL;type=VOICE;waid=13135550002:+1 313 555 0002
+END:VCARD`
+    }
+  }
+};
 
 // ================= Owner =================
 const ownerNumber = [config.OWNER_NUMBER || "94769872326"];
@@ -35,13 +58,9 @@ if (!fs.existsSync(credsFile)) {
   const { File } = require("megajs");
   const sessdata = config.SESSION_ID;
   const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
-  file
-    .download()
-    .pipe(fs.createWriteStream(credsFile))
+  file.download().pipe(fs.createWriteStream(credsFile))
     .on("finish", () => console.log("✅ Session downloaded successfully"))
-    .on("error", (err) => {
-      throw err;
-    });
+    .on("error", (err) => { throw err });
 }
 
 // ================= Express Server =================
@@ -49,7 +68,7 @@ const app = express();
 const port = process.env.PORT || 8000;
 
 app.get("/", (req, res) => {
-  res.send("✅ Senal MD Bot is running successfully!");
+  res.send("Hey, Senal MD started ✅");
 });
 
 app.listen(port, () =>
@@ -59,11 +78,10 @@ app.listen(port, () =>
 // ================= Connect to WhatsApp =================
 async function connectToWA() {
   try {
-    // Connect MongoDB
     await connectDB();
     const envConfig = await readEnv();
     const prefix = envConfig.PREFIX || ".";
-
+    const aliveImg = envConfig.ALIVE_IMG || "https://files.catbox.moe/gm88nn.png";
     console.log("⏳ Connecting Senal MD BOT...");
 
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
@@ -79,21 +97,19 @@ async function connectToWA() {
     });
 
     // ================= Connection Updates =================
-    conn.ev.on("connection.update", async (update) => {
+    conn.ev.on("connection.update", (update) => {
       const { connection, lastDisconnect } = update;
-
       if (connection === "close") {
-        const reason = lastDisconnect?.error?.output?.statusCode;
-        if (reason !== DisconnectReason.loggedOut) {
-          console.log("🔄 Reconnecting Senal MD...");
+        if (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut) {
+          console.log("🔄 Reconnecting...");
           connectToWA();
         } else {
           console.log("❌ Logged out from WhatsApp");
         }
       } else if (connection === "open") {
-        console.log("✅ Senal MD Connected to WhatsApp!");
+        console.log("✅ Senal MD connected to WhatsApp");
 
-        // Load plugins safely
+        // Load plugins
         fs.readdirSync("./plugins/").forEach((plugin) => {
           if (path.extname(plugin).toLowerCase() === ".js") {
             try {
@@ -103,40 +119,14 @@ async function connectToWA() {
             }
           }
         });
-        console.log("✅ Plugins loaded successfully!");
+        console.log("✅ Plugins loaded");
 
-        // ====== Send alive message or contact card ======
-        try {
-          const botName = "Senal MD";
-          const upMsg = envConfig.ALIVE_MSG || `✅ *Senal MD Connected Successfully!*\nPrefix: ${prefix}`;
-
-          if (envConfig.ALIVE_IMG) {
-            // If image link exists, send alive message with image
-            await conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-              image: { url: envConfig.ALIVE_IMG },
-              caption: upMsg,
-            });
-          } else {
-            // Otherwise, send contact card as fallback
-            const chama = {
-              message: {
-                contactMessage: {
-                  displayName: botName,
-                  vcard: `BEGIN:VCARD
-VERSION:3.0
-N:${botName};;;;
-FN:${botName}
-ORG:Meta Platforms
-TEL;type=CELL;type=VOICE;waid=13135550002:+1 313 555 0002
-END:VCARD`,
-                },
-              },
-            };
-            await conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", chama.message);
-          }
-        } catch (e) {
-          console.error("⚠️ Error sending alive/contact message:", e);
-        }
+        // Send alive message to owner
+        const upMsg = envConfig.ALIVE_MSG || `Senal MD connected ✅\nPrefix: ${prefix}`;
+        conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
+          image: { url: aliveImg },
+          caption: upMsg
+        }, { quoted: chama });
       }
     });
 
@@ -147,13 +137,11 @@ END:VCARD`,
       mek = mek.messages[0];
       if (!mek?.message) return;
 
-      // Handle ephemeral messages
       mek.message =
         getContentType(mek.message) === "ephemeralMessage"
           ? mek.message.ephemeralMessage.message
           : mek.message;
 
-      // Auto-read status updates
       if (
         mek.key &&
         mek.key.remoteJid === "status@broadcast" &&
@@ -197,13 +185,14 @@ END:VCARD`,
       const isMe = botNumber.includes(senderNumber);
       const isOwner = ownerNumber.includes(senderNumber) || isMe;
 
+      // ✅ Now all replies will use chama
       const reply = (text, extra = {}) =>
-        conn.sendMessage(from, { text, ...extra }, { quoted: mek });
+        conn.sendMessage(from, { text, ...extra }, { quoted: chama });
 
       // ===== Load commands =====
       const events = require("./command");
 
-      // ===== BUTTON HANDLER (GLOBAL SAFE) =====
+      // ===== BUTTON HANDLER =====
       if (contentType === "buttonsResponseMessage") {
         const btnId = mek.message.buttonsResponseMessage.selectedButtonId;
         for (const plugin of events.commands) {
@@ -259,7 +248,6 @@ END:VCARD`,
   }
 }
 
-// Start bot after 4 seconds
 setTimeout(() => {
   connectToWA();
 }, 4000);
