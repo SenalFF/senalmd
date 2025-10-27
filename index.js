@@ -48,19 +48,56 @@ const ownerNumber = [config.OWNER_NUMBER || "94712872326"];
 const authPath = __dirname + "/auth_info_baileys";
 const credsFile = authPath + "/creds.json";
 
-if (!fs.existsSync(authPath)) fs.mkdirSync(authPath);
-
-if (!fs.existsSync(credsFile)) {
-  if (!config.SESSION_ID) {
-    console.log("❌ Please add your SESSION_ID in .env!");
-    process.exit(1);
+// Function to clear session
+function clearSession() {
+  console.log("🗑️ Clearing old session...");
+  if (fs.existsSync(authPath)) {
+    fs.rmSync(authPath, { recursive: true, force: true });
   }
-  const { File } = require("megajs");
-  const sessdata = config.SESSION_ID;
-  const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
-  file.download().pipe(fs.createWriteStream(credsFile))
-    .on("finish", () => console.log("✅ Session downloaded successfully"))
-    .on("error", (err) => { throw err });
+  fs.mkdirSync(authPath, { recursive: true });
+}
+
+// Function to download session from MEGA
+async function downloadSession() {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!config.SESSION_ID) {
+        console.log("⚠️ No SESSION_ID found. Will generate QR code...");
+        resolve(false);
+        return;
+      }
+
+      console.log("📥 Downloading session from MEGA...");
+      const { File } = require("megajs");
+      const sessdata = config.SESSION_ID;
+      const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
+      
+      file.download()
+        .pipe(fs.createWriteStream(credsFile))
+        .on("finish", () => {
+          console.log("✅ Session downloaded successfully");
+          resolve(true);
+        })
+        .on("error", (err) => {
+          console.error("❌ Failed to download session:", err.message);
+          resolve(false);
+        });
+    } catch (err) {
+      console.error("❌ Error in downloadSession:", err.message);
+      resolve(false);
+    }
+  });
+}
+
+// Check and setup session
+async function setupSession() {
+  if (!fs.existsSync(authPath)) {
+    fs.mkdirSync(authPath, { recursive: true });
+  }
+
+  if (!fs.existsSync(credsFile)) {
+    await downloadSession();
+  }
 }
 
 // ================= Express Server =================
@@ -82,14 +119,17 @@ async function connectToWA() {
     const envConfig = await readEnv();
     const prefix = envConfig.PREFIX || ".";
     const aliveImg = envConfig.ALIVE_IMG || "https://files.catbox.moe/gm88nn.png";
+    
     console.log("⏳ Connecting Senal MD BOT...");
+
+    await setupSession();
 
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
     const { version } = await fetchLatestBaileysVersion();
 
     const conn = makeWASocket({
       logger: P({ level: "silent" }),
-      printQRInTerminal: false,
+      printQRInTerminal: true, // ✅ Enable QR code in terminal
       browser: Browsers.macOS("Firefox"),
       syncFullHistory: true,
       auth: state,
@@ -97,14 +137,40 @@ async function connectToWA() {
     });
 
     // ================= Connection Updates =================
-    conn.ev.on("connection.update", (update) => {
-      const { connection, lastDisconnect } = update;
+    conn.ev.on("connection.update", async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      // ✅ Display QR Code
+      if (qr) {
+        console.log("📱 QR Code Generated! Scan it with WhatsApp:");
+        console.log("Go to: WhatsApp > Linked Devices > Link a Device");
+      }
+
       if (connection === "close") {
-        if (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut) {
-          console.log("🔄 Reconnecting...");
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const reason = Object.keys(DisconnectReason).find(
+          key => DisconnectReason[key] === statusCode
+        );
+
+        console.log(`❌ Connection closed. Reason: ${reason || 'Unknown'}`);
+
+        if (statusCode === DisconnectReason.loggedOut) {
+          console.log("🔴 Logged out! Clearing session and generating new QR...");
+          clearSession();
+          setTimeout(() => connectToWA(), 3000);
+        } else if (statusCode === DisconnectReason.restartRequired) {
+          console.log("🔄 Restart required...");
           connectToWA();
+        } else if (statusCode === DisconnectReason.timedOut) {
+          console.log("⏱️ Connection timed out, reconnecting...");
+          connectToWA();
+        } else if (statusCode === DisconnectReason.badSession) {
+          console.log("🔴 Bad session! Clearing and reconnecting...");
+          clearSession();
+          setTimeout(() => connectToWA(), 3000);
         } else {
-          console.log("❌ Logged out from WhatsApp");
+          console.log("🔄 Reconnecting...");
+          setTimeout(() => connectToWA(), 5000);
         }
       } else if (connection === "open") {
         console.log("✅ Senal MD connected to WhatsApp");
@@ -123,10 +189,14 @@ async function connectToWA() {
 
         // Send alive message to owner
         const upMsg = envConfig.ALIVE_MSG || `Senal MD connected ✅\nPrefix: ${prefix}`;
-        conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-          image: { url: aliveImg },
-          caption: upMsg
-        }, { quoted: chama });
+        try {
+          await conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
+            image: { url: aliveImg },
+            caption: upMsg
+          }, { quoted: chama });
+        } catch (err) {
+          console.log("⚠️ Could not send alive message:", err.message);
+        }
       }
     });
 
@@ -185,9 +255,11 @@ async function connectToWA() {
       const isMe = botNumber.includes(senderNumber);
       const isOwner = ownerNumber.includes(senderNumber) || isMe;
 
-      // ✅ Now all replies will use chama
       const reply = (text, extra = {}) =>
         conn.sendMessage(from, { text, ...extra }, { quoted: chama });
+
+      // ✅ Send with fake reply support
+      const send = (content) => conn.sendMessage(from, content, { quoted: chama });
 
       // ===== Load commands =====
       const events = require("./command");
@@ -236,6 +308,8 @@ async function connectToWA() {
             isMe,
             isOwner,
             reply,
+            send,
+            quoted: chama,
           });
         } catch (e) {
           console.error("[PLUGIN ERROR]", e);
@@ -245,6 +319,7 @@ async function connectToWA() {
     });
   } catch (err) {
     console.error("❌ Error connecting to WhatsApp:", err);
+    setTimeout(() => connectToWA(), 5000);
   }
 }
 
