@@ -90,9 +90,15 @@ async function downloadSession() {
 }
 
 // Check and setup session
-async function setupSession() {
+async function setupSession(forceNew = false) {
   if (!fs.existsSync(authPath)) {
     fs.mkdirSync(authPath, { recursive: true });
+  }
+
+  // If forcing new session, don't download
+  if (forceNew) {
+    console.log("🔄 Starting fresh session (QR mode)...");
+    return;
   }
 
   if (!fs.existsSync(credsFile)) {
@@ -113,7 +119,10 @@ app.listen(port, () =>
 );
 
 // ================= Connect to WhatsApp =================
-async function connectToWA() {
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 3;
+
+async function connectToWA(forceNew = false) {
   try {
     await connectDB();
     const envConfig = await readEnv();
@@ -122,7 +131,7 @@ async function connectToWA() {
     
     console.log("⏳ Connecting Senal MD BOT...");
 
-    await setupSession();
+    await setupSession(forceNew);
 
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
     const { version } = await fetchLatestBaileysVersion();
@@ -142,8 +151,15 @@ async function connectToWA() {
 
       // ✅ Display QR Code
       if (qr) {
-        console.log("📱 QR Code Generated! Scan it with WhatsApp:");
-        console.log("Go to: WhatsApp > Linked Devices > Link a Device");
+        console.log("\n" + "=".repeat(50));
+        console.log("📱 QR CODE READY TO SCAN!");
+        console.log("=".repeat(50));
+        console.log("1. Open WhatsApp on your phone");
+        console.log("2. Go to Settings > Linked Devices");
+        console.log("3. Tap 'Link a Device'");
+        console.log("4. Scan the QR code above");
+        console.log("=".repeat(50) + "\n");
+        reconnectAttempts = 0; // Reset attempts on QR
       }
 
       if (connection === "close") {
@@ -152,28 +168,49 @@ async function connectToWA() {
           key => DisconnectReason[key] === statusCode
         );
 
-        console.log(`❌ Connection closed. Reason: ${reason || 'Unknown'}`);
+        console.log(`❌ Connection closed. Reason: ${reason || 'Unknown'} (${statusCode})`);
 
         if (statusCode === DisconnectReason.loggedOut) {
-          console.log("🔴 Logged out! Clearing session and generating new QR...");
+          console.log("🔴 Session expired! Clearing and generating new QR...");
           clearSession();
-          setTimeout(() => connectToWA(), 3000);
+          reconnectAttempts = 0;
+          setTimeout(() => connectToWA(true), 2000); // Force new session
+        } else if (statusCode === DisconnectReason.badSession) {
+          console.log("🔴 Bad session detected! Starting fresh...");
+          clearSession();
+          reconnectAttempts = 0;
+          setTimeout(() => connectToWA(true), 2000); // Force new session
         } else if (statusCode === DisconnectReason.restartRequired) {
           console.log("🔄 Restart required...");
-          connectToWA();
+          setTimeout(() => connectToWA(false), 2000);
         } else if (statusCode === DisconnectReason.timedOut) {
-          console.log("⏱️ Connection timed out, reconnecting...");
-          connectToWA();
-        } else if (statusCode === DisconnectReason.badSession) {
-          console.log("🔴 Bad session! Clearing and reconnecting...");
-          clearSession();
-          setTimeout(() => connectToWA(), 3000);
+          reconnectAttempts++;
+          if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            console.log("⏱️ Too many timeout attempts. Generating new QR...");
+            clearSession();
+            reconnectAttempts = 0;
+            setTimeout(() => connectToWA(true), 2000);
+          } else {
+            console.log(`⏱️ Connection timed out (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}), retrying...`);
+            setTimeout(() => connectToWA(false), 3000);
+          }
         } else {
-          console.log("🔄 Reconnecting...");
-          setTimeout(() => connectToWA(), 5000);
+          reconnectAttempts++;
+          if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            console.log("🔄 Multiple reconnection failures. Starting fresh session...");
+            clearSession();
+            reconnectAttempts = 0;
+            setTimeout(() => connectToWA(true), 2000);
+          } else {
+            console.log(`🔄 Reconnecting (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+            setTimeout(() => connectToWA(false), 5000);
+          }
         }
       } else if (connection === "open") {
-        console.log("✅ Senal MD connected to WhatsApp");
+        reconnectAttempts = 0;
+        console.log("\n" + "=".repeat(50));
+        console.log("✅ SENAL MD SUCCESSFULLY CONNECTED!");
+        console.log("=".repeat(50) + "\n");
 
         // Load plugins
         fs.readdirSync("./plugins/").forEach((plugin) => {
@@ -319,7 +356,15 @@ async function connectToWA() {
     });
   } catch (err) {
     console.error("❌ Error connecting to WhatsApp:", err);
-    setTimeout(() => connectToWA(), 5000);
+    reconnectAttempts++;
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      console.log("🔄 Too many errors. Starting fresh session...");
+      clearSession();
+      reconnectAttempts = 0;
+      setTimeout(() => connectToWA(true), 5000);
+    } else {
+      setTimeout(() => connectToWA(false), 5000);
+    }
   }
 }
 
