@@ -8,7 +8,7 @@ module.exports = {
   logo: "https://files.catbox.moe/gm88nn.png",
 
   sessionId: process.env.SESSION_ID,
-  mongoDbUri: process.env.MONGODB_URI,
+  mongodburi: process.env.MONGODB_URI,
   prefix: process.env.PREFIX || ".",
   mode: process.env.MODE || "public",
   ownerNumber: process.env.OWNER_NUMBER || "94769872326",
