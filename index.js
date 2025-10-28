@@ -31,6 +31,9 @@ const MEGA_PASSWORD = config.MEGA_PASSWORD || process.env.MEGA_PASSWORD;
 const prefix = config.PREFIX || ".";
 const aliveImg = config.ALIVE_IMG || "https://files.catbox.moe/gm88nn.png";
 const aliveMsg = config.ALIVE_MSG || "";
+const USE_PAIRING_CODE = config.USE_PAIRING_CODE === "true" || false;
+const PAIRING_NUMBER = config.PAIRING_NUMBER || "";
+const MEGA_SESSION_URL = config.MEGA_SESSION_URL || process.env.MEGA_SESSION_URL || "";
 
 // ================= FAKE REPLY CONTEXT (Always Active) =================
 const chama = {
@@ -179,20 +182,36 @@ class MegaSessionManager {
       console.log('📥 Downloading session from MEGA...');
 
       if (sessionId) {
-        // Download using direct link
+        // Download using direct link or session ID
         const { File } = require('megajs');
-        const file = File.fromURL(`https://mega.nz/file/${sessionId}`);
+        let fileUrl;
+        
+        // Check if it's a full URL or just session ID
+        if (sessionId.startsWith('http')) {
+          fileUrl = sessionId;
+          console.log('🔗 Using full MEGA URL');
+        } else {
+          fileUrl = `https://mega.nz/file/${sessionId}`;
+          console.log('🔑 Using Session ID');
+        }
+        
+        const file = File.fromURL(fileUrl);
         
         return new Promise((resolve, reject) => {
+          const writeStream = fs.createWriteStream(sessionBackupZip);
+          
           file.download()
-            .pipe(fs.createWriteStream(sessionBackupZip))
+            .pipe(writeStream)
             .on('finish', async () => {
               console.log('✅ Downloaded from MEGA');
               await this.extractSession(sessionBackupZip);
               fs.unlinkSync(sessionBackupZip);
               resolve(true);
             })
-            .on('error', reject);
+            .on('error', (error) => {
+              console.error('❌ Download stream error:', error.message);
+              reject(error);
+            });
         });
       } else {
         // Download from logged-in storage
@@ -277,18 +296,36 @@ class MegaSessionManager {
   async autoSync() {
     const hasLocal = this.hasLocalSession();
     const savedSessionId = this.loadSessionId();
+    const megaUrl = MEGA_SESSION_URL;
 
     console.log('\n' + '='.repeat(60));
     console.log('🔄 MEGA AUTO-SYNC');
     console.log('='.repeat(60));
 
-    if (!hasLocal && savedSessionId) {
-      console.log('📥 Restoring from MEGA...');
+    // Priority 1: Use MEGA_SESSION_URL from env/config
+    if (!hasLocal && megaUrl) {
+      console.log('🔗 MEGA URL found in config');
+      console.log('📥 Restoring from MEGA URL...');
       try {
-        await this.downloadSession(savedSessionId);
+        await this.downloadSession(megaUrl);
+        console.log('✅ Session restored from MEGA URL!');
         return 'downloaded';
       } catch (error) {
-        console.log('⚠️ MEGA restore failed - will create new session');
+        console.log('⚠️ MEGA URL restore failed:', error.message);
+        console.log('💡 Trying other methods...');
+      }
+    }
+
+    // Priority 2: Use saved Session ID
+    if (!hasLocal && savedSessionId) {
+      console.log('🔑 Session ID found');
+      console.log('📥 Restoring from Session ID...');
+      try {
+        await this.downloadSession(savedSessionId);
+        console.log('✅ Session restored from Session ID!');
+        return 'downloaded';
+      } catch (error) {
+        console.log('⚠️ Session ID restore failed - will create new session');
         return 'none';
       }
     } else if (hasLocal) {
@@ -529,6 +566,8 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 let isConnecting = false;
 let connectionTimeout = null;
+let lastConnectionAttempt = 0;
+const MIN_CONNECTION_INTERVAL = 10000; // Minimum 10 seconds between attempts
 
 // Clear any pending connection timeout
 function clearConnectionTimeout() {
@@ -545,9 +584,23 @@ async function connectToWA() {
     return;
   }
 
+  // Enforce minimum interval between connection attempts
+  const now = Date.now();
+  const timeSinceLastAttempt = now - lastConnectionAttempt;
+  if (timeSinceLastAttempt < MIN_CONNECTION_INTERVAL) {
+    const waitTime = MIN_CONNECTION_INTERVAL - timeSinceLastAttempt;
+    console.log(`⏳ Cooling down... waiting ${(waitTime/1000).toFixed(1)}s`);
+    clearConnectionTimeout();
+    connectionTimeout = setTimeout(() => connectToWA(), waitTime);
+    return;
+  }
+
   try {
     isConnecting = true;
+    lastConnectionAttempt = Date.now();
     clearConnectionTimeout(); // Clear any pending reconnection
+    
+    console.log(`\n🔌 Connection attempt #${reconnectAttempts + 1}`);
     
     // ================= MEGA AUTO-SYNC =================
     if (megaManager) {
@@ -569,38 +622,72 @@ async function connectToWA() {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
-    const { version } = await fetchLatestBaileysVersion();
+    
+    // Use latest Baileys version with fallback
+    let version;
+    try {
+      const latest = await fetchLatestBaileysVersion();
+      version = latest.version;
+      console.log(`📱 Using Baileys version: [${version.join('.')}]`);
+    } catch (error) {
+      version = [2, 3000, 1015901307]; // Fallback version
+      console.log(`📱 Using fallback version: [${version.join('.')}]`);
+    }
 
     const conn = makeWASocket({
       version,
       logger: P({ level: "silent" }),
-      printQRInTerminal: false,
-      browser: Browsers.macOS("Desktop"),
+      printQRInTerminal: !hasValidSession, // Only print QR if no session
+      browser: Browsers.ubuntu("Chrome"), // Changed from macOS to Ubuntu
       auth: {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, P({ level: "silent" }))
       },
-      syncFullHistory: false, // Changed to false to reduce load
-      markOnlineOnConnect: false, // Changed to false initially
-      generateHighQualityLinkPreview: true,
+      syncFullHistory: false,
+      markOnlineOnConnect: false,
+      generateHighQualityLinkPreview: false, // Disabled to reduce load
       getMessage: async () => ({ conversation: "" }),
-      defaultQueryTimeoutMs: 90000, // Increased timeout
-      connectTimeoutMs: 90000, // Increased timeout
+      defaultQueryTimeoutMs: 120000, // Increased to 2 minutes
+      connectTimeoutMs: 120000,
       keepAliveIntervalMs: 30000,
-      retryRequestDelayMs: 2000, // Add delay between retries
-      maxMsgRetryCount: 3, // Limit retry attempts
+      retryRequestDelayMs: 5000, // Increased delay
+      maxMsgRetryCount: 2, // Reduced retry attempts
+      qrTimeout: 60000, // 60 second QR timeout
+      emitOwnEvents: false, // Don't emit events for own messages
+      fireInitQueries: false, // Don't fire initial queries
     });
 
     global.conn = conn;
 
     // ================= Connection Handler =================
     let qrScanned = false;
+    let pairingCodeRequested = false;
     
     conn.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect, qr } = update;
       
+      // Handle QR code or pairing code
       if (qr && !hasValidSession && !qrScanned) {
-        displayQR(qr);
+        if (USE_PAIRING_CODE && PAIRING_NUMBER && !pairingCodeRequested) {
+          pairingCodeRequested = true;
+          console.log("\n" + "=".repeat(50));
+          console.log("📱 PAIRING CODE MODE");
+          console.log("=".repeat(50));
+          try {
+            const code = await conn.requestPairingCode(PAIRING_NUMBER);
+            console.log(`🔑 Pairing Code: ${code}`);
+            console.log("📲 Enter this code in WhatsApp:");
+            console.log("   Settings → Linked Devices → Link a Device");
+            console.log("   → Link with phone number instead");
+            console.log("=".repeat(50) + "\n");
+          } catch (err) {
+            console.log("❌ Pairing code failed:", err.message);
+            console.log("🔄 Falling back to QR code...\n");
+            displayQR(qr);
+          }
+        } else {
+          displayQR(qr);
+        }
       }
       
       if (connection === "close") {
@@ -637,16 +724,20 @@ async function connectToWA() {
           console.log("⚠️ 405 Error - Connection rate limited or network issue");
           reconnectAttempts++;
           
-          if (reconnectAttempts > 3) {
-            console.log("🔄 Too many 405 errors - clearing session and waiting longer");
+          if (reconnectAttempts > 2) { // Reduced from 3 to 2
+            console.log("🔄 Too many 405 errors - waiting 5 minutes before retry");
+            console.log("💡 Possible causes:");
+            console.log("   - IP rate limited by WhatsApp");
+            console.log("   - Too many connection attempts");
+            console.log("   - Network/firewall blocking");
             clearSession();
             reconnectAttempts = 0;
             clearConnectionTimeout();
-            connectionTimeout = setTimeout(() => connectToWA(), 60000); // Wait 1 minute
+            connectionTimeout = setTimeout(() => connectToWA(), 300000); // Wait 5 minutes
           } else {
-            console.log(`⏳ Retry ${reconnectAttempts}/3 in 30 seconds...`);
+            console.log(`⏳ Retry ${reconnectAttempts}/2 in 60 seconds...`);
             clearConnectionTimeout();
-            connectionTimeout = setTimeout(() => connectToWA(), 30000); // Wait 30 seconds
+            connectionTimeout = setTimeout(() => connectToWA(), 60000); // Wait 60 seconds
           }
           
         } else if (statusCode === DisconnectReason.connectionClosed) {
