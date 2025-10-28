@@ -247,6 +247,29 @@ class MegaSessionManager {
     return null;
   }
 
+  async getMegaStatus() {
+    try {
+      if (!this.connected) await this.connect();
+      if (!this.connected) return { success: false, error: 'Not connected' };
+
+      const sessionId = this.loadSessionId();
+      const file = this.storage.root.children.find(f => f.name === megaSessionFile);
+      
+      return {
+        success: true,
+        email: MEGA_EMAIL,
+        connected: this.connected,
+        hasSessionId: !!sessionId,
+        sessionId: sessionId,
+        hasBackup: !!file,
+        backupSize: file ? `${(file.size / 1024).toFixed(2)} KB` : 'N/A',
+        backupDate: file ? new Date(file.timestamp * 1000).toISOString() : 'N/A'
+      };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
   hasLocalSession() {
     return fs.existsSync(path.join(authPath, 'creds.json'));
   }
@@ -280,8 +303,84 @@ class MegaSessionManager {
 
 // Initialize MEGA manager
 let megaManager = null;
+let megaSetupDone = false;
+
 if (MEGA_EMAIL && MEGA_PASSWORD) {
   megaManager = new MegaSessionManager();
+}
+
+// One-time MEGA setup check
+async function checkMegaSetup() {
+  if (!megaManager || megaSetupDone) return;
+  
+  const setupFile = path.join(__dirname, '.mega_setup_done');
+  
+  // Check if setup was already done
+  if (fs.existsSync(setupFile)) {
+    megaSetupDone = true;
+    return;
+  }
+  
+  console.log('\n' + '='.repeat(60));
+  console.log('🔧 MEGA FIRST-TIME SETUP CHECK');
+  console.log('='.repeat(60));
+  
+  try {
+    // Test MEGA connection
+    console.log('📡 Testing MEGA connection...');
+    const connected = await megaManager.connect();
+    
+    if (connected) {
+      console.log('✅ MEGA connection successful!');
+      console.log('📧 Email: ' + MEGA_EMAIL);
+      
+      // Check if session exists in MEGA
+      const sessionId = megaManager.loadSessionId();
+      if (sessionId) {
+        console.log('🔑 Existing Session ID found: ' + sessionId);
+        
+        try {
+          const file = megaManager.storage.root.children.find(
+            f => f.name === megaSessionFile
+          );
+          if (file) {
+            const fileSize = (file.size / 1024).toFixed(2);
+            console.log(`✅ Session backup found in MEGA (${fileSize} KB)`);
+          } else {
+            console.log('⚠️ Session ID exists but file not found in MEGA');
+            console.log('💡 Will create new backup after QR scan');
+          }
+        } catch (err) {
+          console.log('⚠️ Could not verify session file');
+        }
+      } else {
+        console.log('📱 No session ID found - first time setup');
+        console.log('💡 After scanning QR, session will auto-backup to MEGA');
+      }
+      
+      // Mark setup as done
+      fs.writeFileSync(setupFile, JSON.stringify({
+        setupAt: new Date().toISOString(),
+        email: MEGA_EMAIL
+      }));
+      megaSetupDone = true;
+      
+      console.log('✅ MEGA setup check complete!');
+      console.log('='.repeat(60) + '\n');
+      
+    } else {
+      console.log('❌ MEGA connection failed!');
+      console.log('⚠️ Check your MEGA_EMAIL and MEGA_PASSWORD in .env');
+      console.log('🔄 Bot will continue without MEGA backup');
+      console.log('='.repeat(60) + '\n');
+    }
+    
+  } catch (error) {
+    console.log('❌ MEGA setup error:', error.message);
+    console.log('⚠️ Please verify your MEGA credentials');
+    console.log('🔄 Bot will continue without MEGA backup');
+    console.log('='.repeat(60) + '\n');
+  }
 }
 
 // ================= Session Helper Functions =================
@@ -338,16 +437,75 @@ const app = express();
 const port = process.env.PORT || 8000;
 
 app.get("/", (req, res) => {
+  const megaStatus = megaSetupDone ? '✅ Connected' : (MEGA_EMAIL ? '⏳ Checking...' : '❌ Not configured');
   res.send(`
     <html>
       <head><title>Senal MD Bot</title></head>
       <body style="font-family: Arial; padding: 50px; text-align: center;">
         <h1>✅ ${botName} is Running!</h1>
         <p>Status: <strong>${isSessionValid() ? 'Connected ✅' : 'Waiting for QR 📱'}</strong></p>
-        <p>MEGA Backup: <strong>${MEGA_EMAIL ? 'Enabled ☁️' : 'Disabled ❌'}</strong></p>
+        <p>MEGA Backup: <strong>${megaStatus}</strong></p>
+        ${MEGA_EMAIL ? `<p>MEGA Email: <strong>${MEGA_EMAIL}</strong></p>` : ''}
+        <hr>
+        <p><a href="/mega-status">Check MEGA Status</a></p>
       </body>
     </html>
   `);
+});
+
+app.get("/mega-status", async (req, res) => {
+  if (!megaManager) {
+    res.send(`
+      <html>
+        <head><title>MEGA Status</title></head>
+        <body style="font-family: Arial; padding: 50px;">
+          <h2>❌ MEGA Not Configured</h2>
+          <p>Add MEGA_EMAIL and MEGA_PASSWORD to .env file</p>
+          <a href="/">← Back</a>
+        </body>
+      </html>
+    `);
+    return;
+  }
+
+  try {
+    const status = await megaManager.getMegaStatus();
+    
+    res.send(`
+      <html>
+        <head><title>MEGA Status</title></head>
+        <body style="font-family: Arial; padding: 50px;">
+          <h2>☁️ MEGA Status</h2>
+          ${status.success ? `
+            <p>✅ <strong>Connected</strong></p>
+            <p>📧 Email: <strong>${status.email}</strong></p>
+            <p>🔑 Session ID: <strong>${status.hasSessionId ? '✅ Exists' : '❌ None'}</strong></p>
+            ${status.hasSessionId ? `<p>ID: <code>${status.sessionId}</code></p>` : ''}
+            <p>💾 Backup File: <strong>${status.hasBackup ? '✅ Found' : '❌ Not Found'}</strong></p>
+            ${status.hasBackup ? `
+              <p>📦 Size: <strong>${status.backupSize}</strong></p>
+              <p>📅 Date: <strong>${new Date(status.backupDate).toLocaleString()}</strong></p>
+            ` : ''}
+          ` : `
+            <p>❌ <strong>Error:</strong> ${status.error}</p>
+          `}
+          <hr>
+          <a href="/">← Back</a>
+        </body>
+      </html>
+    `);
+  } catch (error) {
+    res.send(`
+      <html>
+        <head><title>MEGA Status</title></head>
+        <body style="font-family: Arial; padding: 50px;">
+          <h2>❌ Error</h2>
+          <p>${error.message}</p>
+          <a href="/">← Back</a>
+        </body>
+      </html>
+    `);
+  }
 });
 
 app.listen(port, () =>
@@ -370,16 +528,26 @@ function displayQR(qr) {
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 let isConnecting = false;
+let connectionTimeout = null;
+
+// Clear any pending connection timeout
+function clearConnectionTimeout() {
+  if (connectionTimeout) {
+    clearTimeout(connectionTimeout);
+    connectionTimeout = null;
+  }
+}
 
 // ================= Connect to WhatsApp =================
 async function connectToWA() {
   if (isConnecting) {
-    console.log("⏳ Connection in progress...");
+    console.log("⏳ Connection already in progress, skipping...");
     return;
   }
 
   try {
     isConnecting = true;
+    clearConnectionTimeout(); // Clear any pending reconnection
     
     // ================= MEGA AUTO-SYNC =================
     if (megaManager) {
@@ -412,13 +580,15 @@ async function connectToWA() {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, P({ level: "silent" }))
       },
-      syncFullHistory: true,
-      markOnlineOnConnect: true,
+      syncFullHistory: false, // Changed to false to reduce load
+      markOnlineOnConnect: false, // Changed to false initially
       generateHighQualityLinkPreview: true,
       getMessage: async () => ({ conversation: "" }),
-      defaultQueryTimeoutMs: 60000,
-      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 90000, // Increased timeout
+      connectTimeoutMs: 90000, // Increased timeout
       keepAliveIntervalMs: 30000,
+      retryRequestDelayMs: 2000, // Add delay between retries
+      maxMsgRetryCount: 3, // Limit retry attempts
     });
 
     global.conn = conn;
@@ -441,46 +611,69 @@ async function connectToWA() {
         console.log(`\n❌ Disconnected: ${statusCode} - ${reason}`);
         
         // ================= Handle Errors with MEGA Restore =================
-        if (statusCode === DisconnectReason.badSession || statusCode === 405) {
-          console.log("⚠️ Session issue detected");
+        if (statusCode === DisconnectReason.badSession) {
+          console.log("⚠️ Bad session detected");
           
-          if (megaManager) {
+          if (megaManager && megaManager.loadSessionId()) {
             try {
               console.log("🔄 Restoring from MEGA...");
               await megaManager.downloadSession(megaManager.loadSessionId());
               console.log("✅ Restored from MEGA!");
               reconnectAttempts = 0;
-              setTimeout(() => connectToWA(), 3000);
+              clearConnectionTimeout();
+              connectionTimeout = setTimeout(() => connectToWA(), 3000);
               return;
             } catch (error) {
-              console.log("⚠️ MEGA restore failed");
+              console.log("⚠️ MEGA restore failed - clearing session");
             }
           }
           
           clearSession();
           reconnectAttempts = 0;
-          setTimeout(() => connectToWA(), statusCode === 405 ? 30000 : 3000);
+          clearConnectionTimeout();
+          connectionTimeout = setTimeout(() => connectToWA(), 3000);
+          
+        } else if (statusCode === 405) {
+          console.log("⚠️ 405 Error - Connection rate limited or network issue");
+          reconnectAttempts++;
+          
+          if (reconnectAttempts > 3) {
+            console.log("🔄 Too many 405 errors - clearing session and waiting longer");
+            clearSession();
+            reconnectAttempts = 0;
+            clearConnectionTimeout();
+            connectionTimeout = setTimeout(() => connectToWA(), 60000); // Wait 1 minute
+          } else {
+            console.log(`⏳ Retry ${reconnectAttempts}/3 in 30 seconds...`);
+            clearConnectionTimeout();
+            connectionTimeout = setTimeout(() => connectToWA(), 30000); // Wait 30 seconds
+          }
           
         } else if (statusCode === DisconnectReason.connectionClosed) {
           reconnectAttempts++;
           if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-            setTimeout(() => connectToWA(), 5000);
+            clearConnectionTimeout();
+            connectionTimeout = setTimeout(() => connectToWA(), 5000);
           } else {
             clearSession();
             reconnectAttempts = 0;
-            setTimeout(() => connectToWA(), 10000);
+            clearConnectionTimeout();
+            connectionTimeout = setTimeout(() => connectToWA(), 10000);
           }
           
         } else if (statusCode === DisconnectReason.loggedOut) {
           console.log("❌ Logged out. Clearing session...");
           clearSession();
-          setTimeout(() => connectToWA(), 5000);
+          clearConnectionTimeout();
+          connectionTimeout = setTimeout(() => connectToWA(), 5000);
           
         } else if (statusCode === DisconnectReason.restartRequired) {
-          setTimeout(() => connectToWA(), 2000);
+          clearConnectionTimeout();
+          connectionTimeout = setTimeout(() => connectToWA(), 2000);
           
         } else {
-          setTimeout(() => connectToWA(), 10000);
+          clearConnectionTimeout();
+          connectionTimeout = setTimeout(() => connectToWA(), 10000);
         }
         
       } else if (connection === "connecting") {
@@ -675,7 +868,8 @@ async function connectToWA() {
   } catch (err) {
     isConnecting = false;
     console.error("❌ Error:", err.message);
-    setTimeout(() => connectToWA(), 10000);
+    clearConnectionTimeout();
+    connectionTimeout = setTimeout(() => connectToWA(), 10000);
   }
 }
 
@@ -685,4 +879,8 @@ console.log(`🤖 ${botName} - WhatsApp Bot`);
 console.log("=".repeat(60));
 console.log("📦 Initializing...\n");
 
-setTimeout(() => connectToWA(), 3000);
+// Run one-time MEGA setup check, then start bot
+(async () => {
+  await checkMegaSetup();
+  setTimeout(() => connectToWA(), 3000);
+})();
