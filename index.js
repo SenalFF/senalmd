@@ -261,13 +261,18 @@ class MegaSessionManager {
 
     if (!hasLocal && savedSessionId) {
       console.log('📥 Restoring from MEGA...');
-      await this.downloadSession(savedSessionId);
-      return 'downloaded';
+      try {
+        await this.downloadSession(savedSessionId);
+        return 'downloaded';
+      } catch (error) {
+        console.log('⚠️ MEGA restore failed - will create new session');
+        return 'none';
+      }
     } else if (hasLocal) {
       console.log('✅ Local session exists');
       return 'local';
     } else {
-      console.log('❌ No session found');
+      console.log('📱 No session found - scan QR to create new session');
       return 'none';
     }
   }
