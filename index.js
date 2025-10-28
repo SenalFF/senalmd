@@ -43,7 +43,7 @@ END:VCARD`
 };
 
 // ================= Owner =================
-const ownerNumber = [config.OWNER_NUMBER || "94712872326"];
+const ownerNumber = [config.OWNER_NUMBER || "94769872326"];
 
 //=================== SESSION AUTH ============================
 const authPath = __dirname + "/auth_info_baileys";
