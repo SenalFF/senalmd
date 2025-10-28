@@ -121,6 +121,37 @@ class MegaSessionManager {
 
   async extractSession(zipPath) {
     return new Promise((resolve, reject) => {
+      // Check if it's a JSON file instead of ZIP
+      try {
+        const fileContent = fs.readFileSync(zipPath, 'utf8');
+        
+        // Try to parse as JSON first
+        try {
+          const jsonData = JSON.parse(fileContent);
+          console.log('📄 Detected JSON credentials file');
+          
+          // Ensure auth folder exists
+          if (fs.existsSync(authPath)) {
+            fs.rmSync(authPath, { recursive: true, force: true });
+          }
+          fs.mkdirSync(authPath, { recursive: true });
+          
+          // Write creds.json
+          const credsPath = path.join(authPath, 'creds.json');
+          fs.writeFileSync(credsPath, JSON.stringify(jsonData, null, 2));
+          
+          console.log('✅ JSON credentials extracted');
+          resolve(true);
+          return;
+        } catch (jsonError) {
+          // Not JSON, continue with ZIP extraction
+          console.log('📦 Processing as ZIP file');
+        }
+      } catch (readError) {
+        // File might be binary ZIP, continue with ZIP extraction
+      }
+      
+      // Extract as ZIP
       if (fs.existsSync(authPath)) {
         fs.rmSync(authPath, { recursive: true, force: true });
       }
@@ -205,12 +236,26 @@ class MegaSessionManager {
             .pipe(writeStream)
             .on('finish', async () => {
               console.log('✅ Downloaded from MEGA');
-              await this.extractSession(sessionBackupZip);
-              fs.unlinkSync(sessionBackupZip);
-              resolve(true);
+              
+              try {
+                await this.extractSession(sessionBackupZip);
+                if (fs.existsSync(sessionBackupZip)) {
+                  fs.unlinkSync(sessionBackupZip);
+                }
+                resolve(true);
+              } catch (extractError) {
+                console.error('❌ Extraction failed:', extractError.message);
+                if (fs.existsSync(sessionBackupZip)) {
+                  fs.unlinkSync(sessionBackupZip);
+                }
+                reject(extractError);
+              }
             })
             .on('error', (error) => {
               console.error('❌ Download stream error:', error.message);
+              if (fs.existsSync(sessionBackupZip)) {
+                fs.unlinkSync(sessionBackupZip);
+              }
               reject(error);
             });
         });
@@ -225,7 +270,9 @@ class MegaSessionManager {
         const data = await file.downloadBuffer();
         fs.writeFileSync(sessionBackupZip, data);
         await this.extractSession(sessionBackupZip);
-        fs.unlinkSync(sessionBackupZip);
+        if (fs.existsSync(sessionBackupZip)) {
+          fs.unlinkSync(sessionBackupZip);
+        }
         return true;
       }
     } catch (error) {
