@@ -12,11 +12,12 @@ module.exports = {
   prefix: process.env.PREFIX || ".",
   mode: process.env.MODE || "public",
   ownerNumber: process.env.OWNER_NUMBER || "94769872326",
-
+ 
   // MEGA credentials
   megaEmail: process.env.MEGA_EMAIL,
   megaPassword: process.env.MEGA_PASSWORD,
-
+  mega_session_url: process.env.MEGA_SESSION_URL,
+  
   // Features
   autoVoice: process.env.AUTO_VOICE === "true",
   antiBadWordsEnabled: process.env.ANTI_BAD_WORDS_ENABLED === "true",
