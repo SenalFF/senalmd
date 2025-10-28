@@ -122,9 +122,9 @@ class MegaSessionManager {
       console.log('📤 Uploading session to MEGA...');
       await this.compressSession();
 
-      const existingFile = this.storage.root.children.find(file => file.name === megaSessionFile);
+      const existingFile = this.storage.root.children.find(f => f.name === megaSessionFile);
       if (existingFile) {
-        console.log('🗑️  Removing old session...');
+        console.log('🗑️ Removing old session...');
         await existingFile.delete();
       }
 
@@ -132,9 +132,11 @@ class MegaSessionManager {
       const uploadedFile = await this.storage.upload(megaSessionFile, fileData).complete;
       const shareLink = await uploadedFile.link();
       const sessionId = shareLink.split('/file/')[1];
+
       console.log('✅ Session uploaded to MEGA!');
       console.log('📎 Share Link:', shareLink);
       console.log('🔑 Session ID:', sessionId);
+
       this.saveSessionId(sessionId);
 
       if (fs.existsSync(sessionBackupZip)) fs.unlinkSync(sessionBackupZip);
@@ -147,34 +149,23 @@ class MegaSessionManager {
 
   async downloadSession(sessionId = null) {
     try {
+      if (!sessionId) return false;
       console.log('📥 Downloading session from MEGA...');
-      if (sessionId) {
-        const file = File.fromURL(`https://mega.nz/file/${sessionId}`);
-        return new Promise((resolve, reject) => {
-          file.download()
-            .pipe(fs.createWriteStream(sessionBackupZip))
-            .on('finish', async () => {
-              console.log('✅ Downloaded from MEGA');
-              await this.extractSession(sessionBackupZip);
-              fs.unlinkSync(sessionBackupZip);
-              resolve(true);
-            })
-            .on('error', reject);
-        });
-      } else {
-        if (!this.connected) await this.connect();
-        if (!this.connected) throw new Error('Not connected to MEGA');
-        const file = this.storage.root.children.find(f => f.name === megaSessionFile);
-        if (!file) throw new Error('Session not found in MEGA');
-        const data = await file.downloadBuffer();
-        fs.writeFileSync(sessionBackupZip, data);
-        await this.extractSession(sessionBackupZip);
-        fs.unlinkSync(sessionBackupZip);
-        return true;
-      }
+      const file = File.fromURL(`https://mega.nz/file/${sessionId}`);
+      return new Promise((resolve, reject) => {
+        file.download()
+          .pipe(fs.createWriteStream(sessionBackupZip))
+          .on('finish', async () => {
+            console.log('✅ Downloaded from MEGA');
+            await this.extractSession(sessionBackupZip);
+            fs.unlinkSync(sessionBackupZip);
+            resolve(true);
+          })
+          .on('error', reject);
+      });
     } catch (error) {
       console.error('❌ Download failed:', error.message);
-      throw error;
+      return false;
     }
   }
 
@@ -184,7 +175,9 @@ class MegaSessionManager {
       let envContent = fs.readFileSync(envPath, 'utf8');
       if (envContent.includes('SESSION_ID=')) {
         envContent = envContent.replace(/SESSION_ID=.*/g, `SESSION_ID=${sessionId}`);
-      } else envContent += `\nSESSION_ID=${sessionId}\n`;
+      } else {
+        envContent += `\nSESSION_ID=${sessionId}\n`;
+      }
       fs.writeFileSync(envPath, envContent);
     }
 
@@ -196,7 +189,10 @@ class MegaSessionManager {
 
   loadSessionId() {
     const configPath = path.join(__dirname, 'mega_session.json');
-    if (fs.existsSync(configPath)) return JSON.parse(fs.readFileSync(configPath, 'utf8')).sessionId;
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      return config.sessionId || null;
+    }
     return null;
   }
 
@@ -207,9 +203,11 @@ class MegaSessionManager {
   async autoSync() {
     const hasLocal = this.hasLocalSession();
     const savedSessionId = this.loadSessionId();
+
     console.log('\n' + '='.repeat(60));
     console.log('🔄 MEGA AUTO-SYNC');
     console.log('='.repeat(60));
+
     if (!hasLocal && savedSessionId) {
       console.log('📥 Restoring from MEGA...');
       try {
@@ -219,22 +217,29 @@ class MegaSessionManager {
         console.log('⚠️ MEGA restore failed:', err.message);
         return 'none';
       }
-    } else if (hasLocal) return 'local';
-    else return 'none';
+    } else if (!hasLocal && !savedSessionId) {
+      console.log('💡 No session in MEGA. QR scan required for first-time login.');
+      return 'none';
+    } else if (hasLocal) {
+      console.log('✅ Local session exists.');
+      return 'local';
+    }
   }
 }
 
 // Initialize MEGA manager
-let megaManager = null;
-if (MEGA_EMAIL && MEGA_PASSWORD) megaManager = new MegaSessionManager();
+let megaManager = (MEGA_EMAIL && MEGA_PASSWORD) ? new MegaSessionManager() : null;
 
-// ================= Session Helpers =================
+// ================= Session Helper Functions =================
 function isSessionValid() {
   try {
     const credsPath = path.join(authPath, "creds.json");
     if (fs.existsSync(sessionFile) && fs.existsSync(credsPath)) {
       const credsData = JSON.parse(fs.readFileSync(credsPath, "utf8"));
-      return !!credsData?.me?.id;
+      if (credsData?.me?.id) {
+        console.log(`✅ Valid session: ${credsData.me.id.split(':')[0]}`);
+        return true;
+      }
     }
     return false;
   } catch { return false; }
@@ -246,22 +251,26 @@ function markSessionActive(phoneNumber) {
 }
 
 function updateSessionTime() {
-  if (fs.existsSync(sessionFile)) {
-    const sessionData = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
-    sessionData.lastConnected = new Date().toISOString();
-    fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
-  }
+  try {
+    if (fs.existsSync(sessionFile)) {
+      const sessionData = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+      sessionData.lastConnected = new Date().toISOString();
+      fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
+    }
+  } catch {}
 }
 
 function clearSession() {
-  if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true });
-  if (fs.existsSync(sessionFile)) fs.unlinkSync(sessionFile);
-  console.log("🗑️ Cleared session folder");
+  try {
+    if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true });
+    if (fs.existsSync(sessionFile)) fs.unlinkSync(sessionFile);
+  } catch {}
 }
 
 // ================= Express Server =================
 const app = express();
-const port = process.env.PORT || 8080;
+const port = process.env.PORT || 8000;
+
 app.get("/", (req, res) => {
   res.send(`
     <html>
@@ -274,6 +283,7 @@ app.get("/", (req, res) => {
     </html>
   `);
 });
+
 app.listen(port, () => console.log(`🌐 Server: http://localhost:${port}`));
 
 // ================= QR Display =================
@@ -282,6 +292,7 @@ function displayQR(qr) {
   console.log("📱 SCAN THIS QR CODE WITH WHATSAPP");
   console.log("=".repeat(50));
   console.log("\n" + qr + "\n");
+  console.log("=".repeat(50));
   console.log("⏰ Scan within 20 seconds!");
   console.log("📲 WhatsApp → Linked Devices → Link a Device");
   console.log("=".repeat(50) + "\n");
@@ -296,14 +307,22 @@ async function connectToWA() {
   if (isConnecting) return console.log("⏳ Connection in progress...");
   try {
     isConnecting = true;
+    const prefix = config.PREFIX || ".";
+    const aliveImg = config.ALIVE_IMG || "https://files.catbox.moe/gm88nn.png";
+
+    // ================= MEGA AUTO-SYNC =================
+    if (megaManager) {
+      await megaManager.autoSync();
+    } else {
+      console.log('💡 Add MEGA_EMAIL & MEGA_PASSWORD to .env for auto-backup');
+    }
+
+    const hasValidSession = isSessionValid();
+    if (hasValidSession) console.log("🔄 Restoring session...");
+    else console.log("📱 Preparing QR code...");
+
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
     const { version } = await fetchLatestBaileysVersion();
-
-    let syncStatus = 'none';
-    if (megaManager) syncStatus = await megaManager.autoSync();
-
-    const hasValidSession = isSessionValid() || syncStatus === 'downloaded';
-    if (!hasValidSession) console.log('📱 No session found, QR scan required');
 
     const conn = makeWASocket({
       version,
@@ -334,21 +353,13 @@ async function connectToWA() {
       if (connection === "close") {
         isConnecting = false;
         const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const reason = lastDisconnect?.error?.message || "Unknown";
+        console.log(`\n❌ Disconnected: ${statusCode} - ${reason}`);
 
         if ([DisconnectReason.badSession, 405].includes(statusCode)) {
           console.log("⚠️ Session issue detected");
-          if (megaManager) {
-            try {
-              await megaManager.downloadSession(megaManager.loadSessionId());
-              console.log("✅ Restored from MEGA!");
-              reconnectAttempts = 0;
-              setTimeout(() => connectToWA(), 3000);
-              return;
-            } catch { clearSession(); }
-          }
           clearSession();
-          reconnectAttempts = 0;
-          setTimeout(() => connectToWA(), statusCode === 405 ? 30000 : 3000);
+          setTimeout(() => connectToWA(), 3000);
 
         } else if (statusCode === DisconnectReason.connectionClosed) {
           reconnectAttempts++;
@@ -357,31 +368,32 @@ async function connectToWA() {
 
         } else if (statusCode === DisconnectReason.loggedOut) {
           console.log("❌ Logged out. Clearing session...");
-          clearSession();
-          setTimeout(() => connectToWA(), 5000);
+          clearSession(); setTimeout(() => connectToWA(), 5000);
 
-        } else if (statusCode === DisconnectReason.restartRequired) setTimeout(() => connectToWA(), 2000);
-        else setTimeout(() => connectToWA(), 10000);
+        } else if (statusCode === DisconnectReason.restartRequired) {
+          setTimeout(() => connectToWA(), 2000);
+
+        } else setTimeout(() => connectToWA(), 10000);
 
       } else if (connection === "connecting") console.log("⏳ Connecting...");
-
       else if (connection === "open") {
-        isConnecting = false;
-        reconnectAttempts = 0;
-        qrScanned = true;
-
+        isConnecting = false; reconnectAttempts = 0; qrScanned = true;
         console.log("\n" + "=".repeat(50));
         console.log("✅ CONNECTED TO WHATSAPP!");
         console.log("=".repeat(50));
         console.log(`📱 Account: ${conn.user.name || "Unknown"}`);
         console.log(`📞 Number: ${conn.user.id.split(':')[0]}`);
+        console.log(`⚡ Prefix: ${prefix}`);
         console.log("=".repeat(50) + "\n");
 
         markSessionActive(conn.user.id.split(':')[0]);
 
         if (megaManager && !hasValidSession) {
-          console.log('📤 Backing up new session to MEGA...');
-          setTimeout(async () => { try { await megaManager.uploadSession(); } catch {} }, 5000);
+          console.log('📤 Backing up to MEGA...');
+          setTimeout(async () => {
+            try { await megaManager.uploadSession(); console.log('✅ Backed up to MEGA!'); }
+            catch (error) { console.error('⚠️ Backup failed:', error.message); }
+          }, 5000);
         }
 
         setInterval(() => updateSessionTime(), 60000);
@@ -389,6 +401,8 @@ async function connectToWA() {
     });
 
     conn.ev.on("creds.update", saveCreds);
+
+    process.on('SIGINT', async () => { console.log("\n⚠️ Shutting down..."); if (conn) await conn.end(); process.exit(0); });
 
   } catch (err) {
     isConnecting = false;
@@ -400,6 +414,4 @@ async function connectToWA() {
 // ================= Start Bot =================
 console.log("\n" + "=".repeat(60));
 console.log(`🤖 ${botName} - WhatsApp Bot`);
-console.log("=".repeat(60));
-console.log("📦 Initializing...\n");
-setTimeout(() => connectToWA(), 3000);
+console.log
