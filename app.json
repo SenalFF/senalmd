@@ -9,7 +9,7 @@
     "SESSION_ID": {
       "description": "Put the session-id here.",
       "required": true,
-      "default": "fsQlkRLY#Acr4a8nNCjIFIprUqqE4umGn1tJDzvzoZdoChKyNsU8"
+      "default": "mxIwVJDS#1mEjkpe0HDZomBz5lgltSn9cVvNigqgVcVUKKwP78f8"
     },
     "MONGODB": {
       "description": "Put your MongoDB Database URL here.",
