@@ -1,3 +1,17 @@
+// ================= Load Environment Variables =================
+const dotenv = require("dotenv");
+const result = dotenv.config();
+
+if (result.error) {
+  console.error("❌ Failed to load .env file. Please create one!");
+  process.exit(1);
+}
+
+if (!process.env.SESSION_ID) {
+  console.error("❌ SESSION_ID not found in .env!");
+  process.exit(1);
+}
+
 // ================= Required Modules =================
 const {
   default: makeWASocket,
@@ -26,13 +40,8 @@ if (!fs.existsSync(authPath)) fs.mkdirSync(authPath, { recursive: true });
 
 async function ensureSession() {
   if (!fs.existsSync(credsFile)) {
-    if (!config.SESSION_ID) {
-      console.log("❌ Please add your SESSION_ID in .env!");
-      process.exit(1);
-    }
-
     const { File } = require("megajs");
-    const sessdata = config.SESSION_ID;
+    const sessdata = process.env.SESSION_ID;
     const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
 
     console.log("⏳ Downloading session file from Mega...");
@@ -105,7 +114,7 @@ async function connectToWA() {
       if (connection === "close") {
         if (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut) {
           console.log("🔄 Reconnecting in 5 seconds...");
-          setTimeout(connectToWA, 5000); // avoid flood loop
+          setTimeout(connectToWA, 5000);
         } else {
           console.log("❌ Logged out from WhatsApp");
         }
