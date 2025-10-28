@@ -1,67 +1,62 @@
-# ====================== SENAL MD BOT CONFIG ======================
-# Bot Name: Senal MD
-# Developer: Mr Senal
-# Logo: https://files.catbox.moe/gm88nn.png
-# =================================================================
+// ====================== SENAL MD BOT CONFIG LOADER ======================
 
-# WhatsApp Bot Session ID
-SESSION_ID="bkp2QCoQ#7oCRAeeYz0BPIW6soYEXBnHxuvC6VoPZJOrgECX52v4"
+require('dotenv').config();
 
-# ====================== MEGA.NZ AUTO-BACKUP ======================
-# Add your MEGA.nz credentials for automatic session backup
-# Sign up free at: https://mega.nz (20GB free storage)
-MEGA_EMAIL="mrsenalff@gmail.com"
-MEGA_PASSWORD="Sena11@#"
+module.exports = {
+  botName: "Senal MD",
+  developer: "Mr Senal",
+  logo: "https://files.catbox.moe/gm88nn.png",
 
-# MongoDB Database URL
-MONGODB_URI="mongodb+srv://senaldb:Senalmdv2@senalmd.muosvng.mongodb.net/?retryWrites=true&w=majority&appName=SenalMD"
+  sessionId: process.env.SESSION_ID,
+  mongoDbUri: process.env.MONGODB_URI,
+  prefix: process.env.PREFIX || ".",
+  mode: process.env.MODE || "public",
+  ownerNumber: process.env.OWNER_NUMBER || "94769872326",
 
-# Bot Prefix
-PREFIX="."
+  // MEGA credentials
+  megaEmail: process.env.MEGA_EMAIL,
+  megaPassword: process.env.MEGA_PASSWORD,
 
-# Bot Mode: private/public/inbox/groups
-MODE="public"
+  // Features
+  autoVoice: process.env.AUTO_VOICE === "true",
+  antiBadWordsEnabled: process.env.ANTI_BAD_WORDS_ENABLED === "true",
+  autoReadStatus: process.env.AUTO_READ_STATUS === "true",
+  antiBadWords: (process.env.ANTI_BAD_WORDS || "").split(","),
+  antiLink: process.env.ANTILINK === "true",
+  alwaysOnline: process.env.ALWAYS_ONLINE === "true",
+  autoReadCmd: process.env.AUTO_READ_CMD === "true",
+  alwaysTyping: process.env.ALWAYS_TYPING === "true",
+  alwaysRecording: process.env.ALWAYS_RECORDING === "true",
+  antiBot: process.env.ANTI_BOT === "true",
+  antiDelete: process.env.ANTI_DELETE === "true",
 
-# Owner Number (Sri Lanka format without +)
-OWNER_NUMBER="94769872326"
+  packname: process.env.PACKNAME,
+  author: process.env.AUTHOR,
 
-# ====================== OTHER CONFIGS ======================
-AUTO_VOICE="true"
-ANTI_BAD_WORDS_ENABLED="true"
-AUTO_READ_STATUS="true"
-ANTI_BAD_WORDS="pakayo,huththo"
-ANTILINK="true"
-ALWAYS_ONLINE="false"
-AUTO_READ_CMD="true"
-ALWAYS_TYPING="true"
-ALWAYS_RECORDING="true"
-ANTI_BOT="true"
-ANTI_DELETE="true"
+  // APIs
+  apiKeys: {
+    openWeather: process.env.OPENWEATHER_API_KEY,
+    elevenLabs: process.env.ELEVENLABS_API_KEY,
+    shodan: process.env.SHODAN_API,
+    pexels: process.env.PEXELS_API_KEY,
+    omdb: process.env.OMDB_API_KEY,
+    pixabay: process.env.PIXABAY_API_KEY,
+    zipcodebase: process.env.ZIPCODEBASE_API_KEY,
+    google: process.env.GOOGLE_API_KEY,
+    googleCx: process.env.GOOGLE_CX,
+    pastebin: process.env.PASTEBIN_API_KEY,
+  },
 
-# Sticker Metadata
-PACKNAME="Senal MD"
-AUTHOR="ᴍr Senal🪀"
+  // Messages
+  messages: {
+    start: process.env.START_MSG,
+    aliveImage: process.env.ALIVE_IMG,
+    aliveMessage: process.env.ALIVE_MSG,
+    menuImage: process.env.MENU_IMG,
+    menuMessage: process.env.MENU_MSG,
+    menuCmd: process.env.MENU_MS,
+  },
 
-# ====================== API KEYS ======================
-OPENWEATHER_API_KEY="2d61a72574c11c4f36173b627f8cb177"
-ELEVENLABS_API_KEY="sk_6438bcc100d96458f8de0602aec662f4ba14b905fd090ad3"
-SHODAN_API="cbCkidr6qd7AFVaYs56MuCouGfM8gFki"
-PEXELS_API_KEY="39WCzaHAX939xiH22NCddGGvzp7cgbu1VVjeYUaZXyHUaWlL1LFcVFxH"
-OMDB_API_KEY="76cb7f39"
-PIXABAY_API_KEY="23378594-7bd620160396da6e8d2ed4d53"
-ZIPCODEBASE_API_KEY="0f94a5f0-6ea4-11ef-81da-579be4fb031c"
-GOOGLE_API_KEY="AIzaSyD93IeJsouK51zjKgyHAwBIAlqr-a8mnME"
-GOOGLE_CX="AIzaSyD93IeJsouK51zjKgyHAwBIAlqr-a8mnME"
-PASTEBIN_API_KEY="uh8QvO6vQJGtIug9WvjdTAPx_ZAFJAxn"
-
-# ====================== START/ALIVE/MENU ======================
-START_MSG="Senal MD V1 Connected ✅"
-ALIVE_IMG="https://files.catbox.moe/gm88nn.png"
-ALIVE_MSG="Hello 👋 I am Senal MD, made by Mr Senal 🪀"
-MENU_IMG="https://files.catbox.moe/gm88nn.png"
-MENU_MSG="Main Menu"
-MENU_MS="menu 2"
-
-# ====================== OPTIONAL ======================
-YTDL_NO_UPDATE=1
-YOUTUBE_DL_SKIP_PYTHON_CHECK=1
+  ytdlNoUpdate: process.env.YTDL_NO_UPDATE === "1",
+  youtubeDlSkipPythonCheck: process.env.YOUTUBE_DL_SKIP_PYTHON_CHECK === "1",
+};
