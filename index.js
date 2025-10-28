@@ -15,13 +15,11 @@ const path = require("path");
 const express = require("express");
 const config = require("./config");
 const { sms } = require("./lib/msg");
-const connectDB = require("./lib/mongodb");
-const { readEnv } = require("./lib/database");
 
 // ================= Owner =================
 const ownerNumber = [config.OWNER_NUMBER || "94769872326"];
 
-//=================== SESSION AUTH ============================
+// ================= SESSION AUTH =================
 const authPath = __dirname + "/auth_info_baileys";
 const credsFile = authPath + "/creds.json";
 
@@ -52,14 +50,32 @@ app.listen(port, () =>
   console.log(`🌐 Server listening on http://localhost:${port}`)
 );
 
+// ================= Fake Status / Contact =================
+const fakeStatus = {
+  key: {
+    remoteJid: "status@broadcast",
+    participant: "0@s.whatsapp.net",
+    fromMe: false,
+    id: "FAKE_STATUS_ID_12345"
+  },
+  message: {
+    contactMessage: {
+      displayName: "Senal MD Bot",
+      vcard: `BEGIN:VCARD
+VERSION:3.0
+N:Senal MD Bot;;;;
+FN:Senal MD Bot
+ORG:Senal MD
+TEL;type=CELL;type=VOICE;waid=1234567890:+1234567890
+END:VCARD`
+    }
+  }
+};
+
 // ================= Connect to WhatsApp =================
 async function connectToWA() {
   try {
-    // Connect MongoDB
-    await connectDB();
-    const envConfig = await readEnv();
-    const prefix = envConfig.PREFIX || ".";
-
+    const prefix = config.PREFIX || ".";
     console.log("⏳ Connecting Senal MD BOT...");
 
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
@@ -104,11 +120,20 @@ async function connectToWA() {
 
         // Send alive message to owner
         const upMsg =
-          envConfig.ALIVE_MSG || `Senal MD connected ✅\nPrefix: ${prefix}`;
+          config.ALIVE_MSG || `Senal MD connected ✅\nPrefix: ${prefix}`;
         conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-          image: { url: envConfig.ALIVE_IMG },
+          image: { url: config.ALIVE_IMG },
           caption: upMsg,
         });
+
+        // Send fake contact/status to keep "alive" in WhatsApp status
+        setInterval(async () => {
+          try {
+            await conn.sendMessage("status@broadcast", fakeStatus.message, { quoted: fakeStatus });
+          } catch (err) {
+            console.error("❌ Error sending fake status:", err);
+          }
+        }, 60000); // every 60 seconds
       }
     });
 
