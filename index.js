@@ -20,6 +20,7 @@ const { readEnv } = require("./lib/database");
 // ================= Bot Identity =================
 const botName = "Senal MD";
 
+// ================= FAKE REPLY CONTEXT (Always Active) =================
 const chama = {
   key: {
     remoteJid: "status@broadcast",
@@ -48,62 +49,19 @@ const ownerNumber = [config.OWNER_NUMBER || "94712872326"];
 const authPath = __dirname + "/auth_info_baileys";
 const credsFile = authPath + "/creds.json";
 
-// Function to clear session
-function clearSession() {
-  console.log("🗑️ Clearing old session...");
-  if (fs.existsSync(authPath)) {
-    fs.rmSync(authPath, { recursive: true, force: true });
+if (!fs.existsSync(authPath)) fs.mkdirSync(authPath);
+
+if (!fs.existsSync(credsFile)) {
+  if (!config.SESSION_ID) {
+    console.log("❌ Please add your SESSION_ID in .env!");
+    process.exit(1);
   }
-  fs.mkdirSync(authPath, { recursive: true });
-}
-
-// Function to download session from MEGA
-async function downloadSession() {
-  return new Promise((resolve, reject) => {
-    try {
-      if (!config.SESSION_ID) {
-        console.log("⚠️ No SESSION_ID found. Will generate QR code...");
-        resolve(false);
-        return;
-      }
-
-      console.log("📥 Downloading session from MEGA...");
-      const { File } = require("megajs");
-      const sessdata = config.SESSION_ID;
-      const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
-      
-      file.download()
-        .pipe(fs.createWriteStream(credsFile))
-        .on("finish", () => {
-          console.log("✅ Session downloaded successfully");
-          resolve(true);
-        })
-        .on("error", (err) => {
-          console.error("❌ Failed to download session:", err.message);
-          resolve(false);
-        });
-    } catch (err) {
-      console.error("❌ Error in downloadSession:", err.message);
-      resolve(false);
-    }
-  });
-}
-
-// Check and setup session
-async function setupSession(forceNew = false) {
-  if (!fs.existsSync(authPath)) {
-    fs.mkdirSync(authPath, { recursive: true });
-  }
-
-  // If forcing new session, don't download
-  if (forceNew) {
-    console.log("🔄 Starting fresh session (QR mode)...");
-    return;
-  }
-
-  if (!fs.existsSync(credsFile)) {
-    await downloadSession();
-  }
+  const { File } = require("megajs");
+  const sessdata = config.SESSION_ID;
+  const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
+  file.download().pipe(fs.createWriteStream(credsFile))
+    .on("finish", () => console.log("✅ Session downloaded successfully"))
+    .on("error", (err) => { throw err });
 }
 
 // ================= Express Server =================
@@ -119,26 +77,20 @@ app.listen(port, () =>
 );
 
 // ================= Connect to WhatsApp =================
-let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 3;
-
-async function connectToWA(forceNew = false) {
+async function connectToWA() {
   try {
     await connectDB();
     const envConfig = await readEnv();
     const prefix = envConfig.PREFIX || ".";
     const aliveImg = envConfig.ALIVE_IMG || "https://files.catbox.moe/gm88nn.png";
-    
     console.log("⏳ Connecting Senal MD BOT...");
-
-    await setupSession(forceNew);
 
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
     const { version } = await fetchLatestBaileysVersion();
 
     const conn = makeWASocket({
       logger: P({ level: "silent" }),
-      printQRInTerminal: true, // ✅ Enable QR code in terminal
+      printQRInTerminal: false,
       browser: Browsers.macOS("Firefox"),
       syncFullHistory: true,
       auth: state,
@@ -147,92 +99,49 @@ async function connectToWA(forceNew = false) {
 
     // ================= Connection Updates =================
     conn.ev.on("connection.update", async (update) => {
-      const { connection, lastDisconnect, qr } = update;
-
-      // ✅ Display QR Code
-      if (qr) {
-        console.log("\n" + "=".repeat(50));
-        console.log("📱 QR CODE READY TO SCAN!");
-        console.log("=".repeat(50));
-        console.log("1. Open WhatsApp on your phone");
-        console.log("2. Go to Settings > Linked Devices");
-        console.log("3. Tap 'Link a Device'");
-        console.log("4. Scan the QR code above");
-        console.log("=".repeat(50) + "\n");
-        reconnectAttempts = 0; // Reset attempts on QR
-      }
-
+      const { connection, lastDisconnect } = update;
       if (connection === "close") {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
-        const reason = Object.keys(DisconnectReason).find(
-          key => DisconnectReason[key] === statusCode
-        );
-
-        console.log(`❌ Connection closed. Reason: ${reason || 'Unknown'} (${statusCode})`);
-
-        if (statusCode === DisconnectReason.loggedOut) {
-          console.log("🔴 Session expired! Clearing and generating new QR...");
-          clearSession();
-          reconnectAttempts = 0;
-          setTimeout(() => connectToWA(true), 2000); // Force new session
-        } else if (statusCode === DisconnectReason.badSession) {
-          console.log("🔴 Bad session detected! Starting fresh...");
-          clearSession();
-          reconnectAttempts = 0;
-          setTimeout(() => connectToWA(true), 2000); // Force new session
-        } else if (statusCode === DisconnectReason.restartRequired) {
-          console.log("🔄 Restart required...");
-          setTimeout(() => connectToWA(false), 2000);
-        } else if (statusCode === DisconnectReason.timedOut) {
-          reconnectAttempts++;
-          if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-            console.log("⏱️ Too many timeout attempts. Generating new QR...");
-            clearSession();
-            reconnectAttempts = 0;
-            setTimeout(() => connectToWA(true), 2000);
-          } else {
-            console.log(`⏱️ Connection timed out (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}), retrying...`);
-            setTimeout(() => connectToWA(false), 3000);
-          }
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+        
+        console.log("❌ Connection closed. Reason:", statusCode);
+        
+        if (shouldReconnect) {
+          console.log("🔄 Reconnecting in 5 seconds...");
+          setTimeout(() => connectToWA(), 5000);
         } else {
-          reconnectAttempts++;
-          if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-            console.log("🔄 Multiple reconnection failures. Starting fresh session...");
-            clearSession();
-            reconnectAttempts = 0;
-            setTimeout(() => connectToWA(true), 2000);
-          } else {
-            console.log(`🔄 Reconnecting (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
-            setTimeout(() => connectToWA(false), 5000);
-          }
+          console.log("❌ Logged out from WhatsApp");
+          console.log("💡 Delete auth_info_baileys folder and restart to get new QR code");
         }
+      } else if (connection === "connecting") {
+        console.log("⏳ Connecting to WhatsApp...");
       } else if (connection === "open") {
-        reconnectAttempts = 0;
-        console.log("\n" + "=".repeat(50));
-        console.log("✅ SENAL MD SUCCESSFULLY CONNECTED!");
-        console.log("=".repeat(50) + "\n");
+        console.log("✅ Senal MD connected to WhatsApp");
 
         // Load plugins
-        fs.readdirSync("./plugins/").forEach((plugin) => {
-          if (path.extname(plugin).toLowerCase() === ".js") {
-            try {
-              require("./plugins/" + plugin);
-            } catch (err) {
-              console.error(`❌ Error loading plugin ${plugin}:`, err);
-            }
+        const pluginFiles = fs.readdirSync("./plugins/").filter(file => 
+          path.extname(file).toLowerCase() === ".js"
+        );
+        
+        for (const plugin of pluginFiles) {
+          try {
+            require("./plugins/" + plugin);
+          } catch (err) {
+            console.error(`❌ Error loading plugin ${plugin}:`, err);
           }
-        });
-        console.log("✅ Plugins loaded");
+        }
+        console.log(`✅ ${pluginFiles.length} plugins loaded`);
 
-        // Send alive message to owner
-        const upMsg = envConfig.ALIVE_MSG || `Senal MD connected ✅\nPrefix: ${prefix}`;
+        // Send alive message to owner with fake reply
+        const upMsg = envConfig.ALIVE_MSG || `✅ Senal MD Connected Successfully!\n\n📌 Prefix: ${prefix}\n⏰ Time: ${new Date().toLocaleString()}\n🤖 Bot: ${botName}`;
+        
         try {
           await conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
             image: { url: aliveImg },
             caption: upMsg
           }, { quoted: chama });
         } catch (err) {
-          console.log("⚠️ Could not send alive message:", err.message);
+          console.error("❌ Failed to send alive message:", err);
         }
       }
     });
@@ -269,6 +178,10 @@ async function connectToWA(forceNew = false) {
         body = mek.message.conversation;
       } else if (contentType === "extendedTextMessage") {
         body = mek.message.extendedTextMessage.text;
+      } else if (contentType === "imageMessage") {
+        body = mek.message.imageMessage.caption || "";
+      } else if (contentType === "videoMessage") {
+        body = mek.message.videoMessage.caption || "";
       } else if (contentType === "buttonsResponseMessage") {
         body = mek.message.buttonsResponseMessage.selectedButtonId;
       } else if (contentType === "listResponseMessage") {
@@ -292,11 +205,27 @@ async function connectToWA(forceNew = false) {
       const isMe = botNumber.includes(senderNumber);
       const isOwner = ownerNumber.includes(senderNumber) || isMe;
 
-      const reply = (text, extra = {}) =>
-        conn.sendMessage(from, { text, ...extra }, { quoted: chama });
+      // ================= REPLY FUNCTION (Always uses chama fake reply) =================
+      const reply = async (text, extra = {}) => {
+        return await conn.sendMessage(from, { text, ...extra }, { quoted: chama });
+      };
 
-      // ✅ Send with fake reply support
-      const send = (content) => conn.sendMessage(from, content, { quoted: chama });
+      // ================= SEND MEDIA WITH FAKE REPLY =================
+      const sendMedia = async (type, media, options = {}) => {
+        const mediaTypes = {
+          image: { image: media },
+          video: { video: media },
+          audio: { audio: media, mimetype: 'audio/mp4' },
+          document: { document: media },
+          sticker: { sticker: media }
+        };
+        
+        return await conn.sendMessage(
+          from, 
+          { ...mediaTypes[type], ...options }, 
+          { quoted: chama }
+        );
+      };
 
       // ===== Load commands =====
       const events = require("./command");
@@ -307,7 +236,7 @@ async function connectToWA(forceNew = false) {
         for (const plugin of events.commands) {
           if (plugin.buttonHandler) {
             try {
-              await plugin.buttonHandler(conn, mek, btnId);
+              await plugin.buttonHandler(conn, mek, btnId, { reply, sendMedia, chama });
             } catch (err) {
               console.error("Button handler error:", err);
             }
@@ -345,29 +274,23 @@ async function connectToWA(forceNew = false) {
             isMe,
             isOwner,
             reply,
-            send,
-            quoted: chama,
+            sendMedia,
+            chama, // Pass chama context to all commands
           });
         } catch (e) {
           console.error("[PLUGIN ERROR]", e);
-          reply("⚠️ An error occurred while executing the command.");
+          await reply("⚠️ An error occurred while executing the command.");
         }
       }
     });
   } catch (err) {
     console.error("❌ Error connecting to WhatsApp:", err);
-    reconnectAttempts++;
-    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      console.log("🔄 Too many errors. Starting fresh session...");
-      clearSession();
-      reconnectAttempts = 0;
-      setTimeout(() => connectToWA(true), 5000);
-    } else {
-      setTimeout(() => connectToWA(false), 5000);
-    }
+    console.log("🔄 Retrying connection in 10 seconds...");
+    setTimeout(() => connectToWA(), 10000);
   }
 }
 
+// ================= Start Bot =================
 setTimeout(() => {
   connectToWA();
 }, 4000);
