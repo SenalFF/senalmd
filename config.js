@@ -1,63 +1,58 @@
-// ====================== SENAL MD BOT CONFIG LOADER ======================
-
-require('dotenv').config();
+const fs = require("fs");
+require("dotenv").config();
 
 module.exports = {
-  botName: "Senal MD",
-  developer: "Mr Senal",
-  logo: "https://files.catbox.moe/gm88nn.png",
+  //==========================================- MAIN - CONFIGS -==================================================================
+  SESSION_ID: process.env.SESSION_ID || "fsQlkRLY#Acr4a8nNCjIFIprUqqE4umGn1tJDzvzoZdoChKyNsU8",
+  // ADD Your Session Id 
+  MONGODB: process.env.MONGODB || "mongodb+srv://senalmd:<sena1122>@cluster0.pukovzb.mongodb.net/",
+    // ADD Your MongoDB Database URL
+  PREFIX: process.env.PREFIX || ".",
+  // Add Your Custom Prefix 
+  mode: process.env.mode || "public",
+  // Add Your Bot Mode 
+  // private = Only Working For Owner Number
+  // public = AnyOne Working
+  // inbox = Only Working  Inbox
+  // groups = only working in group
+  OWNER_NUMBER: process.env.OWNER_NUMBER || "0769872326",
+  //========================================- OTHER - CONFIGS -=====================================================================
+  AUTO_VOICE: process.env.AUTO_VOICE || "true",
+  ANTI_BAD_WORDS_ENABLED: process.env.ANTI_BAD_WORDS_ENABLED || "true",
+  AUTO_READ_STATUS: process.env.AUTO_READ_STATUS || "true",
+  ANTI_BAD_WORDS: (process.env.ANTI_BAD_WORDS || "pakayo,huththo").split(','),
+  ANTI_LINK: process.env.ANTILINK || "true",
+  ALWAYS_ONLINE: process.env.ALWAYS_ONLINE || "false",
+  AUTO_READ_CMD: process.env.AUTO_READ_CMD || "true",
+  ALWAYS_TYPING: process.env.ALWAYS_TYPING || "true",
+  ALWAYS_RECORDING: process.env.ALWAYS_RECORDING || "true",
+  ANTI_BOT: process.env.ANTI_BOT || "true",
+  ANTI_DELETE: process.env.ANTI_DELETE || "true",
+  packname: process.env.packname || "Senal MD",
+  author: process.env.author || "ᴍr Senal🪀",
+  //==========================================- API-CONFIGS -==========================================================
+  OPENWEATHER_API_KEY: process.env.OPENWEATHER_API_KEY || "2d61a72574c11c4f36173b627f8cb177", //openweathermap.org
+  ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY || "sk_6438bcc100d96458f8de0602aec662f4ba14b905fd090ad3", //elevenlabs.io
+  SHODAN_API: process.env.SHODAN_API || "cbCkidr6qd7AFVaYs56MuCouGfM8gFki", //developer.shodan.io
+  PEXELS_API_KEY: process.env.PEXELS_API_KEY || "39WCzaHAX939xiH22NCddGGvzp7cgbu1VVjeYUaZXyHUaWlL1LFcVFxH", // pexels.com
+  OMDB_API_KEY: process.env.OMDB_API_KEY || "76cb7f39", // omdbapi.com
+  PIXABAY_API_KEY: process.env.PIXABAY_API_KEY || "23378594-7bd620160396da6e8d2ed4d53", // pixabay.com
+  ZIPCODEBASE_API_KEY: process.env.ZIPCODEBASE_API_KEY || "0f94a5f0-6ea4-11ef-81da-579be4fb031c", // zipcodebase.com
+  GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || "AIzaSyD93IeJsouK51zjKgyHAwBIAlqr-a8mnME", 
+  GOOGLE_CX: process.env.GOOGLE_CX || "AIzaSyD93IeJsouK51zjKgyHAwBIAlqr-a8mnME", 
+  PASTEBIN_API_KEY: process.env.PASTEBIN_API_KEY || "uh8QvO6vQJGtIug9WvjdTAPx_ZAFJAxn",
 
-  sessionId: process.env.SESSION_ID,
-  mongodburi: process.env.MONGODB_URI,
-  prefix: process.env.PREFIX || ".",
-  mode: process.env.MODE || "public",
-  ownerNumber: process.env.OWNER_NUMBER || "94769872326",
- 
-  // MEGA credentials
-  megaEmail: process.env.MEGA_EMAIL,
-  megaPassword: process.env.MEGA_PASSWORD,
-  mega_session_url: process.env.MEGA_SESSION_URL,
+
+//------------------------------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------------------------------
+
   
-  // Features
-  autoVoice: process.env.AUTO_VOICE === "true",
-  antiBadWordsEnabled: process.env.ANTI_BAD_WORDS_ENABLED === "true",
-  autoReadStatus: process.env.AUTO_READ_STATUS === "true",
-  antiBadWords: (process.env.ANTI_BAD_WORDS || "").split(","),
-  antiLink: process.env.ANTILINK === "true",
-  alwaysOnline: process.env.ALWAYS_ONLINE === "true",
-  autoReadCmd: process.env.AUTO_READ_CMD === "true",
-  alwaysTyping: process.env.ALWAYS_TYPING === "true",
-  alwaysRecording: process.env.ALWAYS_RECORDING === "true",
-  antiBot: process.env.ANTI_BOT === "true",
-  antiDelete: process.env.ANTI_DELETE === "true",
+  START_MSG: process.env.START_MSG || `SENAL-MD V1 Conected` ,
 
-  packname: process.env.PACKNAME,
-  author: process.env.AUTHOR,
+  ALIVE_IMG: process.env.ALIVE_IMG || "https://files.catbox.moe/gm88nn.png",
+  MENU_IMG: process.env.MENU_IMG || "https://files.catbox.moe/gm88nn.png",
+  MENU_MSG: process.env.MENU_MSG || `Menumsg`,
+    MENU_MS: process.env.MENU_MS || `menu 2`,
 
-  // APIs
-  apiKeys: {
-    openWeather: process.env.OPENWEATHER_API_KEY,
-    elevenLabs: process.env.ELEVENLABS_API_KEY,
-    shodan: process.env.SHODAN_API,
-    pexels: process.env.PEXELS_API_KEY,
-    omdb: process.env.OMDB_API_KEY,
-    pixabay: process.env.PIXABAY_API_KEY,
-    zipcodebase: process.env.ZIPCODEBASE_API_KEY,
-    google: process.env.GOOGLE_API_KEY,
-    googleCx: process.env.GOOGLE_CX,
-    pastebin: process.env.PASTEBIN_API_KEY,
-  },
-
-  // Messages
-  messages: {
-    start: process.env.START_MSG,
-    aliveImage: process.env.ALIVE_IMG,
-    aliveMessage: process.env.ALIVE_MSG,
-    menuImage: process.env.MENU_IMG,
-    menuMessage: process.env.MENU_MSG,
-    menuCmd: process.env.MENU_MS,
-  },
-
-  ytdlNoUpdate: process.env.YTDL_NO_UPDATE === "1",
-  youtubeDlSkipPythonCheck: process.env.YOUTUBE_DL_SKIP_PYTHON_CHECK === "1",
 };
