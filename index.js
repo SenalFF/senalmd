@@ -1,4 +1,5 @@
 // ================= Required Modules =================
+require("dotenv").config();
 const {
   default: makeWASocket,
   useMultiFileAuthState,
