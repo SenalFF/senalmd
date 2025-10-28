@@ -32,27 +32,31 @@ if (!fs.existsSync(__dirname + '/auth_info_baileys')) {
 //===================SESSION-AUTH============================
 if (!fs.existsSync(__dirname + '/auth_info_baileys/creds.json')) {
     if (!config.SESSION_ID) {
-        console.log('Please add your session to SESSION_ID env!!');
+        console.log('❌ SESSION_ID not found in environment variables!');
+        console.log('Please add SESSION_ID to your .env file');
         process.exit(1);
     }
     const sessdata = config.SESSION_ID;
     try {
+        console.log('Downloading session from MEGA...');
         const filer = File.fromURL(`https://mega.nz/file/${sessdata}`);
         filer.download((err, data) => {
             if (err) {
-                console.error('Failed to download session:', err);
+                console.error('❌ Failed to download session:', err.message);
+                console.log('\n⚠️  Your SESSION_ID might be invalid or expired.');
+                console.log('Please generate a new session using session-generator.js');
                 process.exit(1);
             }
             fs.writeFile(__dirname + '/auth_info_baileys/creds.json', data, (writeErr) => {
                 if (writeErr) {
-                    console.error('Failed to write session file:', writeErr);
+                    console.error('❌ Failed to write session file:', writeErr);
                     process.exit(1);
                 }
-                console.log("Session downloaded ✅");
+                console.log("✅ Session downloaded successfully");
             });
         });
     } catch (error) {
-        console.error('Error setting up session download:', error);
+        console.error('❌ Error setting up session download:', error.message);
         process.exit(1);
     }
 }
@@ -61,70 +65,128 @@ const express = require("express");
 const app = express();
 const port = process.env.PORT || 8000;
 
+// Track reconnection attempts
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+
 //=============================================
 
 async function connectToWA() {
     try {
-        console.log("Connecting Senal MD BOT ⏳️...");
+        console.log("🔄 Connecting Senal MD BOT...");
         const { state, saveCreds } = await useMultiFileAuthState(__dirname + '/auth_info_baileys/');
         var { version } = await fetchLatestBaileysVersion();
 
         const conn = makeWASocket({
             logger: P({ level: 'silent' }),
             printQRInTerminal: false,
-            browser: Browsers.macOS("Firefox"),
-            syncFullHistory: true,
+            browser: Browsers.ubuntu('Chrome'),
+            syncFullHistory: false, // Changed to false for better performance
             auth: state,
-            version
+            version,
+            getMessage: async (key) => {
+                return { conversation: 'hello' }
+            }
         });
 
         conn.ev.on('connection.update', async (update) => {
-            const { connection, lastDisconnect } = update;
+            const { connection, lastDisconnect, qr } = update;
+            
+            // Handle QR Code
+            if (qr) {
+                console.log('\n⚠️  QR Code detected! Scan with WhatsApp:');
+                qrcode.generate(qr, { small: true });
+            }
             
             if (connection === 'close') {
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
-                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+                const errorReason = lastDisconnect?.error?.data?.reason;
                 
-                console.log('Connection closed. Status code:', statusCode);
-                console.log('Reason:', lastDisconnect?.error);
+                console.log('❌ Connection closed');
+                console.log('Status Code:', statusCode);
+                console.log('Reason:', lastDisconnect?.error?.message);
                 
-                if (shouldReconnect) {
-                    console.log('Reconnecting in 5 seconds...');
-                    setTimeout(() => {
-                        connectToWA();
-                    }, 5000);
-                } else {
-                    console.log('Logged out. Please scan QR code again or update SESSION_ID.');
+                // Handle 405 Error - Invalid/Expired Session
+                if (statusCode === 405 || errorReason === '405') {
+                    console.log('\n⚠️  ERROR 405: Session Invalid or Expired!');
+                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    console.log('Your WhatsApp session is no longer valid.');
+                    console.log('\nSOLUTIONS:');
+                    console.log('1. Delete auth_info_baileys folder');
+                    console.log('2. Generate new session with session-generator.js');
+                    console.log('3. Upload new creds.json to MEGA');
+                    console.log('4. Update SESSION_ID in .env');
+                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+                    
+                    // Stop reconnection attempts for 405 errors
+                    console.log('🛑 Stopping bot. Please fix the session issue.');
+                    process.exit(1);
                 }
+                
+                // Handle Logged Out
+                if (statusCode === DisconnectReason.loggedOut) {
+                    console.log('⚠️  Logged out from WhatsApp. Please scan QR code again.');
+                    // Delete old session
+                    if (fs.existsSync(__dirname + '/auth_info_baileys')) {
+                        fs.rmSync(__dirname + '/auth_info_baileys', { recursive: true });
+                        console.log('Old session deleted. Restart bot to scan new QR.');
+                    }
+                    process.exit(1);
+                }
+                
+                // Handle other disconnections with retry limit
+                reconnectAttempts++;
+                if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+                    console.log(`❌ Max reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached.`);
+                    console.log('Please check your session and restart manually.');
+                    process.exit(1);
+                }
+                
+                console.log(`🔄 Reconnecting... (Attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+                setTimeout(() => {
+                    connectToWA();
+                }, 5000);
+                
             } else if (connection === 'open') {
-                console.log('🧬 Installing plugins...');
+                reconnectAttempts = 0; // Reset counter on successful connection
+                console.log('✅ Connected to WhatsApp!');
+                console.log('🧬 Loading plugins...');
                 const path = require('path');
                 
                 try {
                     if (fs.existsSync("./plugins/")) {
-                        fs.readdirSync("./plugins/").forEach((plugin) => {
-                            if (path.extname(plugin).toLowerCase() == ".js") {
+                        const plugins = fs.readdirSync("./plugins/");
+                        plugins.forEach((plugin) => {
+                            if (path.extname(plugin).toLowerCase() === ".js") {
                                 require("./plugins/" + plugin);
                             }
                         });
-                        console.log('Plugins installed successfully ✅');
+                        console.log(`✅ Loaded ${plugins.length} plugin(s)`);
                     } else {
-                        console.log('No plugins directory found. Skipping plugin installation.');
+                        console.log('⚠️  No plugins directory found');
                     }
                     
-                    console.log('Bot connected to WhatsApp ✅');
+                    console.log('✅ Bot is ready!');
+                    console.log(`📱 Prefix: ${prefix}`);
 
-                    let up = `Senal-MD connected successfully ✅\n\nPREFIX: ${prefix}`;
+                    const startupMsg = `╔═══════════════════════╗
+║   SENAL-MD STARTED    ║
+╚═══════════════════════╝
+
+✅ Status: Online
+⚡ Prefix: ${prefix}
+📅 Date: ${new Date().toLocaleString()}
+
+Bot is ready to receive commands!`;
 
                     conn.sendMessage(ownerNumber + "@s.whatsapp.net", { 
-                        image: { url: `https://files.catbox.moe/gm88nn.png` }, 
-                        caption: up 
-                    }).catch(err => console.log('Failed to send startup message:', err));
+                        text: startupMsg
+                    }).catch(err => console.log('⚠️  Could not send startup message:', err.message));
                 } catch (err) {
-                    console.error('Error during initialization:', err);
+                    console.error('❌ Error during initialization:', err);
                 }
             } else if (connection === 'connecting') {
-                console.log('Connecting to WhatsApp...');
+                console.log('⏳ Connecting to WhatsApp servers...');
             }
         });
 
@@ -184,7 +246,7 @@ async function connectToWA() {
                     ? (events.commands.find(c => c.pattern === commandText) || events.commands.find(c => c.alias && c.alias.includes(commandText))) 
                     : null;
 
-                // Number command logic: commands triggered by exact number text (like "1", "2", etc)
+                // Number command logic
                 const numberCmd = events.commands.find(c => c.on === 'number' && c.pattern === body);
 
                 // Handle command (prefix commands)
@@ -195,30 +257,30 @@ async function connectToWA() {
                     try {
                         await cmd.function(conn, mek, m, { from, quoted, body, isCmd, command: commandText, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
                     } catch (e) {
-                        console.error("[PLUGIN ERROR] " + e);
+                        console.error("[PLUGIN ERROR]", e);
                         reply("⚠️ An error occurred while executing the command.");
                     }
-                    return; // Command handled, exit
+                    return;
                 }
 
-                // Handle number command (no prefix, exact message number)
+                // Handle number command
                 if (numberCmd) {
                     try {
                         await numberCmd.function(conn, mek, m, { from, quoted, body, isCmd: false, command: numberCmd.pattern, args: [], q: '', isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
                     } catch (e) {
-                        console.error("[NUMBER CMD ERROR] " + e);
+                        console.error("[NUMBER CMD ERROR]", e);
                         reply("⚠️ An error occurred while executing the number command.");
                     }
-                    return; // Number command handled, exit
+                    return;
                 }
 
-                // Handle "body" type commands (commands triggered by matching body in any message)
+                // Handle "body" type commands
                 events.commands.map(async (command) => {
                     if (body && command.on === "body") {
                         try {
                             await command.function(conn, mek, m, { from, quoted, body, isCmd, command: command.pattern, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply });
                         } catch (e) {
-                            console.error("[BODY CMD ERROR] " + e);
+                            console.error("[BODY CMD ERROR]", e);
                         }
                     }
                 });
@@ -227,8 +289,15 @@ async function connectToWA() {
             }
         });
     } catch (error) {
-        console.error('Error in connectToWA:', error);
-        console.log('Retrying connection in 10 seconds...');
+        console.error('❌ Fatal error in connectToWA:', error);
+        reconnectAttempts++;
+        
+        if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+            console.log('❌ Too many errors. Stopping bot.');
+            process.exit(1);
+        }
+        
+        console.log('🔄 Retrying in 10 seconds...');
         setTimeout(() => {
             connectToWA();
         }, 10000);
@@ -236,10 +305,10 @@ async function connectToWA() {
 }
 
 app.get("/", (req, res) => {
-    res.send("Hey, Senal started✅");
+    res.send("✅ Senal-MD is running!");
 });
 
-app.listen(port, () => console.log(`Server listening on port http://localhost:${port}`));
+app.listen(port, () => console.log(`🌐 Server listening on port http://localhost:${port}`));
 
 setTimeout(() => {
     connectToWA();
