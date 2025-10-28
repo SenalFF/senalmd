@@ -34,6 +34,7 @@ const aliveMsg = config.ALIVE_MSG || "";
 const USE_PAIRING_CODE = config.USE_PAIRING_CODE === "true" || false;
 const PAIRING_NUMBER = config.PAIRING_NUMBER || "";
 const MEGA_SESSION_URL = config.MEGA_SESSION_URL || process.env.MEGA_SESSION_URL || "";
+const SESSION_JSON = config.SESSION_JSON || process.env.SESSION_JSON || "";
 
 // ================= FAKE REPLY CONTEXT (Always Active) =================
 const chama = {
@@ -421,6 +422,30 @@ async function checkMegaSetup() {
 }
 
 // ================= Session Helper Functions =================
+function createSessionFromJSON(jsonData) {
+  try {
+    console.log('📝 Creating session from JSON credentials...');
+    
+    // Ensure auth folder exists
+    if (!fs.existsSync(authPath)) {
+      fs.mkdirSync(authPath, { recursive: true });
+    }
+    
+    // Parse JSON if it's a string
+    const credsData = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
+    
+    // Write creds.json
+    const credsPath = path.join(authPath, 'creds.json');
+    fs.writeFileSync(credsPath, JSON.stringify(credsData, null, 2));
+    
+    console.log('✅ Session credentials saved to auth_info_baileys/creds.json');
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to create session from JSON:', error.message);
+    return false;
+  }
+}
+
 function isSessionValid() {
   try {
     const credsPath = path.join(authPath, "creds.json");
@@ -601,6 +626,23 @@ async function connectToWA() {
     clearConnectionTimeout(); // Clear any pending reconnection
     
     console.log(`\n🔌 Connection attempt #${reconnectAttempts + 1}`);
+    
+    // ================= Check for SESSION_JSON =================
+    if (SESSION_JSON && !isSessionValid()) {
+      console.log('\n' + '='.repeat(60));
+      console.log('🔑 SESSION_JSON DETECTED');
+      console.log('='.repeat(60));
+      
+      const sessionCreated = createSessionFromJSON(SESSION_JSON);
+      if (sessionCreated) {
+        console.log('✅ Session created from JSON credentials');
+        console.log('🔄 Proceeding to connect...');
+        console.log('='.repeat(60) + '\n');
+      } else {
+        console.log('⚠️ Failed to create session from JSON');
+        console.log('='.repeat(60) + '\n');
+      }
+    }
     
     // ================= MEGA AUTO-SYNC =================
     if (megaManager) {
