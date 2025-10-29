@@ -32,12 +32,43 @@ if (!fs.existsSync(credsFile)) {
     console.log("❌ Please add your SESSION_ID in .env!");
     process.exit(1);
   }
+  
   const { File } = require("megajs");
   const sessdata = config.SESSION_ID;
-  const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
-  file.download().pipe(fs.createWriteStream(credsFile))
-    .on("finish", () => console.log("✅ Session downloaded successfully"))
-    .on("error", (err) => { throw err });
+  
+  // Validate SESSION_ID format
+  if (!sessdata.includes("#")) {
+    console.log("❌ Invalid SESSION_ID format!");
+    console.log("SESSION_ID should be in format: FILE_ID#HASH_KEY");
+    console.log("Example: AbC123dEf#XyZ789-encryption-key");
+    process.exit(1);
+  }
+  
+  try {
+    // Construct proper MEGA URL with hash
+    const megaUrl = `https://mega.nz/file/${sessdata}`;
+    console.log("📥 Downloading session from MEGA...");
+    
+    const file = File.fromURL(megaUrl);
+    
+    file.download()
+      .pipe(fs.createWriteStream(credsFile))
+      .on("finish", () => {
+        console.log("✅ Session downloaded successfully");
+      })
+      .on("error", (err) => {
+        console.error("❌ Error downloading session:", err.message);
+        // Clean up partial file if download failed
+        if (fs.existsSync(credsFile)) {
+          fs.unlinkSync(credsFile);
+        }
+        process.exit(1);
+      });
+  } catch (err) {
+    console.error("❌ Error loading session from MEGA:", err.message);
+    console.log("Make sure your SESSION_ID includes the hash key (format: FILE_ID#HASH_KEY)");
+    process.exit(1);
+  }
 }
 
 // ================= Express Server =================
