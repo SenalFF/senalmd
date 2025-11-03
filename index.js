@@ -6,7 +6,7 @@ const {
     getContentType,
     fetchLatestBaileysVersion,
     Browsers
-} = require('baileys');
+} = require("baileys");
 const { getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson } = require('./lib/functions');
 const fs = require('fs');
 const P = require('pino');
