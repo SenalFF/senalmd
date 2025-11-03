@@ -15,8 +15,6 @@ const path = require("path");
 const express = require("express");
 const config = require("./config");
 const { sms } = require("./lib/msg");
-const connectDB = require("./lib/mongodb");
-const { readEnv } = require("./lib/database");
 
 // ================= Owner =================
 const ownerNumber = [config.OWNER_NUMBER || "94769872326"];
@@ -86,9 +84,7 @@ app.listen(port, () =>
 // ================= Connect to WhatsApp =================
 async function connectToWA() {
   try {
-    // Connect MongoDB
-    await connectDB();
-    const envConfig = await readEnv();
+
     const prefix = envConfig.PREFIX || ".";
 
     console.log("⏳ Connecting Senal MD BOT...");
