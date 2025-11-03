@@ -1,6 +1,6 @@
 {
   "name": "SENAL-MD-V1",
-  "description": "Javascript WhatsApp bot made by Malvin Tech",
+  "description": "Javascript WhatsApp bot made by Senal ",
   "logo": "https://files.catbox.moe/gm88nn.png",
   "keywords": ["bot"],
   "success_url": "/",
@@ -9,7 +9,7 @@
     "SESSION_ID": {
       "description": "Put the session-id here.",
       "required": true,
-      "default": "94313ab33b32c755"
+      "default": "nxAiwBRY#QeigCtYDxOx8T-4sYpNzZZ_JRvRVg6d3X1SKVP7EzOI"
     },
     "MONGODB": {
       "description": "Put your MongoDB Database URL here.",
