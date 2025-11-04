@@ -6,7 +6,7 @@ const {
     getContentType,
     fetchLatestBaileysVersion,
     Browsers
-} = require("@whiskeysockets/baileys");
+} = require('@whiskeysockets/baileys');
 const { getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson } = require('./lib/functions');
 const fs = require('fs');
 const P = require('pino');
@@ -22,15 +22,22 @@ const ownerNumber = ['94769872326'];
 
 //===================SESSION-AUTH============================
 if (!fs.existsSync(__dirname + '/auth_info_baileys/creds.json')) {
-    if (!config.SESSION_ID) return console.log('Please add your session to SESSION_ID env!!');
-    const sessdata = config.SESSION_ID;
-    const filer = File.fromURL(`https://mega.nz/file/${sessdata}`);
-    filer.download((err, data) => {
-        if (err) throw err;
-        fs.writeFile(__dirname + '/auth_info_baileys/creds.json', data, () => {
-            console.log("Session downloaded ✅");
+    if (config.SESSION_ID) {
+        console.log('Downloading session from Mega.nz...');
+        const sessdata = config.SESSION_ID;
+        const filer = File.fromURL(`https://mega.nz/file/${sessdata}`);
+        filer.download((err, data) => {
+            if (err) {
+                console.log('Failed to download session, will use QR code instead');
+                return;
+            }
+            fs.writeFile(__dirname + '/auth_info_baileys/creds.json', data, () => {
+                console.log("Session downloaded âœ…");
+            });
         });
-    });
+    } else {
+        console.log('No SESSION_ID found, will use QR code for authentication');
+    }
 }
 
 const express = require("express");
@@ -40,13 +47,13 @@ const port = process.env.PORT || 8000;
 //=============================================
 
 async function connectToWA() {
-    console.log("Connecting Senal MD BOT ⏳️...");
+    console.log("Connecting Senal MD BOT â³ï¸...");
     const { state, saveCreds } = await useMultiFileAuthState(__dirname + '/auth_info_baileys/');
     var { version } = await fetchLatestBaileysVersion();
 
     const conn = makeWASocket({
         logger: P({ level: 'silent' }),
-        printQRInTerminal: false,
+        printQRInTerminal: true,
         browser: Browsers.macOS("Firefox"),
         syncFullHistory: true,
         auth: state,
@@ -60,17 +67,17 @@ async function connectToWA() {
                 connectToWA();
             }
         } else if (connection === 'open') {
-            console.log('🧬 Installing');
+            console.log('ðŸ§¬ Installing');
             const path = require('path');
             fs.readdirSync("./plugins/").forEach((plugin) => {
                 if (path.extname(plugin).toLowerCase() == ".js") {
                     require("./plugins/" + plugin);
                 }
             });
-            console.log('Plugins installed successfully ✅');
-            console.log('Bot connected to WhatsApp ✅');
+            console.log('Plugins installed successfully âœ…');
+            console.log('Bot connected to WhatsApp âœ…');
 
-            let up = `Senal-MD connected successfully ✅\n\nPREFIX: ${prefix}`;
+            let up = `Senal-MD connected successfully âœ…\n\nPREFIX: ${prefix}`;
 
             conn.sendMessage(ownerNumber + "@s.whatsapp.net", { image: { url: `https://files.catbox.moe/gm88nn.png` }, caption: up });
         }
@@ -139,9 +146,9 @@ async function connectToWA() {
 }
 
 app.get("/", (req, res) => {
-    res.send("Hey, Senal started✅");
+    res.send("Hey, Senal startedâœ…");
 });
-app.listen(port, () => console.log(`Server listening on port http://localhost:${port}`));
+app.listen(port, "localhost", () => console.log(`Server listening on port http://localhost:${port}`));
 setTimeout(() => {
     connectToWA();
 }, 4000);
