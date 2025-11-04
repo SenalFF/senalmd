@@ -18,7 +18,6 @@ const util = require('util');
 const { sms, downloadMediaMessage } = require('./lib/msg');
 const axios = require('axios');
 const { File } = require('megajs');
-const { Boom } = require('@hapi/boom');
 const prefix = '.';
 
 const ownerNumber = ['94769872326'];
@@ -132,9 +131,11 @@ async function connectToWA() {
             const { connection, lastDisconnect } = update;
             
             if (connection === 'close') {
-                const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+                const statusCode = lastDisconnect?.error?.output?.statusCode;
+                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 
-                console.log('⚠️ Connection closed due to:', lastDisconnect?.error);
+                console.log('⚠️ Connection closed. Status code:', statusCode);
+                console.log('Error:', lastDisconnect?.error?.message || 'Unknown error');
                 
                 if (shouldReconnect) {
                     console.log('🔄 Attempting to reconnect...');
