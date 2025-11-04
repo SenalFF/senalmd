@@ -23,24 +23,23 @@ const ownerNumber = [config.OWNER_NUMBER || "94769872326"];
 
 // ================= Bot Info =================
 const botName = "Senal MD";
+
+// ✅ Correct VCARD Contact Message
 const chama = {
-  key: {
-    remoteJid: "status@broadcast",
-    participant: "0@s.whatsapp.net",
-    fromMe: false,
-    id: "META_AI_FAKE_ID_TS",
-  },
-  message: {
-    contactMessage: {
-      displayName: botName,
-      vcard: `BEGIN:VCARD
+  contacts: {
+    displayName: botName,
+    contacts: [
+      {
+        displayName: botName,
+        vcard: `BEGIN:VCARD
 VERSION:3.0
 N:${botName};;;;
 FN:${botName}
 ORG:Meta Platforms
 TEL;type=CELL;type=VOICE;waid=13135550002:+1 313 555 0002
 END:VCARD`,
-    },
+      },
+    ],
   },
 };
 
@@ -58,18 +57,22 @@ if (!fs.existsSync(credsFile)) {
   const { File } = require("megajs");
   const sessdata = config.SESSION_ID;
   const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
-  file.download().pipe(fs.createWriteStream(credsFile))
+  file
+    .download()
+    .pipe(fs.createWriteStream(credsFile))
     .on("finish", () => console.log("✅ Session downloaded successfully"))
-    .on("error", (err) => { throw err });
+    .on("error", (err) => {
+      throw err;
+    });
 }
 
 // ================= Express Server =================
 const app = express();
 const port = process.env.PORT || 8000;
-
-app.get("/", (req, res) => res.send("Hey, Senal MD started ✅"));
-
-app.listen(port, () => console.log(`🌐 Server listening on http://localhost:${port}`));
+app.get("/", (req, res) => res.send("🌐 Senal MD is alive and running ✅"));
+app.listen(port, () =>
+  console.log(`🚀 Server running on http://localhost:${port}`)
+);
 
 // ================= Connect to WhatsApp =================
 async function connectToWA() {
@@ -96,7 +99,10 @@ async function connectToWA() {
     conn.ev.on("connection.update", (update) => {
       const { connection, lastDisconnect } = update;
       if (connection === "close") {
-        if (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut) {
+        const shouldReconnect =
+          lastDisconnect?.error?.output?.statusCode !==
+          DisconnectReason.loggedOut;
+        if (shouldReconnect) {
           console.log("🔄 Reconnecting...");
           connectToWA();
         } else {
@@ -105,20 +111,24 @@ async function connectToWA() {
       } else if (connection === "open") {
         console.log("✅ Bot connected to WhatsApp");
 
-        // Load plugins
+        // Load plugins dynamically
         fs.readdirSync("./plugins/").forEach((plugin) => {
           if (path.extname(plugin).toLowerCase() === ".js") {
             try {
               require("./plugins/" + plugin);
+              console.log(`🧩 Loaded plugin: ${plugin}`);
             } catch (err) {
               console.error(`❌ Error loading plugin ${plugin}:`, err);
             }
           }
         });
-        console.log("✅ Plugins loaded");
 
-        // Send alive message with contact to owner
-        const upMsg = envConfig.ALIVE_MSG || `Senal MD connected ✅\nPrefix: ${prefix}`;
+        console.log("✅ All plugins loaded successfully");
+
+        // ======= Alive Message to Owner =======
+        const upMsg =
+          envConfig.ALIVE_MSG ||
+          `Senal MD connected successfully ✅\nPrefix: ${prefix}`;
         const aliveImg = envConfig.ALIVE_IMG || null;
 
         if (aliveImg) {
@@ -130,8 +140,8 @@ async function connectToWA() {
           conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { text: upMsg });
         }
 
-        // Send Senal MD contact to owner
-        conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", chama.message);
+        // ✅ Send Bot Contact Info to Owner
+        conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", chama);
       }
     });
 
@@ -142,13 +152,12 @@ async function connectToWA() {
       mek = mek.messages[0];
       if (!mek?.message) return;
 
-      // Handle ephemeral messages
       mek.message =
         getContentType(mek.message) === "ephemeralMessage"
           ? mek.message.ephemeralMessage.message
           : mek.message;
 
-      // Auto-read status updates
+      // Auto-read status if enabled
       if (
         mek.key &&
         mek.key.remoteJid === "status@broadcast" &&
@@ -166,9 +175,12 @@ async function connectToWA() {
       const contentType = getContentType(mek.message);
 
       if (contentType === "conversation") body = mek.message.conversation;
-      else if (contentType === "extendedTextMessage") body = mek.message.extendedTextMessage.text;
-      else if (contentType === "buttonsResponseMessage") body = mek.message.buttonsResponseMessage.selectedButtonId;
-      else if (contentType === "listResponseMessage") body = mek.message.listResponseMessage.singleSelectReply.selectedRowId;
+      else if (contentType === "extendedTextMessage")
+        body = mek.message.extendedTextMessage.text;
+      else if (contentType === "buttonsResponseMessage")
+        body = mek.message.buttonsResponseMessage.selectedButtonId;
+      else if (contentType === "listResponseMessage")
+        body = mek.message.listResponseMessage.singleSelectReply.selectedRowId;
 
       const isCmd = body.startsWith(prefix);
       const commandText = isCmd
@@ -190,10 +202,10 @@ async function connectToWA() {
       const reply = (text, extra = {}) =>
         conn.sendMessage(from, { text, ...extra }, { quoted: mek });
 
-      // ===== Load commands =====
+      // ===== Load Commands =====
       const events = require("./command");
 
-      // ===== BUTTON HANDLER (GLOBAL SAFE) =====
+      // ===== Button Handler =====
       if (contentType === "buttonsResponseMessage") {
         const btnId = mek.message.buttonsResponseMessage.selectedButtonId;
         for (const plugin of events.commands) {
@@ -207,18 +219,22 @@ async function connectToWA() {
         }
       }
 
-      // ===== COMMAND EXECUTION =====
+      // ===== Command Execution =====
       const cmd = events.commands.find((c) => {
         if (!c.pattern) return false;
         if (c.pattern.toLowerCase() === commandText) return true;
-        if (c.alias && c.alias.map((a) => a.toLowerCase()).includes(commandText)) return true;
+        if (c.alias && c.alias.map((a) => a.toLowerCase()).includes(commandText))
+          return true;
         return false;
       });
 
       if (cmd) {
         if (cmd.react) {
-          await conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
+          await conn.sendMessage(from, {
+            react: { text: cmd.react, key: mek.key },
+          });
         }
+
         try {
           await cmd.function(conn, mek, m, {
             from,
@@ -248,5 +264,5 @@ async function connectToWA() {
   }
 }
 
-// Start bot after 4 seconds
+// Start bot after short delay
 setTimeout(() => connectToWA(), 4000);
