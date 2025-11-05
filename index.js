@@ -1,190 +1,156 @@
-// main.js
-// ======================= SENAL MD BOT ======================= //
+// ================== SENAL-MD BOT MAIN SCRIPT ==================
 const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
-  jidNormalizedUser,
   getContentType,
   fetchLatestBaileysVersion,
   Browsers
-} = require('@whiskeysockets/baileys');
+} = require("@whiskeysockets/baileys");
 
-const { getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson } = require('./lib/functions');
-const fs = require('fs');
-const P = require('pino');
-const config = require('./config');
-const qrcode = require('qrcode-terminal');
-const util = require('util');
-const { sms, downloadMediaMessage } = require('./lib/msg');
-const axios = require('axios');
-const { File } = require('megajs');
-const express = require('express');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
+const P = require("pino");
+const express = require("express");
+
 const app = express();
-const prefix = config.PREFIX || '.';
-const port = process.env.PORT || 8000;
+const port = process.env.PORT || 3000;
 
-const ownerNumber = [config.OWNER_NUMBER];
+app.get("/", (req, res) => res.send("✅ SENAL-MD BOT IS RUNNING"));
+app.listen(port, () => console.log(`🌐 Express running on port ${port}`));
 
-// command handler module (exports cmd, commands, loadPlugins)
-const commandHandler = require('./command');
+// ================== GLOBAL SETTINGS ==================
+const prefix = ".";
+const ownerNumber = ["94769872326"]; // <== your WhatsApp number
+const sessionName = "SENAL-MD";
 
-// ================== SESSION AUTH =====================
-const sessionFolder = path.join(__dirname, 'auth_info_baileys');
-const credsPath = path.join(sessionFolder, 'creds.json');
+// ================== LOAD PLUGINS ==================
+const commands = [];
+const pluginFolder = path.join(__dirname, "plugins");
 
-(async () => {
-  if (!fs.existsSync(sessionFolder)) fs.mkdirSync(sessionFolder, { recursive: true });
-
-  if (!fs.existsSync(credsPath)) {
-    if (config.SESSION_ID && config.SESSION_ID.includes('#')) {
-      console.log('🌀 Downloading session from MEGA.nz...');
-      try {
-        const file = File.fromURL(`https://mega.nz/file/${config.SESSION_ID}`);
-        const data = await file.downloadBuffer();
-        fs.writeFileSync(credsPath, data);
-        console.log('✅ Session downloaded successfully.');
-      } catch (e) {
-        console.error('❌ Failed to download session:', e.message || e);
-        console.log('Please scan the QR code to create a new session.');
-      }
-    } else if (config.SESSION_ID && config.SESSION_ID.length > 50) {
-      console.log('🧩 Using inline SESSION_ID...');
-      fs.writeFileSync(credsPath, Buffer.from(config.SESSION_ID, 'utf-8'));
-    } else {
-      console.log('⚠️ No valid SESSION_ID found. QR code will be displayed.');
+fs.readdirSync(pluginFolder).forEach(file => {
+  if (file.endsWith(".js")) {
+    const plugin = require(path.join(pluginFolder, file));
+    if (plugin.pattern && typeof plugin.function === "function") {
+      commands.push(plugin);
+      console.log(`✅ Loaded plugin: ${file}`);
     }
   }
+});
 
-  // ================== WHATSAPP CONNECTION =====================
-  async function connectToWA() {
-    console.log('⏳ Connecting to WhatsApp...');
-    const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
-    const { version } = await fetchLatestBaileysVersion();
+// ================== MAIN FUNCTION ==================
+async function startSenalMD() {
+  const { state, saveCreds } = await useMultiFileAuthState(sessionName);
+  const { version } = await fetchLatestBaileysVersion();
 
-    const conn = makeWASocket({
-      logger: P({ level: 'silent' }),
-      printQRInTerminal: true,
-      browser: Browsers.macOS('Firefox'),
-      auth: state,
-      version,
-      syncFullHistory: true
-    });
+  const conn = makeWASocket({
+    version,
+    auth: state,
+    printQRInTerminal: true,
+    browser: Browsers.macOS("Safari"),
+    logger: P({ level: "silent" })
+  });
 
-    conn.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect } = update;
-      if (connection === 'close') {
-        const reason = lastDisconnect?.error?.output?.statusCode;
-        if (reason !== DisconnectReason.loggedOut) {
-          console.log('🔁 Reconnecting...');
-          setTimeout(connectToWA, 2000);
-        } else {
-          console.log('❌ Logged out. Please regenerate your session and restart the bot.');
-        }
-      } else if (connection === 'open') {
-        console.log('✅ Senal MD Bot Connected Successfully!');
-        console.log(`👑 Owner: ${ownerNumber}`);
-        console.log(`📢 Mode: ${config.MODE}`);
-        console.log(`💬 Prefix: ${prefix}`);
+  conn.ev.on("connection.update", (update) => {
+    const { connection, lastDisconnect } = update;
 
-        // Load plugins (this will require plugin files and register commands)
-        commandHandler.loadPlugins();
-        console.log('🧩 Plugins Installed Successfully!');
-
-        // Notify owner (first)
-        const firstOwner = ownerNumber[0];
-        if (firstOwner) {
-          await conn.sendMessage(firstOwner + '@s.whatsapp.net', {
-            image: { url: config.ALIVE_IMG || 'https://files.catbox.moe/gm88nn.png' },
-            caption: `✅ Senal-MD Connected Successfully\n\nPrefix: ${prefix}\nMode: ${config.MODE}`
-          }).catch(() => { });
-        }
+    if (connection === "close") {
+      const reason = lastDisconnect?.error?.output?.statusCode;
+      console.log("❌ Connection closed:", reason);
+      if (reason !== DisconnectReason.loggedOut) {
+        startSenalMD();
+      } else {
+        console.log("⚠️ Logged out. Please delete session and re-scan QR.");
       }
-    });
+    } else if (connection === "open") {
+      console.log("✅ Senal-MD Bot Connected Successfully!");
+      conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
+        text: "🎉 Well done Mr Senal — Bot is connected successfully!"
+      });
+    }
+  });
 
-    conn.ev.on('creds.update', saveCreds);
+  conn.ev.on("creds.update", saveCreds);
 
-    // ================== MESSAGE HANDLER =====================
-    conn.ev.on('messages.upsert', async (mek) => {
-      try {
-        mek = mek.messages[0];
-        if (!mek) return;
-        if (!mek.message) return;
+  // ================== MESSAGE HANDLER ==================
+  conn.ev.on("messages.upsert", async (update) => {
+    try {
+      const mek = update.messages?.[0];
+      if (!mek || !mek.message) return;
 
-        // Unwrap ephemeral
-        if (getContentType(mek.message) === 'ephemeralMessage' && mek.message.ephemeralMessage) {
-          mek.message = mek.message.ephemeralMessage.message;
-        }
+      if (mek.key.remoteJid === "status@broadcast") return;
 
-        // Auto-read status updates if enabled
-        if (mek.key && mek.key.remoteJid === 'status@broadcast' && config.AUTO_READ_STATUS) {
-          await conn.readMessages([mek.key]).catch(() => {});
-        }
+      const contentType = getContentType(mek.message);
+      const msg =
+        contentType === "ephemeralMessage"
+          ? mek.message.ephemeralMessage.message
+          : mek.message;
 
-        const m = sms(conn, mek);
-        const type = getContentType(mek.message);
-        const from = mek.key.remoteJid;
-        const quoted = (type === 'extendedTextMessage' && mek.message.extendedTextMessage?.contextInfo)
-          ? (mek.message.extendedTextMessage.contextInfo.quotedMessage || [])
-          : [];
-        const body =
-          type === 'conversation' ? mek.message.conversation :
-            type === 'extendedTextMessage' ? mek.message.extendedTextMessage.text :
-              (type === 'imageMessage' && mek.message.imageMessage.caption) ? mek.message.imageMessage.caption :
-                (type === 'videoMessage' && mek.message.videoMessage.caption) ? mek.message.videoMessage.caption : '';
+      const type = getContentType(msg);
+      const body =
+        msg.conversation ||
+        msg?.extendedTextMessage?.text ||
+        msg?.imageMessage?.caption ||
+        msg?.videoMessage?.caption ||
+        "";
 
-        if (!body) return;
-        if (!body.startsWith(prefix)) return;
+      if (!body) return;
 
-        const isCmd = true;
-        const command = body.slice(prefix.length).trim().split(' ')[0].toLowerCase();
-        const args = body.trim().split(/ +/).slice(1);
-        const q = args.join(' ');
-        const isGroup = from.endsWith('@g.us');
-        const sender = mek.key.fromMe
-          ? conn.user.id.split(':')[0] + '@s.whatsapp.net'
-          : (mek.key.participant || mek.key.remoteJid);
-        const senderNumber = sender.split('@')[0];
-        const botNumber = conn.user.id.split(':')[0];
-        const pushname = mek.pushName || 'No Name';
-        const isOwner = ownerNumber.includes(senderNumber);
-        const botNumber2 = await jidNormalizedUser(conn.user.id);
+      const from = mek.key.remoteJid;
+      const isGroup = from.endsWith("@g.us");
+      const sender = mek.key.fromMe
+        ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
+        : mek.key.participant || mek.key.remoteJid;
+      const senderNumber = sender.split("@")[0];
+      const pushname = mek.pushName || "No Name";
 
-        const reply = (text) => conn.sendMessage(from, { text }, { quoted: mek }).catch(() => { });
+      const isCmd = body.startsWith(prefix);
+      if (!isCmd) return;
 
-        // find and run matching command
-        const events = commandHandler.commands;
-        const cmd = events.find((c) =>
+      const args = body.trim().split(/ +/);
+      const command = args.shift().slice(prefix.length).toLowerCase();
+      const q = args.join(" ");
+      const isOwner = ownerNumber.includes(senderNumber);
+      const reply = (text) => conn.sendMessage(from, { text }, { quoted: mek });
+
+      console.log(`📩 CMD: ${command} | FROM: ${pushname} | BODY: ${body}`);
+
+      // Find and run command
+      const cmd = commands.find(
+        (c) =>
           c.pattern === command ||
           (Array.isArray(c.alias) && c.alias.includes(command))
-        );
+      );
 
-        if (cmd) {
-          // react if defined
-          if (cmd.react) {
-            try { await conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } }); } catch (e) { }
-          }
+      if (!cmd) return;
 
-          try {
-            await Promise.resolve(cmd.function(conn, mek, m, {
-              from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber,
-              botNumber2, botNumber, pushname, isOwner, reply, getBuffer, getGroupAdmins, isUrl, fetchJson
-            }));
-          } catch (e) {
-            console.error('❌ Plugin Error:', e);
-            try { reply(`❌ *Error:* ${e.message || e}`); } catch (ignore) { }
-          }
-        }
-      } catch (e) {
-        console.error('messages.upsert handler error:', e);
+      // React emoji if available
+      if (cmd.react) {
+        try {
+          await conn.sendMessage(from, {
+            react: { text: cmd.react, key: mek.key },
+          });
+        } catch {}
       }
-    });
-  }
 
-  // ================== EXPRESS SERVER =====================
-  app.get('/', (req, res) => res.send('✅ Senal MD is running...'));
-  app.listen(port, () => console.log(`🌐 Server running at http://localhost:${port}`));
+      // Run command
+      await cmd.function(conn, mek, msg, {
+        from,
+        body,
+        args,
+        q,
+        sender,
+        senderNumber,
+        isGroup,
+        isOwner,
+        pushname,
+        reply,
+      });
 
-  connectToWA();
-})();
+    } catch (err) {
+      console.error("❌ Message handler error:", err);
+    }
+  });
+}
+
+startSenalMD();
