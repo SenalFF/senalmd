@@ -48,19 +48,56 @@ END:VCARD`,
 const authPath = path.join(__dirname, "/auth_info_baileys");
 const credsFile = path.join(authPath, "creds.json");
 
-if (!fs.existsSync(authPath)) fs.mkdirSync(authPath);
+// Ensure auth directory exists
+if (!fs.existsSync(authPath)) {
+  fs.mkdirSync(authPath, { recursive: true });
+}
 
-if (!fs.existsSync(credsFile)) {
+// ⚠️ FIXED: Better session handling with proper error checking
+async function setupSession() {
+  if (fs.existsSync(credsFile)) {
+    console.log("✅ Session file already exists");
+    return true;
+  }
+
   if (!config.SESSION_ID) {
     console.log("❌ Please add your SESSION_ID in .env!");
     process.exit(1);
   }
-  const { File } = require("megajs");
-  const sessdata = config.SESSION_ID;
-  const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
-  file.download().pipe(fs.createWriteStream(credsFile))
-    .on("finish", () => console.log("✅ Session downloaded successfully"))
-    .on("error", (err) => { throw err });
+
+  try {
+    console.log("⏳ Downloading session file...");
+    const { File } = require("megajs");
+    
+    // Extract only the file ID from the session string
+    const sessdata = config.SESSION_ID.replace(/[^a-zA-Z0-9_-]/g, '');
+    
+    const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
+    
+    return new Promise((resolve, reject) => {
+      const writeStream = fs.createWriteStream(credsFile);
+      
+      file.download()
+        .pipe(writeStream)
+        .on("finish", () => {
+          console.log("✅ Session downloaded successfully");
+          resolve(true);
+        })
+        .on("error", (err) => {
+          console.error("❌ Session download failed:", err.message);
+          reject(err);
+        });
+      
+      // Timeout after 30 seconds
+      setTimeout(() => {
+        writeStream.close();
+        reject(new Error("Session download timeout"));
+      }, 30000);
+    });
+  } catch (err) {
+    console.error("❌ Error setting up session:", err.message);
+    process.exit(1);
+  }
 }
 
 // ================= Express Server =================
@@ -74,7 +111,16 @@ app.listen(port, () => console.log(`🌐 Server listening on http://localhost:${
 // ================= Connect to WhatsApp =================
 async function connectToWA() {
   try {
-    await connectDB();
+    // ⚠️ FIXED: Ensure session is ready before connecting
+    await setupSession();
+    
+    // ⚠️ FIXED: Add MongoDB connection error handling
+    try {
+      await connectDB();
+    } catch (dbErr) {
+      console.error("⚠️ MongoDB connection failed, continuing anyway:", dbErr.message);
+    }
+
     const envConfig = await readEnv();
     const prefix = envConfig.PREFIX || ".";
 
@@ -87,51 +133,81 @@ async function connectToWA() {
       logger: P({ level: "silent" }),
       printQRInTerminal: false,
       browser: Browsers.macOS("Firefox"),
-      syncFullHistory: true,
+      syncFullHistory: false, // ⚠️ FIXED: Changed to false for faster connection
       auth: state,
       version,
+      // ⚠️ FIXED: Added connection options
+      getMessage: async (key) => {
+        return { conversation: "Hello" };
+      },
     });
 
     // ================= Connection Updates =================
-    conn.ev.on("connection.update", (update) => {
-      const { connection, lastDisconnect } = update;
+    conn.ev.on("connection.update", async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+      
+      if (qr) {
+        console.log("📱 QR Code received (but not displayed)");
+      }
+
       if (connection === "close") {
-        if (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut) {
-          console.log("🔄 Reconnecting...");
-          connectToWA();
+        const shouldReconnect = 
+          lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+        
+        console.log("❌ Connection closed due to:", 
+          lastDisconnect?.error?.message || "Unknown reason");
+        
+        if (shouldReconnect) {
+          console.log("🔄 Reconnecting in 3 seconds...");
+          setTimeout(() => connectToWA(), 3000);
         } else {
-          console.log("❌ Logged out from WhatsApp");
+          console.log("❌ Logged out from WhatsApp. Please scan QR again.");
+          // ⚠️ FIXED: Delete session on logout
+          if (fs.existsSync(credsFile)) {
+            fs.unlinkSync(credsFile);
+          }
+          process.exit(0);
         }
+      } else if (connection === "connecting") {
+        console.log("⏳ Connecting to WhatsApp...");
       } else if (connection === "open") {
         console.log("✅ Bot connected to WhatsApp");
 
         // Load plugins
-        fs.readdirSync("./plugins/").forEach((plugin) => {
-          if (path.extname(plugin).toLowerCase() === ".js") {
-            try {
-              require("./plugins/" + plugin);
-            } catch (err) {
-              console.error(`❌ Error loading plugin ${plugin}:`, err);
+        const pluginsPath = path.join(__dirname, "plugins");
+        if (fs.existsSync(pluginsPath)) {
+          fs.readdirSync(pluginsPath).forEach((plugin) => {
+            if (path.extname(plugin).toLowerCase() === ".js") {
+              try {
+                require("./plugins/" + plugin);
+                console.log(`✅ Loaded plugin: ${plugin}`);
+              } catch (err) {
+                console.error(`❌ Error loading plugin ${plugin}:`, err.message);
+              }
             }
-          }
-        });
-        console.log("✅ Plugins loaded");
-
-        // Send alive message with contact to owner
-        const upMsg = envConfig.ALIVE_MSG || `Senal MD connected ✅\nPrefix: ${prefix}`;
-        const aliveImg = envConfig.ALIVE_IMG || null;
-
-        if (aliveImg) {
-          conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-            image: { url: aliveImg },
-            caption: upMsg,
           });
-        } else {
-          conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { text: upMsg });
         }
 
-        // Send Senal MD contact to owner
-        conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", chama.message);
+        // Send alive message
+        try {
+          const upMsg = envConfig.ALIVE_MSG || `Senal MD connected ✅\nPrefix: ${prefix}`;
+          const aliveImg = envConfig.ALIVE_IMG || null;
+          const ownerJid = ownerNumber[0] + "@s.whatsapp.net";
+
+          if (aliveImg) {
+            await conn.sendMessage(ownerJid, {
+              image: { url: aliveImg },
+              caption: upMsg,
+            });
+          } else {
+            await conn.sendMessage(ownerJid, { text: upMsg });
+          }
+
+          // Send contact
+          await conn.sendMessage(ownerJid, chama.message);
+        } catch (msgErr) {
+          console.error("⚠️ Failed to send alive message:", msgErr.message);
+        }
       }
     });
 
@@ -139,114 +215,127 @@ async function connectToWA() {
 
     // ================= Handle Incoming Messages =================
     conn.ev.on("messages.upsert", async (mek) => {
-      mek = mek.messages[0];
-      if (!mek?.message) return;
+      try {
+        mek = mek.messages[0];
+        if (!mek?.message) return;
 
-      // Handle ephemeral messages
-      mek.message =
-        getContentType(mek.message) === "ephemeralMessage"
-          ? mek.message.ephemeralMessage.message
-          : mek.message;
+        // Handle ephemeral messages
+        mek.message =
+          getContentType(mek.message) === "ephemeralMessage"
+            ? mek.message.ephemeralMessage.message
+            : mek.message;
 
-      // Auto-read status updates
-      if (
-        mek.key &&
-        mek.key.remoteJid === "status@broadcast" &&
-        config.AUTO_READ_STATUS === "true"
-      ) {
-        await conn.readMessages([mek.key]);
-      }
+        // Auto-read status updates
+        if (
+          mek.key &&
+          mek.key.remoteJid === "status@broadcast" &&
+          config.AUTO_READ_STATUS === true
+        ) {
+          await conn.readMessages([mek.key]);
+        }
 
-      const m = sms(conn, mek);
-      const from = mek.key.remoteJid;
-      const type = getContentType(mek.message);
+        const m = sms(conn, mek);
+        const from = mek.key.remoteJid;
+        const type = getContentType(mek.message);
 
-      // ================= Parse Body =================
-      let body = "";
-      const contentType = getContentType(mek.message);
+        // Parse body
+        let body = "";
+        const contentType = getContentType(mek.message);
 
-      if (contentType === "conversation") body = mek.message.conversation;
-      else if (contentType === "extendedTextMessage") body = mek.message.extendedTextMessage.text;
-      else if (contentType === "buttonsResponseMessage") body = mek.message.buttonsResponseMessage.selectedButtonId;
-      else if (contentType === "listResponseMessage") body = mek.message.listResponseMessage.singleSelectReply.selectedRowId;
+        if (contentType === "conversation") body = mek.message.conversation;
+        else if (contentType === "extendedTextMessage") 
+          body = mek.message.extendedTextMessage.text;
+        else if (contentType === "buttonsResponseMessage") 
+          body = mek.message.buttonsResponseMessage.selectedButtonId;
+        else if (contentType === "listResponseMessage") 
+          body = mek.message.listResponseMessage.singleSelectReply.selectedRowId;
 
-      const isCmd = body.startsWith(prefix);
-      const commandText = isCmd
-        ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase()
-        : body.toLowerCase();
+        const isCmd = body.startsWith(prefix);
+        const commandText = isCmd
+          ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase()
+          : body.toLowerCase();
 
-      const args = body.trim().split(/ +/).slice(isCmd ? 1 : 0);
-      const q = args.join(" ");
-      const isGroup = from.endsWith("@g.us");
-      const sender = mek.key.fromMe
-        ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
-        : mek.key.participant || mek.key.remoteJid;
-      const senderNumber = sender.split("@")[0];
-      const botNumber = conn.user.id.split(":")[0];
-      const pushname = mek.pushName || "No Name";
-      const isMe = botNumber.includes(senderNumber);
-      const isOwner = ownerNumber.includes(senderNumber) || isMe;
+        const args = body.trim().split(/ +/).slice(isCmd ? 1 : 0);
+        const q = args.join(" ");
+        const isGroup = from.endsWith("@g.us");
+        const sender = mek.key.fromMe
+          ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
+          : mek.key.participant || mek.key.remoteJid;
+        const senderNumber = sender.split("@")[0];
+        const botNumber = conn.user.id.split(":")[0];
+        const pushname = mek.pushName || "No Name";
+        const isMe = botNumber.includes(senderNumber);
+        const isOwner = ownerNumber.includes(senderNumber) || isMe;
 
-      const reply = (text, extra = {}) =>
-        conn.sendMessage(from, { text, ...extra }, { quoted: mek });
+        const reply = (text, extra = {}) =>
+          conn.sendMessage(from, { text, ...extra }, { quoted: mek });
 
-      // ===== Load commands =====
-      const events = require("./command");
+        // Load commands
+        const events = require("./command");
 
-      // ===== BUTTON HANDLER (GLOBAL SAFE) =====
-      if (contentType === "buttonsResponseMessage") {
-        const btnId = mek.message.buttonsResponseMessage.selectedButtonId;
-        for (const plugin of events.commands) {
-          if (plugin.buttonHandler) {
-            try {
-              await plugin.buttonHandler(conn, mek, btnId);
-            } catch (err) {
-              console.error("Button handler error:", err);
+        // Button handler
+        if (contentType === "buttonsResponseMessage") {
+          const btnId = mek.message.buttonsResponseMessage.selectedButtonId;
+          for (const plugin of events.commands) {
+            if (plugin.buttonHandler) {
+              try {
+                await plugin.buttonHandler(conn, mek, btnId);
+              } catch (err) {
+                console.error("Button handler error:", err);
+              }
             }
           }
         }
-      }
 
-      // ===== COMMAND EXECUTION =====
-      const cmd = events.commands.find((c) => {
-        if (!c.pattern) return false;
-        if (c.pattern.toLowerCase() === commandText) return true;
-        if (c.alias && c.alias.map((a) => a.toLowerCase()).includes(commandText)) return true;
-        return false;
-      });
+        // Command execution
+        const cmd = events.commands.find((c) => {
+          if (!c.pattern) return false;
+          if (c.pattern.toLowerCase() === commandText) return true;
+          if (c.alias && c.alias.map((a) => a.toLowerCase()).includes(commandText)) 
+            return true;
+          return false;
+        });
 
-      if (cmd) {
-        if (cmd.react) {
-          await conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
+        if (cmd) {
+          if (cmd.react) {
+            await conn.sendMessage(from, { 
+              react: { text: cmd.react, key: mek.key } 
+            }).catch(() => {});
+          }
+          
+          try {
+            await cmd.function(conn, mek, m, {
+              from,
+              body,
+              isCmd,
+              command: commandText,
+              args,
+              q,
+              isGroup,
+              sender,
+              senderNumber,
+              botNumber2: jidNormalizedUser(conn.user.id),
+              botNumber,
+              pushname,
+              isMe,
+              isOwner,
+              reply,
+            });
+          } catch (e) {
+            console.error("[PLUGIN ERROR]", e);
+            reply("⚠️ An error occurred while executing the command.");
+          }
         }
-        try {
-          await cmd.function(conn, mek, m, {
-            from,
-            body,
-            isCmd,
-            command: commandText,
-            args,
-            q,
-            isGroup,
-            sender,
-            senderNumber,
-            botNumber2: jidNormalizedUser(conn.user.id),
-            botNumber,
-            pushname,
-            isMe,
-            isOwner,
-            reply,
-          });
-        } catch (e) {
-          console.error("[PLUGIN ERROR]", e);
-          reply("⚠️ An error occurred while executing the command.");
-        }
+      } catch (msgErr) {
+        console.error("[MESSAGE HANDLER ERROR]", msgErr);
       }
     });
   } catch (err) {
     console.error("❌ Error connecting to WhatsApp:", err);
+    console.log("🔄 Retrying in 10 seconds...");
+    setTimeout(() => connectToWA(), 10000);
   }
 }
 
-// Start bot after 4 seconds
-setTimeout(() => connectToWA(), 4000);
+// ⚠️ FIXED: Start bot immediately
+connectToWA().catch(console.error);
