@@ -80,14 +80,24 @@ async function connectToWA() {
             // Show loaded commands for debugging
             const events = require('./command')
             console.log('📝 Loaded commands:', events.commands.length)
-            console.log('📋 Commands list:', events.commands.map(c => c.pattern).join(', '))
+            
+            // Filter out empty patterns
+            const validCommands = events.commands.filter(c => c.pattern && c.pattern.trim() !== '')
+            console.log('✅ Valid commands:', validCommands.length)
+            console.log('📋 Commands list:', validCommands.map(c => c.pattern).join(', '))
+            
+            // Check for invalid commands
+            const invalidCommands = events.commands.filter(c => !c.pattern || c.pattern.trim() === '')
+            if (invalidCommands.length > 0) {
+                console.log('⚠️ Invalid commands found:', invalidCommands.length)
+            }
 
-            let up = `✅ Senal-MD Connected Successfully!\n\nPREFIX: ${prefix}\nMODE: ${config.MODE}\nCommands: ${events.commands.length}`;
+            let up = `✅ Senal-MD Connected Successfully!\n\nPREFIX: ${prefix}\nMODE: ${config.MODE}\nCommands: ${validCommands.length}`;
 
             conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { 
                 image: { url: `https://files.catbox.moe/gm88nn.png` }, 
                 caption: up 
-            })
+            }).catch(err => console.log('Failed to send startup message:', err.message))
         }
     })
 
@@ -98,18 +108,25 @@ async function connectToWA() {
             mek = mek.messages[0]
             if (!mek.message) return
             
+            console.log('📨 Message received!') // DIAGNOSTIC LOG
+            
             mek.message = (getContentType(mek.message) === 'ephemeralMessage') ? mek.message.ephemeralMessage.message : mek.message
             
-            if (mek.key && mek.key.remoteJid === 'status@broadcast' && config.AUTO_READ_STATUS === true) {
-                await conn.readMessages([mek.key])
+            if (mek.key && mek.key.remoteJid === 'status@broadcast') {
+                if (config.AUTO_READ_STATUS === true) {
+                    await conn.readMessages([mek.key])
+                }
+                return // Don't process status updates
             }
 
             const m = sms(conn, mek)
             const type = getContentType(mek.message)
-            const content = JSON.stringify(mek.message)
             const from = mek.key.remoteJid
             const quoted = type == 'extendedTextMessage' && mek.message.extendedTextMessage.contextInfo != null ? mek.message.extendedTextMessage.contextInfo.quotedMessage || [] : []
             const body = (type === 'conversation') ? mek.message.conversation : (type === 'extendedTextMessage') ? mek.message.extendedTextMessage.text : (type == 'imageMessage') && mek.message.imageMessage.caption ? mek.message.imageMessage.caption : (type == 'videoMessage') && mek.message.videoMessage.caption ? mek.message.videoMessage.caption : ''
+            
+            console.log('📝 Body:', body) // DIAGNOSTIC LOG
+            
             const isCmd = body.startsWith(prefix)
             const command = isCmd ? body.slice(prefix.length).trim().split(' ').shift().toLowerCase() : ''
             const args = body.trim().split(/ +/).slice(1)
@@ -157,14 +174,28 @@ async function connectToWA() {
             }
 
             //===================================work-type=========================================
-            if (!isOwner && config.MODE === "private") return
-            if (!isOwner && isGroup && config.MODE === "inbox") return
-            if (!isOwner && !isGroup && config.MODE === "groups") return
+            console.log('🔒 Mode check - MODE:', config.MODE, 'isOwner:', isOwner, 'isGroup:', isGroup) // DIAGNOSTIC
+            
+            if (!isOwner && config.MODE === "private") {
+                console.log('⛔ Blocked: Private mode')
+                return
+            }
+            if (!isOwner && isGroup && config.MODE === "inbox") {
+                console.log('⛔ Blocked: Inbox mode in group')
+                return
+            }
+            if (!isOwner && !isGroup && config.MODE === "groups") {
+                console.log('⛔ Blocked: Groups mode in private')
+                return
+            }
+            
+            console.log('✅ Mode check passed')
             
             //====================react============================
             if (senderNumber.includes("94769872326")) {
-                if (isReact) return
-                m.react("👨‍💻")
+                if (!isReact) {
+                    m.react("👨‍💻")
+                }
             }
 
             // AUTO VOICE
@@ -188,16 +219,20 @@ async function connectToWA() {
             // Debug logging for commands
             if (isCmd) {
                 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                console.log('📥 Command:', command);
+                console.log('📥 Command detected:', command);
                 console.log('👤 User:', pushname, `(${senderNumber})`);
-                console.log('💬 Message:', body);
+                console.log('💬 Full message:', body);
                 console.log('📍 Chat:', isGroup ? groupName : 'Private Chat');
+                console.log('🔑 Prefix:', prefix);
                 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             }
 
             if (isCmd) {
-                const cmd = events.commands.find((cmd) => cmd.pattern === command) ||
-                    events.commands.find((cmd) => cmd.alias && cmd.alias.includes(command))
+                // Filter valid commands only
+                const validCommands = events.commands.filter(c => c.pattern && c.pattern.trim() !== '')
+                
+                const cmd = validCommands.find((cmd) => cmd.pattern === command) ||
+                    validCommands.find((cmd) => cmd.alias && cmd.alias.includes(command))
 
                 if (cmd) {
                     console.log('✅ Command found:', cmd.pattern);
@@ -239,7 +274,7 @@ async function connectToWA() {
                     }
                 } else {
                     console.log('⚠️ Command not found:', command);
-                    console.log('Available commands:', events.commands.map(c => c.pattern).slice(0, 10).join(', '), '...');
+                    console.log('Available commands:', validCommands.map(c => c.pattern).slice(0, 10).join(', '), '...');
                 }
             }
 
@@ -281,7 +316,7 @@ async function connectToWA() {
             });
 
         } catch (e) {
-            console.log('Message handler error:', e)
+            console.log('❌ Message handler error:', e)
         }
     })
 }
