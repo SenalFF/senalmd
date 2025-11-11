@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@adiwajshing/keyed-db": "latest",
-    "@whiskeysockets/baileys": "latest",
+    "@whiskeysockets/baileys": "github:nstar-y/bail",
     "axios": "latest",
     "express": "latest",
     "fs-extra": "latest",
