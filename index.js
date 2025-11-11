@@ -179,8 +179,14 @@ async function connectToWA() {
             if (isCmd) {
                 console.log(`🔍 Command detected: "${command}" with args: [${args.join(', ')}]`);
                 
+                // Clear require cache to get fresh commands (helpful during development)
+                delete require.cache[require.resolve('./command')];
                 const events = require('./command');
+                
+                console.log(`📊 Total registered commands: ${events.commands.length}`);
+                
                 const validCommands = events.commands.filter(c => c.pattern && c.pattern.trim() !== '');
+                console.log(`✅ Valid commands: ${validCommands.length}`);
                 
                 // Try exact match first
                 let cmdObj = validCommands.find(c => c.pattern === command);
@@ -192,6 +198,13 @@ async function connectToWA() {
 
                 if (cmdObj) {
                     console.log(`✅ Found command handler for: ${command}`);
+                    console.log(`📁 Command file: ${cmdObj.filename || 'unknown'}`);
+                    
+                    // React to command if specified
+                    if (cmdObj.react) {
+                        conn.sendMessage(from, { react: { text: cmdObj.react, key: mek.key } }).catch(() => {});
+                    }
+                    
                     try {
                         await cmdObj.function(conn, mek, sms(conn, mek), {
                             from, body, isCmd, command, args, q, isGroup,
@@ -200,13 +213,12 @@ async function connectToWA() {
                         console.log(`✅ Executed: ${command} by ${pushname} (${senderNumber})`);
                     } catch (e) {
                         console.error(`❌ Plugin error for ${command}:`, e);
+                        console.error(`Stack: ${e.stack}`);
                         reply(`❌ Error executing command: ${e.message}`);
                     }
                 } else {
                     console.log(`⚠️ Command not found: ${command}`);
-                    console.log(`📋 Available commands: ${validCommands.map(c => c.pattern).join(', ')}`);
-                    // Optionally send a reply
-                    // reply(`❓ Unknown command: ${command}\nUse ${prefix}menu to see available commands`);
+                    console.log(`📋 Available commands: ${validCommands.slice(0, 10).map(c => c.pattern).join(', ')}...`);
                 }
             }
         } catch (e) {
