@@ -28,17 +28,17 @@ const chama = {
     remoteJid: "status@broadcast",
     participant: "0@s.whatsapp.net",
     fromMe: false,
-    id: "META_AI_FAKE_ID_TS",
+    id: "SENAL_MD_AI_STATUS",
   },
   message: {
     contactMessage: {
-      displayName: botName,
+      displayName: "AI • Status",
       vcard: `BEGIN:VCARD
 VERSION:3.0
-N:${botName};;;;
-FN:${botName}
-ORG:Meta Platforms
-TEL;type=CELL;type=VOICE;waid=13135550002:+1 313 555 0002
+N:;AI • Status;;;
+FN:AI • Status
+ORG:© Senal MD
+TEL;type=CELL;type=VOICE;waid=0:+0
 END:VCARD`,
     },
   },
@@ -184,18 +184,9 @@ async function connectToWA() {
       const isMe = botNumber.includes(senderNumber);
       const isOwner = ownerNumber.includes(senderNumber) || isMe;
 
-      const reply = (text, extra = {}) => {
-        // Check if extra contains media types that conflict with contact quotes
-        const hasMedia = extra.image || extra.video || extra.audio || extra.document || extra.sticker;
-        
-        if (hasMedia) {
-          // Don't quote with chama for media messages
-          return conn.sendMessage(from, { text, ...extra }, { quoted: mek });
-        } else {
-          // Quote with chama for text-only messages
-          return conn.sendMessage(from, { text, ...extra }, { quoted: chama });
-        }
-      };
+      // ALWAYS quote with Meta AI status contact (chama) for ALL messages
+      const reply = (text, extra = {}) =>
+        conn.sendMessage(from, { text, ...extra }, { quoted: chama });
 
       // ===== Load commands =====
       const events = require("./command");
