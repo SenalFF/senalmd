@@ -13,7 +13,7 @@ const {
     getContentType,
     fetchLatestBaileysVersion,
     Browsers
-} = require('baileys');
+} = require('@whiskeysockets/baileys');
 const { getBuffer, getGroupAdmins, sms } = require('./lib/functions');
 const fs = require('fs');
 const P = require('pino');
@@ -41,17 +41,30 @@ setInterval(() => console.log('💚 Bot alive -', new Date().toLocaleTimeString(
 // ================== MONGODB ==================
 connectDB().catch(err => console.log('❌ MongoDB failed:', err.message));
 
-// ================== SESSION ==================
-if (!fs.existsSync(__dirname + '/auth_info_baileys/creds.json')) {
-    if (!config.SESSION_ID) {
-        console.log('❌ Please add SESSION_ID to env!');
-        process.exit(1);
-    }
-    const filer = require('megajs').File.fromURL(`https://mega.nz/file/${config.SESSION_ID}`);
-    filer.download((err, data) => {
-        if (err) return console.error('❌ Session download failed:', err);
-        fs.writeFileSync(__dirname + '/auth_info_baileys/creds.json', data);
-        console.log('✅ Session downloaded');
+// ================== SESSION DOWNLOAD ==================
+async function downloadSession() {
+    return new Promise((resolve, reject) => {
+        if (fs.existsSync(__dirname + '/auth_info_baileys/creds.json')) {
+            console.log('✅ Session file exists');
+            return resolve();
+        }
+
+        if (!config.SESSION_ID) {
+            console.log('❌ Please add SESSION_ID to env!');
+            return reject(new Error('No SESSION_ID'));
+        }
+
+        console.log('📥 Downloading session...');
+        const filer = require('megajs').File.fromURL(`https://mega.nz/file/${config.SESSION_ID}`);
+        filer.download((err, data) => {
+            if (err) {
+                console.error('❌ Session download failed:', err);
+                return reject(err);
+            }
+            fs.writeFileSync(__dirname + '/auth_info_baileys/creds.json', data);
+            console.log('✅ Session downloaded successfully');
+            resolve();
+        });
     });
 }
 
@@ -82,7 +95,14 @@ async function connectToWA() {
             console.log('🧬 Installing plugins...');
             const path = require('path');
             fs.readdirSync('./plugins/').forEach(p => {
-                if (path.extname(p) === '.js') require('./plugins/' + p);
+                if (path.extname(p) === '.js') {
+                    try {
+                        require('./plugins/' + p);
+                        console.log(`✅ Loaded: ${p}`);
+                    } catch (e) {
+                        console.log(`❌ Failed to load ${p}:`, e.message);
+                    }
+                }
             });
             console.log('✅ Plugins installed');
 
@@ -97,7 +117,7 @@ async function connectToWA() {
             conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
                 image: { url: 'https://files.catbox.moe/gm88nn.png' },
                 caption: msg
-            }).catch(console.log);
+            }).catch(e => console.log('❌ Failed to send startup message:', e.message));
         }
     });
 
@@ -126,6 +146,9 @@ async function connectToWA() {
                 : type === 'videoMessage' && mek.message.videoMessage.caption ? mek.message.videoMessage.caption
                 : '';
 
+            // Log all messages for debugging
+            console.log(`📨 Message from ${pushname}: "${body}"`);
+
             const isCmd = body.startsWith(prefix);
             const command = isCmd ? body.slice(prefix.length).trim().split(' ')[0].toLowerCase() : '';
             const args = body.trim().split(/ +/).slice(1);
@@ -134,9 +157,18 @@ async function connectToWA() {
             const reply = (text) => conn.sendMessage(from, { text }, { quoted: mek });
 
             // ============ COMMAND BLOCK MODES ============
-            if (!isOwner && config.MODE === 'private') return;
-            if (!isOwner && isGroup && config.MODE === 'inbox') return;
-            if (!isOwner && !isGroup && config.MODE === 'groups') return;
+            if (!isOwner && config.MODE === 'private') {
+                console.log('⛔ Private mode - ignoring non-owner');
+                return;
+            }
+            if (!isOwner && isGroup && config.MODE === 'inbox') {
+                console.log('⛔ Inbox mode - ignoring group message from non-owner');
+                return;
+            }
+            if (!isOwner && !isGroup && config.MODE === 'groups') {
+                console.log('⛔ Groups mode - ignoring inbox message from non-owner');
+                return;
+            }
 
             // ============ OWNER AUTO REACT ============
             if (isOwner && !mek.message.reactionMessage) {
@@ -145,30 +177,52 @@ async function connectToWA() {
 
             // ============ COMMAND HANDLER ============
             if (isCmd) {
+                console.log(`🔍 Command detected: "${command}" with args: [${args.join(', ')}]`);
+                
                 const events = require('./command');
                 const validCommands = events.commands.filter(c => c.pattern && c.pattern.trim() !== '');
-                const cmdObj = validCommands.find(c => c.pattern === command) || validCommands.find(c => c.alias?.includes(command));
+                
+                // Try exact match first
+                let cmdObj = validCommands.find(c => c.pattern === command);
+                
+                // Try alias match if no exact match
+                if (!cmdObj) {
+                    cmdObj = validCommands.find(c => c.alias?.includes(command));
+                }
 
                 if (cmdObj) {
+                    console.log(`✅ Found command handler for: ${command}`);
                     try {
                         await cmdObj.function(conn, mek, sms(conn, mek), {
                             from, body, isCmd, command, args, q, isGroup,
                             sender, senderNumber, pushname, isOwner, reply
                         });
-                        console.log(`✅ Executed: ${command} by ${pushname}`);
+                        console.log(`✅ Executed: ${command} by ${pushname} (${senderNumber})`);
                     } catch (e) {
-                        console.error('❌ Plugin error:', e.message);
-                        reply(`❌ Error: ${e.message}`);
+                        console.error(`❌ Plugin error for ${command}:`, e);
+                        reply(`❌ Error executing command: ${e.message}`);
                     }
                 } else {
                     console.log(`⚠️ Command not found: ${command}`);
+                    console.log(`📋 Available commands: ${validCommands.map(c => c.pattern).join(', ')}`);
+                    // Optionally send a reply
+                    // reply(`❓ Unknown command: ${command}\nUse ${prefix}menu to see available commands`);
                 }
             }
         } catch (e) {
-            console.error('❌ Handler error:', e.message);
+            console.error('❌ Handler error:', e);
+            console.error('Stack trace:', e.stack);
         }
     });
 }
 
 // ================== START BOT ==================
-setTimeout(connectToWA, 2000);
+(async () => {
+    try {
+        await downloadSession();
+        setTimeout(connectToWA, 2000);
+    } catch (e) {
+        console.error('❌ Failed to start bot:', e);
+        process.exit(1);
+    }
+})();
