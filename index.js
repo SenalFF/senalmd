@@ -187,8 +187,18 @@ async function connectToWA() {
       const isMe = botNumber.includes(senderNumber);
       const isOwner = ownerNumber.includes(senderNumber) || isMe;
 
-      const reply = (text, extra = {}) =>
-        conn.sendMessage(from, { text, ...extra }, { quoted: chama });
+      const reply = (text, extra = {}) => {
+        // Check if extra contains media types that conflict with contact quotes
+        const hasMedia = extra.image || extra.video || extra.audio || extra.document || extra.sticker;
+        
+        if (hasMedia) {
+          // Don't quote with chama for media messages
+          return conn.sendMessage(from, { text, ...extra }, { quoted: mek });
+        } else {
+          // Quote with chama for text-only messages
+          return conn.sendMessage(from, { text, ...extra }, { quoted: chama });
+        }
+      };
 
       // ===== Load commands =====
       const events = require("./command");
