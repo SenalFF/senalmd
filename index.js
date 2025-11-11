@@ -117,7 +117,7 @@ async function connectToWA() {
         });
         console.log("✅ Plugins loaded");
 
-        // Send alive message with contact to owner
+        // Send alive message to owner
         const upMsg = envConfig.ALIVE_MSG || `Senal MD connected ✅\nPrefix: ${prefix}`;
         const aliveImg = envConfig.ALIVE_IMG || null;
 
@@ -129,9 +129,6 @@ async function connectToWA() {
         } else {
           conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { text: upMsg });
         }
-
-        // Send Senal MD contact to owner
-        conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", chama.message);
       }
     });
 
