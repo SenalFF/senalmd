@@ -129,21 +129,6 @@ async function connectToWA() {
         } else {
           conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { text: upMsg });
         }
-
-        // Send Meta AI contact card to owner
-        const vcard = `BEGIN:VCARD
-VERSION:3.0
-FN:${botName}
-ORG:Meta Platforms
-TEL;type=CELL;type=VOICE;waid=13135550002:+1 313 555 0002
-END:VCARD`;
-        
-        conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-          contacts: {
-            displayName: botName,
-            contacts: [{ vcard: vcard }]
-          }
-        });
       }
     });
 
@@ -200,8 +185,16 @@ END:VCARD`;
       const isOwner = ownerNumber.includes(senderNumber) || isMe;
 
       const reply = (text, extra = {}) => {
-        // Always quote with Meta AI status contact (chama) for all messages
-        return conn.sendMessage(from, { text, ...extra }, { quoted: chama });
+        // Check if extra contains media types that conflict with contact quotes
+        const hasMedia = extra.image || extra.video || extra.audio || extra.document || extra.sticker;
+        
+        if (hasMedia) {
+          // Don't quote with chama for media messages
+          return conn.sendMessage(from, { text, ...extra }, { quoted: mek });
+        } else {
+          // Quote with chama for text-only messages
+          return conn.sendMessage(from, { text, ...extra }, { quoted: chama });
+        }
       };
 
       // ===== Load commands =====
