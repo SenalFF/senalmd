@@ -13,7 +13,7 @@ const {
     getContentType,
     fetchLatestBaileysVersion,
     Browsers
-} = require('@whiskeysockets/baileys');
+} = require('baileys');
 const { getBuffer, getGroupAdmins, sms } = require('./lib/functions');
 const fs = require('fs');
 const P = require('pino');
