@@ -28,7 +28,7 @@ const chama = {
     remoteJid: "status@broadcast",
     participant: "0@s.whatsapp.net",
     fromMe: false,
-    id: "SENAL_MD_AI_STATUS",
+    id: "SENAL_MD_META_AI_STATUS",
   },
   message: {
     contactMessage: {
