@@ -39,7 +39,7 @@ cmd({
         + `*• 𝚃𝙸𝚃𝙻𝙴*: ${video.title}\n`
         + `*• 𝙰𝚄𝚃𝙷𝙾𝚁*: ${video.author || 'Unknown'}\n`
         + `*• 𝙳𝚄𝚁𝙰𝚃𝙸𝙾𝙽*: ${video.duration || "Unknown"}\n`
-        + `*• 𝚄𝚁𝙻*: ${video.link}\n\n> *© Powered By King-Sandesh-Md V2 💸*`;
+        + `*• 𝚄𝚁𝙻*: ${video.link}\n\n> *© Powered By Senal-Md V2 *`;
 
       if (video.nowm) {
         await conn.sendMessage(from, {
