@@ -24,7 +24,7 @@ async (conn, mek, m, { from, args, q, reply }) => {
         const { title, like, comment, share, author, meta } = data.data;
         const videoUrl = meta.media.find(v => v.type === "video").org;
         
-        const caption = `🎵 *𝐊ꜱᴍ𝐃 𝐓ɪᴋ 𝐓ᴏᴋ 𝐕ɪᴅᴇ𝐎 𝐃ᴏᴡɴʟᴏᴀᴅᴇ𝐑* 🎵\n\n` +
+        const caption = `🎵 *Senal  𝐓ɪᴋ 𝐓ᴏᴋ 𝐃ᴏᴡɴʟᴏᴀᴅᴇ𝐑* 🎵\n\n` +
                         `👤 *𝚄𝚂𝙴𝚁:* ${author.nickname} (@${author.username})\n` +
                         `📖 *𝚃𝙸𝚃𝙻𝙴:* ${title}\n` +
                         `👍 *𝙻𝙸𝙺𝙴𝚂:* ${like}\n💬 *𝙲𝙾𝙼𝙼𝙴𝙽𝚃𝚂:* ${comment}\n🔁 *𝚂𝙷𝙰𝚁𝙴𝚂:* ${share}`;
