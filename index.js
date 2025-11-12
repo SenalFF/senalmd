@@ -28,17 +28,17 @@ const chama = {
     remoteJid: "status@broadcast",
     participant: "0@s.whatsapp.net",
     fromMe: false,
-    id: "3EB0SENAL_MD_META_AI",
+    id: "META_AI_FAKE_ID_TS",
   },
   message: {
     contactMessage: {
-      displayName: "Meta AI",
+      displayName: botName,
       vcard: `BEGIN:VCARD
 VERSION:3.0
-N:;Meta AI;;;
-FN:Meta AI
-ORG:© Senal MD
-TEL;type=CELL;type=VOICE;waid=0:+0
+N:${botName};;;;
+FN:${botName}
+ORG:Meta Platforms
+TEL;type=CELL;type=VOICE;waid=13135550002:+1 313 555 0002
 END:VCARD`,
     },
   },
@@ -92,20 +92,6 @@ async function connectToWA() {
       version,
     });
 
-    // ===== OVERRIDE sendMessage to ALWAYS quote with chama and enable AI =====
-    const originalSendMessage = conn.sendMessage;
-    conn.sendMessage = async (jid, content, options = {}) => {
-      // Always add chama as quoted message for all outgoing messages
-      if (!options.quoted) {
-        options.quoted = chama;
-      }
-      // Enable AI icon for all messages
-      if (content.text || content.caption || content.image || content.video || content.document) {
-        content.ai = true;
-      }
-      return originalSendMessage.call(conn, jid, content, options);
-    };
-
     // ================= Connection Updates =================
     conn.ev.on("connection.update", (update) => {
       const { connection, lastDisconnect } = update;
@@ -143,6 +129,21 @@ async function connectToWA() {
         } else {
           conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { text: upMsg });
         }
+
+        // Send Meta AI contact card to owner
+        const vcard = `BEGIN:VCARD
+VERSION:3.0
+FN:${botName}
+ORG:Meta Platforms
+TEL;type=CELL;type=VOICE;waid=13135550002:+1 313 555 0002
+END:VCARD`;
+        
+        conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
+          contacts: {
+            displayName: botName,
+            contacts: [{ vcard: vcard }]
+          }
+        });
       }
     });
 
@@ -198,9 +199,9 @@ async function connectToWA() {
       const isMe = botNumber.includes(senderNumber);
       const isOwner = ownerNumber.includes(senderNumber) || isMe;
 
-      // ALWAYS quote with Meta AI status contact (chama) and enable AI icon
-      const reply = async (text, extra = {}) => {
-        return conn.sendMessage(from, { text, ai: true, ...extra }, { quoted: chama });
+      const reply = (text, extra = {}) => {
+        // Always quote with Meta AI status contact (chama) for all messages
+        return conn.sendMessage(from, { text, ...extra }, { quoted: chama });
       };
 
       // ===== Load commands =====
