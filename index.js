@@ -92,6 +92,16 @@ async function connectToWA() {
       version,
     });
 
+    // ===== OVERRIDE sendMessage to ALWAYS quote with chama =====
+    const originalSendMessage = conn.sendMessage;
+    conn.sendMessage = async (jid, content, options = {}) => {
+      // Always add chama as quoted message for all outgoing messages
+      if (!options.quoted) {
+        options.quoted = chama;
+      }
+      return originalSendMessage.call(conn, jid, content, options);
+    };
+
     // ================= Connection Updates =================
     conn.ev.on("connection.update", (update) => {
       const { connection, lastDisconnect } = update;
@@ -184,9 +194,10 @@ async function connectToWA() {
       const isMe = botNumber.includes(senderNumber);
       const isOwner = ownerNumber.includes(senderNumber) || isMe;
 
-      // ALWAYS quote with Meta AI status contact (chama) for ALL messages
-      const reply = (text, extra = {}) =>
-        conn.sendMessage(from, { text, ...extra }, { quoted: chama });
+      // ALWAYS quote with Meta AI status contact (chama) for ALL reply messages
+      const reply = async (text, extra = {}) => {
+        return conn.sendMessage(from, { text, ...extra }, { quoted: chama });
+      };
 
       // ===== Load commands =====
       const events = require("./command");
