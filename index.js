@@ -28,15 +28,15 @@ const chama = {
     remoteJid: "status@broadcast",
     participant: "0@s.whatsapp.net",
     fromMe: false,
-    id: "SENAL_MD_META_AI_STATUS",
+    id: "3EB0SENAL_MD_META_AI",
   },
   message: {
     contactMessage: {
-      displayName: "AI • Status",
+      displayName: "Meta AI",
       vcard: `BEGIN:VCARD
 VERSION:3.0
-N:;AI • Status;;;
-FN:AI • Status
+N:;Meta AI;;;
+FN:Meta AI
 ORG:© Senal MD
 TEL;type=CELL;type=VOICE;waid=0:+0
 END:VCARD`,
@@ -198,9 +198,9 @@ async function connectToWA() {
       const isMe = botNumber.includes(senderNumber);
       const isOwner = ownerNumber.includes(senderNumber) || isMe;
 
-      // ALWAYS quote with Meta AI status contact (chama) for ALL reply messages
+      // ALWAYS quote with Meta AI status contact (chama) and enable AI icon
       const reply = async (text, extra = {}) => {
-        return conn.sendMessage(from, { text, ...extra }, { quoted: chama });
+        return conn.sendMessage(from, { text, ai: true, ...extra }, { quoted: chama });
       };
 
       // ===== Load commands =====
