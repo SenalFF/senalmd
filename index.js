@@ -92,12 +92,16 @@ async function connectToWA() {
       version,
     });
 
-    // ===== OVERRIDE sendMessage to ALWAYS quote with chama =====
+    // ===== OVERRIDE sendMessage to ALWAYS quote with chama and enable AI =====
     const originalSendMessage = conn.sendMessage;
     conn.sendMessage = async (jid, content, options = {}) => {
       // Always add chama as quoted message for all outgoing messages
       if (!options.quoted) {
         options.quoted = chama;
+      }
+      // Enable AI icon for all messages
+      if (content.text || content.caption || content.image || content.video || content.document) {
+        content.ai = true;
       }
       return originalSendMessage.call(conn, jid, content, options);
     };
