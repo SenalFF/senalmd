@@ -24,7 +24,7 @@ cmd({
         
         if (data.length < 1) return await messageHandler.sendMessage(from, { text: "⭕ *I Couldn't Find Anything 🙄*" }, { quoted: quotedMessage });
 
-        let message = `*🔞 QUEEN NETHU MD XVIDEO DOWNLOADER 🔞*\n\n`;
+        let message = `*🔞  Senal MD XVIDEO DOWNLOADER  🔞*\n\n`;
         let options = '';
 
         data.forEach((v, index) => {
@@ -32,7 +32,7 @@ cmd({
         });
         
         message += options;
-        message += `> ⚜️ _𝐃𝐞𝐯𝐞𝐥𝐨𝐩𝐞𝐝_ *- :* *_SL NETHU MAX_ ᵀᴹ*\n\n`;
+        message += `> ⚜️ _𝐃𝐞𝐯𝐞𝐥𝐨𝐩𝐞𝐝_ *- :* *_Mr Senal_ ᵀᴹ*\n\n`;
 
         const sentMessage = await messageHandler.sendMessage(from, {
             image: { url: `https://i.ibb.co/ntvzPr8/s-Wuxk4b-KHr.jpg` },
@@ -74,7 +74,7 @@ cmd({
 
                     await messageHandler.sendMessage(from, {
                         video: { url: videoUrl },
-                        caption: `${selectedVideo.title}\n\n> ⚜️ _𝐃𝐞𝐯𝐞𝐥𝐨𝐩𝐞𝐝_ *- :* *_SL NETHU MAX_ ᵀᴹ*`
+                        caption: `${selectedVideo.title}\n\n> ⚜️ _𝐃𝐞𝐯𝐞𝐥𝐨𝐩𝐞𝐝_ *- :* *_Mr Senal_ ᵀᴹ*`
                     });
 
                 } catch (err) {
