@@ -1,105 +1,193 @@
-const { cmd } = require("../command");
-const axios = require("axios");
+const { cmd } = require('../command');
+const axios = require('axios');
 
+const API = "https://mapi-beta.vercel.app";
+
+// temp memory (safe for low users)
+global.cineSearch = {};
+global.cineEpisodes = {};
+
+/* =========================
+   🎬 SEARCH MOVIE / TV
+========================= */
 cmd({
-  pattern: "ytm",
-  alias: ["movie", "ytsmovie"],
-  desc: "🎬 Search and download movies from YTS",
-  category: "search",
-  react: "🎥",
+  pattern: "movie",
+  alias: ["mv", "film", "tv"],
+  desc: "Search movies or TV series",
+  category: "downloader",
+  react: "🎬",
   filename: __filename
-}, 
+},
 async (conn, mek, m, { from, q, reply }) => {
   try {
-    if (!q) return reply("❗ Please provide a movie name.\n\n📌 Example: `.yts Interstellar`");
+    if (!q) return reply("❗ Enter movie or TV show name");
 
-    reply("🔍 *Searching YTS for:* " + q + "\n⏳ Please wait...");
+    reply("🔍 Searching...");
 
-    const apiUrl = `https://yts-mx-alpha.vercel.app/api/v2/search?query=${encodeURIComponent(q)}`;
-    const { data } = await axios.get(apiUrl);
+    const { data } = await axios.get(
+      `${API}/search?q=${encodeURIComponent(q)}`
+    );
 
-    if (!data.data || !data.data.movies || data.data.movies.length === 0) {
-      return reply(`❌ *No results found for:* ${q}\n\n💡 Try checking the spelling or search for a different movie.`);
+    if (!data || data.length === 0) {
+      return reply("❌ No results found");
     }
 
-    const movie = data.data.movies[0];
+    const list = data.slice(0, 6);
+    global.cineSearch[from] = list;
 
-    const title = movie.title || "Unknown";
-    const year = movie.year || "N/A";
-    const rating = movie.rating || "N/A";
-    const coverImage = movie.large_cover_image || movie.medium_cover_image || "";
-    
-    const torrents = movie.torrents || [];
-    
-    if (torrents.length === 0) {
-      return reply(`❌ No download links available for *${title}*`);
-    }
-
-    let qualitiesText = "";
-    let torrentsText = "";
-    let seedrLinks = "";
-
-    torrents.forEach((torrent, index) => {
-      const quality = torrent.quality || "Unknown";
-      const size = torrent.size || "N/A";
-      const torrentUrl = torrent.url || "#";
-      const hash = torrent.hash || "";
-
-      if (index === 0) {
-        qualitiesText = quality;
-      } else {
-        qualitiesText += `, ${quality}`;
-      }
-
-      torrentsText += `\n🔗 *${quality}:* ${torrentUrl}`;
-
-      if (hash) {
-        const seedrUrl = `https://www.seedr.cc/?magnet=magnet:?xt=urn:btih:${hash}`;
-        seedrLinks += `\n⚡ *${quality}:* ${seedrUrl}`;
-      }
+    let text = "🎬 *Search Results*\n\n";
+    list.forEach((v, i) => {
+      text += `${i + 1}. ${v.title}\n`;
     });
+    text += `\nReply with a number (1-${list.length})`;
 
-    const primarySize = torrents[0].size || "N/A";
-    const sizeInfo = torrents.length > 1 
-      ? `${torrents[0].size} / ${torrents[torrents.length - 1].size}` 
-      : primarySize;
+    await conn.sendMessage(from, { text }, { quoted: mek });
 
-    const cleanText = (text) => text ? text.replace(/<[^>]*>/g, '') : "";
+  } catch (e) {
+    console.error(e);
+    reply("❌ Search failed");
+  }
+});
 
-    const caption = `
-────────────────────────────
-🎬 *Title:* ${cleanText(title)}
-📅 *Year:* ${year}
-⭐ *IMDb:* ${rating}/10
-🎥 *Quality:* ${qualitiesText}
-📦 *Size:* ${sizeInfo}
+/* =========================
+   🎯 SELECT MOVIE / TV
+========================= */
+cmd({
+  pattern: "^[1-9]$",
+  dontAddCommandList: true
+},
+async (conn, mek, m, { from, reply }) => {
+  try {
+    if (!global.cineSearch[from]) return;
 
-*🔗 Torrent Links:*${torrentsText}
+    const num = parseInt(m.text);
+    const selected = global.cineSearch[from][num - 1];
+    if (!selected) return;
 
-*⚡ Direct Download (Seedr):*${seedrLinks}
-────────────────────────────
-✨ *Developer:* Mr Senal | YTS.mx
-────────────────────────────
-    `.trim();
+    delete global.cineSearch[from];
 
-    if (coverImage) {
-      await conn.sendMessage(from, {
-        image: { url: coverImage },
-        caption: caption
-      }, { quoted: mek });
-    } else {
-      await reply(caption);
+    const { data } = await axios.get(
+      `${API}/details?url=${encodeURIComponent(selected.url)}`
+    );
+
+    // TV SERIES → EPISODES
+    if (data.type === "tv") {
+      const epRes = await axios.get(
+        `${API}/episodes?url=${encodeURIComponent(selected.url)}`
+      );
+
+      global.cineEpisodes[from] = epRes.data;
+
+      let txt = `📺 *${data.title}*\n\n`;
+      epRes.data.slice(0, 10).forEach((e, i) => {
+        txt += `${i + 1}. ${e.title}\n`;
+      });
+      txt += `\nReply with episode number`;
+
+      return conn.sendMessage(from, { text: txt }, { quoted: mek });
     }
 
-  } catch (err) {
-    console.error("Error in .yts command:", err);
-    
-    if (err.response) {
-      reply(`❌ API Error: ${err.response.status}\n\n💡 The YTS API might be down. Try again later.`);
-    } else if (err.request) {
-      reply("❌ Network error. Please check your connection and try again.");
-    } else {
-      reply("❌ An error occurred while searching for the movie.\n\n" + err.message);
+    // MOVIE → DOWNLOAD QUALITIES
+    const buttons = data.downloads.map(d => ({
+      buttonId: `dl|${encodeURIComponent(d.url)}`,
+      buttonText: { displayText: `⬇️ ${d.quality}` },
+      type: 1
+    }));
+
+    const caption =
+`🎬 *${data.title}*
+📝 ${data.description || "No description"}
+
+👇 Select quality`;
+
+    await conn.sendMessage(from, {
+      image: { url: data.poster },
+      caption,
+      footer: "CineSubz API • Mr Senal",
+      buttons,
+      headerType: 4
+    }, { quoted: mek });
+
+  } catch (e) {
+    console.error(e);
+    reply("❌ Failed to load details");
+  }
+});
+
+/* =========================
+   📺 EPISODE SELECT
+========================= */
+cmd({
+  pattern: "^[0-9]+$",
+  dontAddCommandList: true
+},
+async (conn, mek, m, { from }) => {
+  try {
+    if (!global.cineEpisodes[from]) return;
+
+    const ep = global.cineEpisodes[from][parseInt(m.text) - 1];
+    if (!ep) return;
+
+    delete global.cineEpisodes[from];
+
+    const { data } = await axios.get(
+      `${API}/details?url=${encodeURIComponent(ep.url)}`
+    );
+
+    const buttons = data.downloads.map(d => ({
+      buttonId: `dl|${encodeURIComponent(d.url)}`,
+      buttonText: { displayText: `⬇️ ${d.quality}` },
+      type: 1
+    }));
+
+    await conn.sendMessage(from, {
+      image: { url: data.poster },
+      caption: `📺 *${ep.title}*\n\n👇 Select quality`,
+      footer: "CineSubz API",
+      buttons,
+      headerType: 4
+    }, { quoted: mek });
+
+  } catch (e) {
+    console.error(e);
+  }
+});
+
+/* =========================
+   ⬇️ DOWNLOAD HANDLER
+========================= */
+cmd({
+  on: "button"
+},
+async (conn, mek, m) => {
+  try {
+    const id = m.buttonId;
+    const from = mek.key.remoteJid;
+
+    if (!id.startsWith("dl|")) return;
+
+    const countdownUrl = decodeURIComponent(id.split("|")[1]);
+
+    await conn.sendMessage(from, {
+      text: "⏳ Resolving download link..."
+    }, { quoted: mek });
+
+    const { data } = await axios.get(
+      `${API}/download?url=${encodeURIComponent(countdownUrl)}`
+    );
+
+    if (!data.download) {
+      return conn.sendMessage(from, { text: "❌ Download failed" });
     }
+
+    await conn.sendMessage(from, {
+      document: { url: data.download },
+      mimetype: "video/mp4",
+      fileName: "movie.mp4",
+      caption: "✅ Download completed"
+    }, { quoted: mek });
+
+  } catch (e) {
+    console.error(e);
   }
 });
