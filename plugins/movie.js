@@ -2,49 +2,48 @@ const { cmd } = require('../command');
 const axios = require('axios');
 
 const API = "https://mapi-beta.vercel.app";
-
-// user states
-global.cineSearch = {};
-global.cineEpisodes = {};
+global.cineState = {};
 
 /* =========================
-   🔍 SEARCH MOVIE / TV
+   🔍 SEARCH
 ========================= */
 cmd({
   pattern: "movie",
-  alias: ["mv", "film", "tv"],
-  desc: "Search movies or TV series",
+  alias: ["mv", "tv"],
+  desc: "Movie & TV downloader",
   category: "downloader",
   react: "🎬",
   filename: __filename
 },
 async (conn, mek, m, { from, q, reply }) => {
   try {
-    if (!q) return reply("❗ Enter movie or TV show name");
+    if (!q) return reply("❗ Example: `.movie avatar`");
 
     reply("🔍 Searching...");
 
-    const res = await axios.get(
-      `${API}/search?q=${encodeURIComponent(q)}`
-    );
+    const res = await axios.get(`${API}/search?q=${encodeURIComponent(q)}`);
+    const results = res.data?.results;
 
-    if (!res.data?.results?.length) {
-      return reply("❌ No results found");
-    }
+    if (!results?.length) return reply("❌ No results found");
 
-    const list = res.data.results.slice(0, 6);
-    global.cineSearch[from] = list;
+    const list = results.slice(0, 6);
+
+    // ✅ SET STATE
+    cineState[from] = {
+      step: "search",
+      data: list
+    };
 
     let txt = "🎬 *Search Results*\n\n";
     list.forEach((v, i) => {
       txt += `${i + 1}. ${v.title}\n`;
     });
-    txt += `\nReply with number (1-${list.length})`;
+    txt += "\nReply with number";
 
     await conn.sendMessage(from, { text: txt }, { quoted: mek });
 
   } catch (e) {
-    console.error("SEARCH ERROR:", e.message);
+    console.error(e);
     reply("❌ Search failed");
   }
 });
@@ -58,45 +57,45 @@ cmd({
 },
 async (conn, mek, m, { from, reply }) => {
   try {
-    const num = parseInt(m.text);
+    const state = cineState[from];
+    if (!state) return; // ✅ IGNORE RANDOM NUMBERS
 
-    /* ---------- SELECT SEARCH RESULT ---------- */
-    if (global.cineSearch[from]) {
-      const list = global.cineSearch[from];
-      const selected = list[num - 1];
-      if (!selected) return reply("❌ Invalid number");
+    const index = parseInt(m.text) - 1;
+    if (index < 0) return reply("❌ Invalid number");
 
-      delete global.cineSearch[from];
+    /* ===== SELECT SEARCH RESULT ===== */
+    if (state.step === "search") {
+      const item = state.data[index];
+      if (!item) return reply("❌ Invalid number");
+
+      // CLEAR OLD STATE
+      delete cineState[from];
 
       const res = await axios.get(
-        `${API}/details?url=${encodeURIComponent(selected.url)}`
+        `${API}/details?url=${encodeURIComponent(item.url)}`
       );
       const data = res.data;
 
       /* ===== TV SERIES ===== */
       if (data.type === "tv") {
         const epRes = await axios.get(
-          `${API}/episodes?url=${encodeURIComponent(selected.url)}`
+          `${API}/episodes?url=${encodeURIComponent(item.url)}`
         );
 
         if (!epRes.data?.length) {
           return reply("❌ No episodes found");
         }
 
-        global.cineEpisodes[from] = epRes.data;
+        cineState[from] = {
+          step: "episode",
+          data: epRes.data
+        };
 
-        let txt =
-`📺 *${data.title}*
-
-📝 ${data.description || "No description"}
-
-📂 Episodes:\n`;
-
+        let txt = `📺 *${data.title}*\n\n`;
         epRes.data.slice(0, 10).forEach((e, i) => {
           txt += `${i + 1}. ${e.title}\n`;
         });
-
-        txt += `\nReply with episode number`;
+        txt += "\nReply with episode number";
 
         return conn.sendMessage(from, {
           image: { url: data.poster },
@@ -105,90 +104,69 @@ async (conn, mek, m, { from, reply }) => {
       }
 
       /* ===== MOVIE ===== */
-      const buttons = data.downloads.map(d => ({
-        buttonId: `dl|${encodeURIComponent(d.url)}`,
-        buttonText: {
-          displayText: `⬇️ ${d.quality} • ${d.size || "?"}`
-        },
-        type: 1
-      }));
-
-      return conn.sendMessage(from, {
-        image: { url: data.poster },
-        caption:
-`🎬 *${data.title}*
-📅 ${data.year || "N/A"}
-⏱️ ${data.duration || "N/A"}
-
-📝 ${data.description || "No description"}
-
-👇 Select quality`,
-        footer: "CineSubz • Mr Senal",
-        buttons,
-        headerType: 4
-      }, { quoted: mek });
+      return sendDownloadUI(conn, mek, from, data);
     }
 
-    /* ---------- SELECT EPISODE ---------- */
-    if (global.cineEpisodes[from]) {
-      const eps = global.cineEpisodes[from];
-      const ep = eps[num - 1];
+    /* ===== SELECT EPISODE ===== */
+    if (state.step === "episode") {
+      const ep = state.data[index];
       if (!ep) return reply("❌ Invalid episode");
 
-      delete global.cineEpisodes[from];
+      delete cineState[from];
 
       const res = await axios.get(
         `${API}/details?url=${encodeURIComponent(ep.url)}`
       );
-      const data = res.data;
 
-      const buttons = data.downloads.map(d => ({
-        buttonId: `dl|${encodeURIComponent(d.url)}`,
-        buttonText: {
-          displayText: `⬇️ ${d.quality} • ${d.size || "?"}`
-        },
-        type: 1
-      }));
-
-      return conn.sendMessage(from, {
-        image: { url: data.poster },
-        caption:
-`📺 *${ep.title}*
-
-👇 Select quality`,
-        footer: "CineSubz • Mr Senal",
-        buttons,
-        headerType: 4
-      }, { quoted: mek });
+      return sendDownloadUI(conn, mek, from, res.data, ep.title);
     }
 
   } catch (e) {
-    console.error("NUMBER HANDLER ERROR:", e.message);
-    reply("❌ Something went wrong");
+    console.error(e);
+    reply("❌ Error occurred");
   }
 });
 
 /* =========================
-   ⬇️ DOWNLOAD BUTTON
+   🎞 DOWNLOAD UI
 ========================= */
-cmd({
-  on: "button"
-},
-async (conn, mek, m) => {
+async function sendDownloadUI(conn, mek, from, data, epTitle = "") {
+  const buttons = data.downloads.map(d => ({
+    buttonId: `dl|${encodeURIComponent(d.url)}`,
+    buttonText: { displayText: `⬇️ ${d.quality} • ${d.size || "?"}` },
+    type: 1
+  }));
+
+  await conn.sendMessage(from, {
+    image: { url: data.poster },
+    caption:
+`🎬 *${epTitle || data.title}*
+
+📝 ${data.description || "No description"}
+
+👇 Select quality`,
+    footer: "CineSubz • Mr Senal",
+    buttons,
+    headerType: 4
+  }, { quoted: mek });
+}
+
+/* =========================
+   ⬇️ DOWNLOAD
+========================= */
+cmd({ on: "button" }, async (conn, mek, m) => {
   try {
     const id = m.buttonId;
     const from = mek.key.remoteJid;
 
     if (!id?.startsWith("dl|")) return;
 
-    const countdownUrl = decodeURIComponent(id.split("|")[1]);
+    const pageUrl = decodeURIComponent(id.split("|")[1]);
 
-    await conn.sendMessage(from, {
-      text: "⏳ Resolving download link..."
-    }, { quoted: mek });
+    await conn.sendMessage(from, { text: "⏳ Preparing download..." }, { quoted: mek });
 
     const res = await axios.get(
-      `${API}/download?url=${encodeURIComponent(countdownUrl)}`
+      `${API}/download?url=${encodeURIComponent(pageUrl)}`
     );
 
     if (!res.data?.download) {
@@ -203,7 +181,7 @@ async (conn, mek, m) => {
     }, { quoted: mek });
 
   } catch (e) {
-    console.error("DOWNLOAD ERROR:", e.message);
+    console.error(e);
   }
 });
-                              
+       
