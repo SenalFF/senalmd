@@ -3,7 +3,7 @@ const axios = require('axios');
 
 const API = "https://mapi-beta.vercel.app";
 
-// temp memory (safe for low users)
+// temp memory
 global.cineSearch = {};
 global.cineEpisodes = {};
 
@@ -24,27 +24,27 @@ async (conn, mek, m, { from, q, reply }) => {
 
     reply("🔍 Searching...");
 
-    const { data } = await axios.get(
+    const res = await axios.get(
       `${API}/search?q=${encodeURIComponent(q)}`
     );
 
-    if (!data || data.length === 0) {
+    if (!res.data || !res.data.results || res.data.results.length === 0) {
       return reply("❌ No results found");
     }
 
-    const list = data.slice(0, 6);
+    const list = res.data.results.slice(0, 6);
     global.cineSearch[from] = list;
 
     let text = "🎬 *Search Results*\n\n";
     list.forEach((v, i) => {
       text += `${i + 1}. ${v.title}\n`;
     });
-    text += `\nReply with a number (1-${list.length})`;
+    text += `\nReply with number (1-${list.length})`;
 
     await conn.sendMessage(from, { text }, { quoted: mek });
 
   } catch (e) {
-    console.error(e);
+    console.error("SEARCH ERROR:", e.message);
     reply("❌ Search failed");
   }
 });
@@ -60,21 +60,27 @@ async (conn, mek, m, { from, reply }) => {
   try {
     if (!global.cineSearch[from]) return;
 
-    const num = parseInt(m.text);
-    const selected = global.cineSearch[from][num - 1];
+    const index = parseInt(m.text) - 1;
+    const selected = global.cineSearch[from][index];
     if (!selected) return;
 
     delete global.cineSearch[from];
 
-    const { data } = await axios.get(
+    const res = await axios.get(
       `${API}/details?url=${encodeURIComponent(selected.url)}`
     );
+
+    const data = res.data;
 
     // TV SERIES → EPISODES
     if (data.type === "tv") {
       const epRes = await axios.get(
         `${API}/episodes?url=${encodeURIComponent(selected.url)}`
       );
+
+      if (!epRes.data || epRes.data.length === 0) {
+        return reply("❌ No episodes found");
+      }
 
       global.cineEpisodes[from] = epRes.data;
 
@@ -109,7 +115,7 @@ async (conn, mek, m, { from, reply }) => {
     }, { quoted: mek });
 
   } catch (e) {
-    console.error(e);
+    console.error("DETAIL ERROR:", e.message);
     reply("❌ Failed to load details");
   }
 });
@@ -125,14 +131,17 @@ async (conn, mek, m, { from }) => {
   try {
     if (!global.cineEpisodes[from]) return;
 
-    const ep = global.cineEpisodes[from][parseInt(m.text) - 1];
+    const index = parseInt(m.text) - 1;
+    const ep = global.cineEpisodes[from][index];
     if (!ep) return;
 
     delete global.cineEpisodes[from];
 
-    const { data } = await axios.get(
+    const res = await axios.get(
       `${API}/details?url=${encodeURIComponent(ep.url)}`
     );
+
+    const data = res.data;
 
     const buttons = data.downloads.map(d => ({
       buttonId: `dl|${encodeURIComponent(d.url)}`,
@@ -143,13 +152,13 @@ async (conn, mek, m, { from }) => {
     await conn.sendMessage(from, {
       image: { url: data.poster },
       caption: `📺 *${ep.title}*\n\n👇 Select quality`,
-      footer: "CineSubz API",
+      footer: "CineSubz API • Mr Senal",
       buttons,
       headerType: 4
     }, { quoted: mek });
 
   } catch (e) {
-    console.error(e);
+    console.error("EPISODE ERROR:", e.message);
   }
 });
 
@@ -164,7 +173,7 @@ async (conn, mek, m) => {
     const id = m.buttonId;
     const from = mek.key.remoteJid;
 
-    if (!id.startsWith("dl|")) return;
+    if (!id || !id.startsWith("dl|")) return;
 
     const countdownUrl = decodeURIComponent(id.split("|")[1]);
 
@@ -172,22 +181,27 @@ async (conn, mek, m) => {
       text: "⏳ Resolving download link..."
     }, { quoted: mek });
 
-    const { data } = await axios.get(
+    const res = await axios.get(
       `${API}/download?url=${encodeURIComponent(countdownUrl)}`
     );
 
-    if (!data.download) {
-      return conn.sendMessage(from, { text: "❌ Download failed" });
+    if (!res.data || !res.data.download) {
+      return conn.sendMessage(from, {
+        text: "❌ Download failed"
+      }, { quoted: mek });
     }
 
     await conn.sendMessage(from, {
-      document: { url: data.download },
+      document: { url: res.data.download },
       mimetype: "video/mp4",
       fileName: "movie.mp4",
       caption: "✅ Download completed"
     }, { quoted: mek });
 
   } catch (e) {
-    console.error(e);
+    console.error("DOWNLOAD ERROR:", e.message);
+    conn.sendMessage(mek.key.remoteJid, {
+      text: "❌ Error while downloading"
+    }, { quoted: mek });
   }
 });
