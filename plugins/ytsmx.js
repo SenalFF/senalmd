@@ -33,7 +33,7 @@ async (conn, mek, m, { from, q, reply }) => {
       return reply("❌ No results found for your search.");
     }
 
-    // Format results
+    // Format results with poster for first result
     let message = `🎬 *CineSubz Search Results*\n\n`;
     message += `🔎 Query: *${q}*\n`;
     message += `📊 Found: ${data.results.length} results\n\n`;
@@ -52,7 +52,16 @@ async (conn, mek, m, { from, q, reply }) => {
     message += `Copy the URL and use:\n`;
     message += `.cinedetails <url>`;
 
-    await conn.sendMessage(from, { text: message }, { quoted: mek });
+    // Send with first result's poster
+    const firstResult = data.results[0];
+    if (firstResult && firstResult.poster_url) {
+      await conn.sendMessage(from, {
+        image: { url: firstResult.poster_url },
+        caption: message
+      }, { quoted: mek });
+    } else {
+      await conn.sendMessage(from, { text: message }, { quoted: mek });
+    }
 
   } catch (e) {
     console.error("Search error:", e);
@@ -77,11 +86,11 @@ async (conn, mek, m, { from, q, reply }) => {
     if (!q) {
       return reply(`❗ *Please provide a CineSubz URL*
 
-*Usage:* .cds <url>
-*Example:* .cds https://cinesubz.lk/movies/avatar-2009/`);
+*Usage:* .cinedetails <url>
+*Example:* .cinedetails https://cinesubz.co/movies/avatar-2022/`);
     }
 
-    // Validate URL - accept both .lk and .co domains
+    // Validate URL
     if (!q.includes('cinesubz.lk') && !q.includes('cinesubz.co')) {
       return reply("❌ Please provide a valid CineSubz URL (cinesubz.lk or cinesubz.co)");
     }
@@ -89,7 +98,7 @@ async (conn, mek, m, { from, q, reply }) => {
     reply("⏳ *Fetching details...*");
 
     // Call /details endpoint
-    const detailsUrl = `${API_BASE}/details?url=${encoded_url(q)}`;
+    const detailsUrl = `${API_BASE}/details?url=${encodeURIComponent(q)}`;
     const { data } = await axios.get(detailsUrl);
 
     if (!data || !data.title) {
@@ -97,38 +106,41 @@ async (conn, mek, m, { from, q, reply }) => {
     }
 
     // Format details
-    let message = `🎬 *${data.title}*\n\n`;
+    let message = `🎬 *${data.movie_info?.title || data.title}*\n\n`;
     
-    if (data.year) message += `📅 *Year:* ${data.year}\n`;
-    if (data.genre) message += `🎭 *Genre:* ${data.genre}\n`;
-    if (data.imdb) message += `⭐ *IMDB:* ${data.imdb}\n`;
-    if (data.duration) message += `⏱️ *Duration:* ${data.duration}\n`;
-    if (data.language) message += `🗣️ *Language:* ${data.language}\n`;
-    if (data.type) message += `📁 *Type:* ${data.type}\n`;
+    if (data.movie_info) {
+      if (data.movie_info.year) message += `📅 *Year:* ${data.movie_info.year}\n`;
+      if (data.movie_info.rating) message += `⭐ *Rating:* ${data.movie_info.rating}\n`;
+      if (data.movie_info.genres && data.movie_info.genres.length > 0) {
+        message += `🎭 *Genre:* ${data.movie_info.genres.join(', ')}\n`;
+      }
+      if (data.movie_info.type) message += `📁 *Type:* ${data.movie_info.type}\n`;
+    }
     
     message += `\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
     
-    if (data.description) {
-      const desc = data.description.length > 300 
-        ? data.description.substring(0, 300) + '...' 
-        : data.description;
+    if (data.movie_info?.description && data.movie_info.description !== 'N/A') {
+      const desc = data.movie_info.description.length > 300 
+        ? data.movie_info.description.substring(0, 300) + '...' 
+        : data.movie_info.description;
       message += `📝 *Description:*\n${desc}\n\n`;
       message += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
     }
 
     // If it's a TV show
-    if (data.type === "tvshow") {
+    if (data.movie_info?.type === "tvshow" || data.type === "tvshow") {
       message += `📺 *This is a TV Show*\n\n`;
       message += `📌 *Get Episodes:*\n`;
       message += `.cineepisodes ${q}`;
     } 
-    // If it's a movie
-    else if (data.downloadLinks && Object.keys(data.downloadLinks).length > 0) {
+    // If it's a movie with download links
+    else if (data.download_links && data.download_links.length > 0) {
       message += `📥 *Available Download Qualities:*\n\n`;
       
-      Object.entries(data.downloadLinks).forEach(([quality, url]) => {
-        message += `*${quality}*\n`;
-        message += `🔗 ${url}\n\n`;
+      data.download_links.forEach((link) => {
+        message += `*${link.quality}*\n`;
+        if (link.size) message += `💾 Size: ${link.size}\n`;
+        message += `🔗 ${link.countdown_url}\n\n`;
       });
 
       message += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
@@ -139,9 +151,14 @@ async (conn, mek, m, { from, q, reply }) => {
     }
 
     // Send with image if available
-    if (data.image) {
+    if (data.poster_url) {
       await conn.sendMessage(from, {
-        image: { url: data.image },
+        image: { url: data.poster_url },
+        caption: message
+      }, { quoted: mek });
+    } else if (data.movie_info?.poster_url) {
+      await conn.sendMessage(from, {
+        image: { url: data.movie_info.poster_url },
         caption: message
       }, { quoted: mek });
     } else {
@@ -175,7 +192,7 @@ async (conn, mek, m, { from, q, reply }) => {
 *Example:* .cineepisodes https://cinesubz.co/tvshows/the-witcher-2019/`);
     }
 
-    if (!q.includes('cinesubz.co')) {
+    if (!q.includes('cinesubz.lk') && !q.includes('cinesubz.co')) {
       return reply("❌ Please provide a valid CineSubz URL");
     }
 
@@ -242,7 +259,7 @@ async (conn, mek, m, { from, q, reply }) => {
 *Example:* .cinedownload https://cinesubz.co/api-.../odcemnd9hb/`);
     }
 
-    if (!q.includes('cinesubz.co')) {
+    if (!q.includes('cinesubz.lk') && !q.includes('cinesubz.co')) {
       return reply("❌ Please provide a valid CineSubz countdown URL");
     }
 
