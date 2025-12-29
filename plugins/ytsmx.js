@@ -42,9 +42,9 @@ async (conn, mek, m, { from, q, reply }) => {
     data.results.slice(0, 10).forEach((item, index) => {
       message += `*${index + 1}. ${item.title}*\n`;
       if (item.type) message += `   📁 Type: ${item.type}\n`;
-      if (item.year) message += `   📅 Year: ${item.year}\n`;
-      if (item.genre) message += `   🎭 Genre: ${item.genre}\n`;
-      message += `   🔗 URL: ${item.url}\n\n`;
+      if (item.quality) message += `   📺 Quality: ${item.quality}\n`;
+      if (item.rating) message += `   ⭐ Rating: ${item.rating}\n`;
+      message += `   🔗 ${item.movie_url}\n\n`;
     });
 
     message += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
@@ -65,7 +65,7 @@ async (conn, mek, m, { from, q, reply }) => {
 // 2️⃣ DETAILS ENDPOINT - Get movie/TV show details + download links
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 cmd({
-  pattern: "cd",
+  pattern: "cds",
   alias: ["moviedetails", "cdetails"],
   desc: "Get movie/TV show details with download links",
   category: "downloader",
@@ -159,7 +159,7 @@ async (conn, mek, m, { from, q, reply }) => {
 // 3️⃣ EPISODES ENDPOINT - Get TV show episodes list
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 cmd({
-  pattern: "ep",
+  pattern: "cep",
   alias: ["episodes", "cepisodes"],
   desc: "Get TV show episodes list",
   category: "downloader",
