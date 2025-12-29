@@ -3,205 +3,184 @@ const axios = require('axios');
 
 const API = "https://mapi-beta.vercel.app";
 
-// temp memory
-global.cineSearch = {};
-global.cineEpisodes = {};
-
 /* =========================
-   🎬 SEARCH MOVIE / TV
+   🎬 MOVIE / TV SEARCH
 ========================= */
 cmd({
   pattern: "movie",
-  alias: ["mv", "film", "tv"],
-  desc: "Search movies or TV series",
+  alias: ["mv", "tv"],
+  desc: "Search & download movies / TV series",
   category: "downloader",
   react: "🎬",
   filename: __filename
 },
 async (conn, mek, m, { from, q, reply }) => {
   try {
-    if (!q) return reply("❗ Enter movie or TV show name");
+    if (!q) return reply("❗ Example: .movie avatar");
 
-    reply("🔍 Searching...");
+    reply("🔍 *Searching... Please wait sir!*");
 
-    const res = await axios.get(
+    const { data } = await axios.get(
       `${API}/search?q=${encodeURIComponent(q)}`
     );
 
-    if (!res.data || !res.data.results || res.data.results.length === 0) {
+    if (!data?.results?.length) {
       return reply("❌ No results found");
     }
 
-    const list = res.data.results.slice(0, 6);
-    global.cineSearch[from] = list;
+    // limit to 5 results (WhatsApp button limit safe)
+    const results = data.results.slice(0, 5);
 
-    let text = "🎬 *Search Results*\n\n";
-    list.forEach((v, i) => {
-      text += `${i + 1}. ${v.title}\n`;
-    });
-    text += `\nReply with number (1-${list.length})`;
+    const buttons = results.map((v, i) => ({
+      buttonId: `movie_select_${i}`,
+      buttonText: {
+        displayText: `${v.type === "tv" ? "📺" : "🎬"} ${v.title}`
+      },
+      type: 1
+    }));
 
-    await conn.sendMessage(from, { text }, { quoted: mek });
+    // store results in memory (per chat)
+    global.movieSearch ??= {};
+    global.movieSearch[from] = results;
+
+    await conn.sendMessage(from, {
+      text: "🎬 *Search Results*\n\nSelect a movie / TV series 👇",
+      footer: "CineSubz • Mr Senal",
+      buttons,
+      headerType: 1
+    }, { quoted: mek });
 
   } catch (e) {
-    console.error("SEARCH ERROR:", e.message);
+    console.error("SEARCH ERROR:", e);
     reply("❌ Search failed");
   }
 });
 
 /* =========================
-   🎯 SELECT MOVIE / TV
+   🔘 BUTTON HANDLER
 ========================= */
 cmd({
-  pattern: "^[1-9]$",
-  dontAddCommandList: true
-},
-async (conn, mek, m, { from, reply }) => {
-  try {
-    if (!global.cineSearch[from]) return;
-
-    const index = parseInt(m.text) - 1;
-    const selected = global.cineSearch[from][index];
-    if (!selected) return;
-
-    delete global.cineSearch[from];
-
-    const res = await axios.get(
-      `${API}/details?url=${encodeURIComponent(selected.url)}`
-    );
-
-    const data = res.data;
-
-    // TV SERIES → EPISODES
-    if (data.type === "tv") {
-      const epRes = await axios.get(
-        `${API}/episodes?url=${encodeURIComponent(selected.url)}`
-      );
-
-      if (!epRes.data || epRes.data.length === 0) {
-        return reply("❌ No episodes found");
-      }
-
-      global.cineEpisodes[from] = epRes.data;
-
-      let txt = `📺 *${data.title}*\n\n`;
-      epRes.data.slice(0, 10).forEach((e, i) => {
-        txt += `${i + 1}. ${e.title}\n`;
-      });
-      txt += `\nReply with episode number`;
-
-      return conn.sendMessage(from, { text: txt }, { quoted: mek });
-    }
-
-    // MOVIE → DOWNLOAD QUALITIES
-    const buttons = data.downloads.map(d => ({
-      buttonId: `dl|${encodeURIComponent(d.url)}`,
-      buttonText: { displayText: `⬇️ ${d.quality}` },
-      type: 1
-    }));
-
-    const caption =
-`🎬 *${data.title}*
-📝 ${data.description || "No description"}
-
-👇 Select quality`;
-
-    await conn.sendMessage(from, {
-      image: { url: data.poster },
-      caption,
-      footer: "CineSubz API • Mr Senal",
-      buttons,
-      headerType: 4
-    }, { quoted: mek });
-
-  } catch (e) {
-    console.error("DETAIL ERROR:", e.message);
-    reply("❌ Failed to load details");
-  }
-});
-
-/* =========================
-   📺 EPISODE SELECT
-========================= */
-cmd({
-  pattern: "^[0-9]+$",
-  dontAddCommandList: true
-},
-async (conn, mek, m, { from }) => {
-  try {
-    if (!global.cineEpisodes[from]) return;
-
-    const index = parseInt(m.text) - 1;
-    const ep = global.cineEpisodes[from][index];
-    if (!ep) return;
-
-    delete global.cineEpisodes[from];
-
-    const res = await axios.get(
-      `${API}/details?url=${encodeURIComponent(ep.url)}`
-    );
-
-    const data = res.data;
-
-    const buttons = data.downloads.map(d => ({
-      buttonId: `dl|${encodeURIComponent(d.url)}`,
-      buttonText: { displayText: `⬇️ ${d.quality}` },
-      type: 1
-    }));
-
-    await conn.sendMessage(from, {
-      image: { url: data.poster },
-      caption: `📺 *${ep.title}*\n\n👇 Select quality`,
-      footer: "CineSubz API • Mr Senal",
-      buttons,
-      headerType: 4
-    }, { quoted: mek });
-
-  } catch (e) {
-    console.error("EPISODE ERROR:", e.message);
-  }
-});
-
-/* =========================
-   ⬇️ DOWNLOAD HANDLER
-========================= */
-cmd({
-  on: "button"
-},
-async (conn, mek, m) => {
-  try {
-    const id = m.buttonId;
+  buttonHandler: async (conn, mek, btnId) => {
     const from = mek.key.remoteJid;
 
-    if (!id || !id.startsWith("dl|")) return;
+    try {
+      /* =====================
+         🎬 SELECT MOVIE / TV
+      ====================== */
+      if (btnId.startsWith("movie_select_")) {
+        const index = parseInt(btnId.split("_")[2]);
+        const item = global.movieSearch?.[from]?.[index];
+        if (!item) return;
 
-    const countdownUrl = decodeURIComponent(id.split("|")[1]);
+        const { data } = await axios.get(
+          `${API}/details?url=${encodeURIComponent(item.url)}`
+        );
 
-    await conn.sendMessage(from, {
-      text: "⏳ Resolving download link..."
-    }, { quoted: mek });
+        // MOVIE
+        if (data.type !== "tv") {
+          return sendDetails(conn, mek, from, data);
+        }
 
-    const res = await axios.get(
-      `${API}/download?url=${encodeURIComponent(countdownUrl)}`
-    );
+        // TV SERIES → show episodes as buttons
+        const epRes = await axios.get(
+          `${API}/episodes?url=${encodeURIComponent(item.url)}`
+        );
 
-    if (!res.data || !res.data.download) {
-      return conn.sendMessage(from, {
-        text: "❌ Download failed"
+        global.tvEpisodes ??= {};
+        global.tvEpisodes[from] = epRes.data;
+
+        const eps = epRes.data.slice(0, 5); // button limit
+        const buttons = eps.map((e, i) => ({
+          buttonId: `tv_ep_${i}`,
+          buttonText: { displayText: `🎞️ ${e.title}` },
+          type: 1
+        }));
+
+        return conn.sendMessage(from, {
+          image: { url: data.poster },
+          caption: `📺 *${data.title}*\n\nSelect episode 👇`,
+          footer: "CineSubz",
+          buttons,
+          headerType: 4
+        }, { quoted: mek });
+      }
+
+      /* =====================
+         📺 TV EPISODE SELECT
+      ====================== */
+      if (btnId.startsWith("tv_ep_")) {
+        const index = parseInt(btnId.split("_")[2]);
+        const ep = global.tvEpisodes?.[from]?.[index];
+        if (!ep) return;
+
+        const { data } = await axios.get(
+          `${API}/details?url=${encodeURIComponent(ep.url)}`
+        );
+
+        return sendDetails(conn, mek, from, data);
+      }
+
+      /* =====================
+         ⬇️ DOWNLOAD
+      ====================== */
+      if (btnId.startsWith("movie_dl_")) {
+        const url = decodeURIComponent(btnId.replace("movie_dl_", ""));
+
+        await conn.sendMessage(from, {
+          text: "⏳ *Preparing download...*"
+        }, { quoted: mek });
+
+        const { data } = await axios.get(
+          `${API}/download?url=${encodeURIComponent(url)}`
+        );
+
+        if (!data?.download) {
+          return conn.sendMessage(from, {
+            text: "❌ Download failed"
+          }, { quoted: mek });
+        }
+
+        return conn.sendMessage(from, {
+          document: { url: data.download },
+          mimetype: "video/mp4",
+          fileName: "movie.mp4",
+          caption: "✅ Download started"
+        }, { quoted: mek });
+      }
+
+    } catch (e) {
+      console.error("BUTTON ERROR:", e);
+      await conn.sendMessage(from, {
+        text: "❌ Something went wrong"
       }, { quoted: mek });
     }
-
-    await conn.sendMessage(from, {
-      document: { url: res.data.download },
-      mimetype: "video/mp4",
-      fileName: "movie.mp4",
-      caption: "✅ Download completed"
-    }, { quoted: mek });
-
-  } catch (e) {
-    console.error("DOWNLOAD ERROR:", e.message);
-    conn.sendMessage(mek.key.remoteJid, {
-      text: "❌ Error while downloading"
-    }, { quoted: mek });
   }
 });
+
+/* =========================
+   🎞 DETAILS UI
+========================= */
+async function sendDetails(conn, mek, from, data) {
+  let caption = `🎬 *${data.title}*\n`;
+  if (data.release) caption += `📅 Release: ${data.release}\n`;
+  if (data.imdb) caption += `⭐ IMDb: ${data.imdb}\n`;
+  if (data.duration) caption += `⏱️ Duration: ${data.duration}\n`;
+  if (data.genre) caption += `🎭 Genre: ${data.genre.join(", ")}\n`;
+  if (data.description) caption += `\n📝 ${data.description}\n`;
+
+  const buttons = data.downloads.slice(0, 5).map(d => ({
+    buttonId: `movie_dl_${encodeURIComponent(d.url)}`,
+    buttonText: {
+      displayText: `⬇️ ${d.quality} • ${d.size || "?"}`
+    },
+    type: 1
+  }));
+
+  await conn.sendMessage(from, {
+    image: { url: data.poster },
+    caption: caption + "\n👇 Select quality",
+    footer: "CineSubz • Mr Senal",
+    buttons,
+    headerType: 4
+  }, { quoted: mek });
+}
