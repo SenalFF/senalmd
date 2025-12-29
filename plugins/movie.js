@@ -2,9 +2,7 @@ const { cmd } = require('../command');
 const axios = require('axios');
 
 const API = "https://mapi-beta.vercel.app";
-
-// Session store per user
-global.cineSession = {};
+global.cineSession = {}; // store sessions per user
 
 /* =========================
    🔍 SEARCH MOVIE / TV
@@ -17,16 +15,19 @@ cmd({
   filename: __filename
 },
 async (conn, mek, m, { from, q, reply }) => {
+  if (!q) return reply("❗ Example: .movie avatar");
+  reply("🔍 Searching...");
+
   try {
-    if (!q) return reply("❗ Example: .movie avatar");
+    const res = await axios.get(`${API}/search?q=${encodeURIComponent(q)}`, { timeout: 15000 });
 
-    reply("🔍 Searching...");
+    if (!res.data || !res.data.results || !res.data.results.length) {
+      return reply("❌ No results found");
+    }
 
-    const res = await axios.get(`${API}/search?q=${encodeURIComponent(q)}`);
-    const results = res.data?.results;
-    if (!results?.length) return reply("❌ No results found");
+    const results = res.data.results.slice(0, 10);
 
-    const rows = results.slice(0, 10).map(v => ({
+    const rows = results.map(v => ({
       title: v.title,
       description: v.type === "tv" ? "📺 TV Series" : "🎬 Movie",
       rowId: `cine_select|${encodeURIComponent(v.url)}`
@@ -41,13 +42,13 @@ async (conn, mek, m, { from, q, reply }) => {
     }, { quoted: mek });
 
   } catch (e) {
-    console.error("SEARCH ERROR:", e);
-    reply("❌ Search failed");
+    console.error("SEARCH ERROR:", e.message);
+    reply("❌ Search failed. Please try again.");
   }
 });
 
 /* =========================
-   🎬 MOVIE / TV SELECT
+   🎬 SELECT HANDLER (MOVIE / TV / SEASONS / EPISODES)
 ========================= */
 cmd({ on: "list_response" }, async (conn, mek, m) => {
   try {
@@ -64,18 +65,17 @@ cmd({ on: "list_response" }, async (conn, mek, m) => {
       return conn.sendMessage(from, { text: "❌ Cancelled" }, { quoted: mek });
     }
 
-    /* 🎬 MOVIE / TV DETAILS */
+    /* 🎬 MOVIE / TV SELECT */
     if (id.startsWith("cine_select|")) {
       const url = decodeURIComponent(id.split("|")[1]);
       const res = await axios.get(`${API}/details?url=${encodeURIComponent(url)}`);
       const data = res.data;
 
-      /* ===== MOVIE ===== */
+      // MOVIE
       if (data.type !== "tv") return sendDownloadUI(conn, mek, from, data);
 
-      /* ===== TV SERIES ===== */
+      // TV SERIES → SHOW SEASONS
       cineSession[from] = { seriesUrl: url };
-
       const epRes = await axios.get(`${API}/episodes?url=${encodeURIComponent(url)}`);
       const seasons = [...new Set(epRes.data.map(e => e.season || "Season 1"))];
 
@@ -97,7 +97,7 @@ cmd({ on: "list_response" }, async (conn, mek, m) => {
       cineSession[from].episodes = epRes.data;
     }
 
-    /* ===== SEASON SELECT ===== */
+    /* SEASON SELECT */
     if (id.startsWith("cine_season|")) {
       const season = id.split("|")[1];
       const session = cineSession[from];
@@ -120,7 +120,7 @@ cmd({ on: "list_response" }, async (conn, mek, m) => {
       }, { quoted: mek });
     }
 
-    /* ===== EPISODE SELECT ===== */
+    /* EPISODE SELECT */
     if (id.startsWith("cine_ep|")) {
       const epUrl = decodeURIComponent(id.split("|")[1]);
       delete cineSession[from];
@@ -184,20 +184,20 @@ cmd({ on: "button" }, async (conn, mek, m) => {
     const id = m.buttonId;
     const from = mek.key.remoteJid;
 
-    /* ❌ Cancel */
+    /* ❌ CANCEL */
     if (id === "cine_cancel_btn") {
       delete cineSession[from];
       return conn.sendMessage(from, { text: "❌ Cancelled" }, { quoted: mek });
     }
 
-    /* 💬 Subtitles */
+    /* 💬 SUBTITLES */
     if (id.startsWith("cine_subs|")) {
       return conn.sendMessage(from, {
         text: "💬 Subtitle download per language (API ready)"
       }, { quoted: mek });
     }
 
-    /* ⬇️ Download */
+    /* ⬇️ DOWNLOAD */
     if (!id.startsWith("cine_dl|")) return;
     const pageUrl = decodeURIComponent(id.split("|")[1]);
 
