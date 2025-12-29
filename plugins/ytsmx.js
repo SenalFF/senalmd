@@ -1,202 +1,242 @@
-const axios = require("axios");
-const { cmd } = require("../command");
+const { cmd } = require('../command');
+const axios = require('axios');
 
-// Global cache for steps and data
-global.searchCache = {};
-global.downloadCache = {};
-global.episodeCache = {};
-global.movieStep = {};
+const API_BASE = "https://your-cinesubz-api.vercel.app"; // Replace with your API URL
 
-const formatSize = (s) => s || "Unknown size";
-
-//////////////////////
-// 🔍 SEARCH COMMAND
-//////////////////////
+// 🎬 SEARCH COMMAND
 cmd({
   pattern: "movie",
-  react: "🎬",
+  alias: ["film", "series", "tv"],
+  desc: "Search and download movies/TV shows from CineSubz",
   category: "downloader",
+  react: "🎬",
   filename: __filename
-}, async (conn, mek, m, { from, q, reply }) => {
-  if (!q) return reply("*⚡ Example: .movie avatar*");
-
-  await reply("🔍 Searching...");
-
+},
+async (conn, mek, m, { from, args, q, reply }) => {
   try {
-    const res = await axios.get(`https://mapi-beta.vercel.app/search?q=${encodeURIComponent(q)}`);
-    const movies = [];
-    const tvs = [];
+    if (!q) return reply("❗ Please provide a movie or TV show name.\n\n*Example:* `.movie Avatar`");
 
-    res.data.results.forEach(v => {
-      if (v.type === "movie") movies.push(v);
-      else tvs.push(v);
+    reply("🔍 *Searching CineSubz... Please wait!*");
+
+    // Search API call
+    const searchUrl = `${API_BASE}/search?q=${encodeURIComponent(q)}`;
+    const { data } = await axios.get(searchUrl);
+
+    if (!data.results || data.results.length === 0) {
+      return reply("❌ No results found for your search.");
+    }
+
+    // Show first 5 results with buttons
+    const results = data.results.slice(0, 5);
+    const buttons = results.map((item, index) => ({
+      buttonId: `movie_select_${index}_${Buffer.from(item.url).toString('base64')}`,
+      buttonText: { displayText: `${index + 1}. ${item.title}` },
+      type: 1
+    }));
+
+    let caption = `🎬 *CineSubz Search Results*\n\n`;
+    caption += `🔎 Query: *${q}*\n`;
+    caption += `📊 Found: ${results.length} results\n\n`;
+    
+    results.forEach((item, i) => {
+      caption += `*${i + 1}.* ${item.title}\n`;
+      caption += `   📁 Type: ${item.type || 'N/A'}\n`;
+      caption += `   🎭 Genre: ${item.genre || 'N/A'}\n\n`;
     });
 
-    if (!movies.length && !tvs.length) return reply("❌ No results found");
+    caption += `👇 *Select a movie/show below:*`;
 
-    // Save cache
-    searchCache[from] = { movies, tvs };
-    movieStep[from] = "SELECT_ITEM";
-
-    let text = "🎬 *Movies*\n";
-    movies.forEach((v, i) => text += `m${i + 1} ${v.title}\n`);
-    text += "\n📺 *TV Series*\n";
-    tvs.forEach((v, i) => text += `tv${i + 1} ${v.title}\n`);
-    text += "\n_Reply with m1 / tv1 to select_";
-
-    return reply(text);
+    await conn.sendMessage(from, {
+      text: caption,
+      footer: "🔗 Powered by CineSubz API",
+      buttons,
+      headerType: 1
+    }, { quoted: mek });
 
   } catch (e) {
-    console.error(e);
-    return reply("❌ Search failed");
+    console.error("Error in movie search:", e);
+    reply(`❌ Error: ${e.message}`);
   }
 });
 
-//////////////////////
-// 📝 NUMBER REPLY HANDLER
-//////////////////////
-cmd({
-  on: "text",
-  async: async (conn, mek, m, { from, body, reply }) => {
-    if (!movieStep[from]) return;
 
-    // ---------------- MOVIE SELECT ----------------
-    if (/^m\d+$/i.test(body) && movieStep[from] === "SELECT_ITEM") {
-      const index = parseInt(body.slice(1)) - 1;
-      const movie = searchCache[from]?.movies[index];
-      if (!movie) return reply("❌ Invalid movie");
-
-      try {
-        const res = await axios.get(`https://mapi-beta.vercel.app/details?url=${encodeURIComponent(movie.url)}`);
-        const data = res.data;
-
-        downloadCache[from] = data.downloads;
-        movieStep[from] = "SELECT_QUALITY";
-
-        const buttons = data.downloads.map((d, i) => ({
-          buttonId: `movdl_${i}`,
-          buttonText: { displayText: `${d.quality} • ${formatSize(d.size)}` },
-          type: 1
-        }));
-
-        let qualityText = "";
-        data.downloads.forEach(d => qualityText += `• ${d.quality} — ${formatSize(d.size)}\n`);
-
-        return conn.sendMessage(from, {
-          image: { url: data.poster },
-          caption:
-            `🎬 *${data.title}*\n` +
-            `📅 Release: ${data.release || "N/A"}\n` +
-            `⭐ IMDb: ${data.imdb || "N/A"}\n\n` +
-            `⬇️ *Available Qualities*\n${qualityText}` +
-            `\nTap a quality button below 👇`,
-          footer: "CineSubz • Mr Senal",
-          buttons,
-          headerType: 4
-        }, { quoted: mek });
-
-      } catch (e) {
-        console.error(e);
-        return reply("❌ Failed to fetch movie details");
-      }
-    }
-
-    // ---------------- TV SELECT ----------------
-    if (/^tv\d+$/i.test(body) && movieStep[from] === "SELECT_ITEM") {
-      const index = parseInt(body.slice(2)) - 1;
-      const tv = searchCache[from]?.tvs[index];
-      if (!tv) return reply("❌ Invalid TV series");
-
-      try {
-        const res = await axios.get(`https://mapi-beta.vercel.app/episodes?url=${encodeURIComponent(tv.url)}`);
-        const episodes = res.data.episodes;
-        if (!episodes || !episodes.length) return reply("❌ No episodes found");
-
-        episodeCache[from] = episodes;
-        movieStep[from] = "SELECT_EPISODE";
-
-        let text = `📺 *${tv.title}* — Episodes:\n`;
-        episodes.forEach((e, i) => text += `ep${i + 1} ${e.title}\n`);
-        text += "\n_Reply with ep1 / ep2 to select episode_";
-
-        return reply(text);
-
-      } catch (e) {
-        console.error(e);
-        return reply("❌ Failed to fetch TV episodes");
-      }
-    }
-
-    // ---------------- EPISODE SELECT ----------------
-    if (/^ep\d+$/i.test(body) && movieStep[from] === "SELECT_EPISODE") {
-      const index = parseInt(body.slice(2)) - 1;
-      const ep = episodeCache[from]?.[index];
-      if (!ep) return reply("❌ Invalid episode");
-
-      try {
-        const res = await axios.get(`https://mapi-beta.vercel.app/details?url=${encodeURIComponent(ep.url)}`);
-        const data = res.data;
-
-        downloadCache[from] = data.downloads;
-        movieStep[from] = "SELECT_QUALITY_EP";
-
-        const buttons = data.downloads.map((d, i) => ({
-          buttonId: `epdl_${i}`,
-          buttonText: { displayText: `${d.quality} • ${formatSize(d.size)}` },
-          type: 1
-        }));
-
-        let qText = "";
-        data.downloads.forEach(d => qText += `• ${d.quality} — ${formatSize(d.size)}\n`);
-
-        return conn.sendMessage(from, {
-          image: { url: data.poster },
-          caption:
-            `🎞 *${data.title}*\n\n⬇️ *Available Qualities*\n${qText}` +
-            `\nTap a quality button below 👇`,
-          footer: "CineSubz • Mr Senal",
-          buttons,
-          headerType: 4
-        }, { quoted: mek });
-
-      } catch (e) {
-        console.error(e);
-        return reply("❌ Failed to fetch episode details");
-      }
-    }
-  }
-});
-
-//////////////////////////
-// ⬇️ DOWNLOAD BUTTON HANDLER
-//////////////////////////
+// 📺 BUTTON HANDLER - Movie/Show Selected
 cmd({
   buttonHandler: async (conn, mek, btnId) => {
-    const from = mek.key.remoteJid;
-
-    if (!btnId.startsWith("movdl_") && !btnId.startsWith("epdl_")) return;
-
-    const index = parseInt(btnId.split("_")[1]);
-    const item = downloadCache[from]?.[index];
-    if (!item) return;
+    const remoteJid = mek.key.remoteJid;
 
     try {
-      const res = await axios.get(`https://mapi-beta.vercel.app/download?url=${encodeURIComponent(item.url)}`);
+      // Handle movie selection
+      if (btnId.startsWith("movie_select_")) {
+        const parts = btnId.split("_");
+        const encodedUrl = parts[parts.length - 1];
+        const movieUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
 
-      // Clear cache for this user
-      movieStep[from] = null;
-      downloadCache[from] = null;
+        await conn.sendMessage(remoteJid, {
+          text: "⏳ *Fetching details... Please wait!*"
+        }, { quoted: mek });
 
-      return conn.sendMessage(from, {
-        document: { url: res.data.download },
-        mimetype: "video/mp4",
-        fileName: "video.mp4",
-        caption: "✅ Download started"
+        // Get movie/show details
+        const detailsUrl = `${API_BASE}/details?url=${encodeURIComponent(movieUrl)}`;
+        const { data } = await axios.get(detailsUrl);
+
+        if (data.type === "movie") {
+          // MOVIE - Show download quality options
+          await handleMovieDetails(conn, mek, remoteJid, data);
+        } else if (data.type === "tvshow") {
+          // TV SHOW - Show episodes list
+          await handleTVShowDetails(conn, mek, remoteJid, data, movieUrl);
+        }
+      }
+
+      // Handle episode selection
+      if (btnId.startsWith("episode_select_")) {
+        const parts = btnId.split("_");
+        const encodedUrl = parts[parts.length - 1];
+        const episodeUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
+
+        await conn.sendMessage(remoteJid, {
+          text: "⏳ *Fetching episode details...*"
+        }, { quoted: mek });
+
+        const detailsUrl = `${API_BASE}/details?url=${encodeURIComponent(episodeUrl)}`;
+        const { data } = await axios.get(detailsUrl);
+
+        await handleMovieDetails(conn, mek, remoteJid, data); // Episodes use same download format
+      }
+
+      // Handle download quality selection
+      if (btnId.startsWith("download_")) {
+        const parts = btnId.split("_");
+        const quality = parts[1];
+        const encodedUrl = parts[parts.length - 1];
+        const downloadPageUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
+
+        await handleDownload(conn, mek, remoteJid, downloadPageUrl, quality);
+      }
+
+    } catch (err) {
+      console.error("Button handler error:", err);
+      await conn.sendMessage(remoteJid, {
+        text: `❌ Error: ${err.message}`
       }, { quoted: mek });
-
-    } catch (e) {
-      console.error(e);
-      return conn.sendMessage(from, { text: "❌ Failed to start download" }, { quoted: mek });
     }
   }
 });
+
+
+// 🎥 Handle Movie Details & Download Options
+async function handleMovieDetails(conn, mek, remoteJid, data) {
+  const buttons = [];
+
+  // Create buttons for each quality option
+  if (data.downloadLinks) {
+    Object.entries(data.downloadLinks).forEach(([quality, url]) => {
+      buttons.push({
+        buttonId: `download_${quality}_${Buffer.from(url).toString('base64')}`,
+        buttonText: { displayText: `📥 ${quality}` },
+        type: 1
+      });
+    });
+  }
+
+  let caption = `🎬 *${data.title}*\n\n`;
+  if (data.year) caption += `📅 Year: ${data.year}\n`;
+  if (data.genre) caption += `🎭 Genre: ${data.genre}\n`;
+  if (data.imdb) caption += `⭐ IMDB: ${data.imdb}\n`;
+  if (data.duration) caption += `⏱️ Duration: ${data.duration}\n`;
+  if (data.language) caption += `🗣️ Language: ${data.language}\n`;
+  if (data.description) caption += `\n📝 ${data.description}\n`;
+  caption += `\n👇 *Select quality to download:*`;
+
+  await conn.sendMessage(remoteJid, {
+    image: data.image ? { url: data.image } : undefined,
+    caption,
+    footer: "🔗 Powered by CineSubz",
+    buttons,
+    headerType: 4
+  }, { quoted: mek });
+}
+
+
+// 📺 Handle TV Show Episodes List
+async function handleTVShowDetails(conn, mek, remoteJid, data, showUrl) {
+  await conn.sendMessage(remoteJid, {
+    text: "📺 *Fetching episodes...*"
+  }, { quoted: mek });
+
+  const episodesUrl = `${API_BASE}/episodes?url=${encodeURIComponent(showUrl)}`;
+  const { data: episodeData } = await axios.get(episodesUrl);
+
+  if (!episodeData.seasons || episodeData.seasons.length === 0) {
+    return conn.sendMessage(remoteJid, {
+      text: "❌ No episodes found."
+    }, { quoted: mek });
+  }
+
+  // Show first season's episodes (can be expanded to select seasons)
+  const firstSeason = episodeData.seasons[0];
+  const episodes = firstSeason.episodes.slice(0, 10); // Show first 10 episodes
+
+  const buttons = episodes.map((ep, index) => ({
+    buttonId: `episode_select_${index}_${Buffer.from(ep.url).toString('base64')}`,
+    buttonText: { displayText: `${ep.title}` },
+    type: 1
+  }));
+
+  let caption = `📺 *${data.title}*\n`;
+  caption += `🎬 ${firstSeason.season}\n\n`;
+  caption += `*Episodes:*\n\n`;
+  
+  episodes.forEach((ep, i) => {
+    caption += `*${i + 1}.* ${ep.title}\n`;
+  });
+
+  caption += `\n👇 *Select an episode:*`;
+
+  await conn.sendMessage(remoteJid, {
+    image: data.image ? { url: data.image } : undefined,
+    caption,
+    footer: "🔗 Powered by CineSubz",
+    buttons,
+    headerType: 4
+  }, { quoted: mek });
+}
+
+
+// 📥 Handle Download
+async function handleDownload(conn, mek, remoteJid, countdownPageUrl, quality) {
+  try {
+    await conn.sendMessage(remoteJid, {
+      text: `⏳ *Preparing ${quality} download...*`
+    }, { quoted: mek });
+
+    // Resolve countdown page to final download link
+    const downloadUrl = `${API_BASE}/download?url=${encodeURIComponent(countdownPageUrl)}`;
+    const { data } = await axios.get(downloadUrl);
+
+    if (!data.downloadUrl) {
+      return conn.sendMessage(remoteJid, {
+        text: "❌ Failed to get download link."
+      }, { quoted: mek });
+    }
+
+    await conn.sendMessage(remoteJid, {
+      text: `✅ *Download link ready!*\n\n📥 Quality: *${quality}*\n🔗 Link: ${data.downloadUrl}\n\n_Sending file..._`
+    }, { quoted: mek });
+
+    // Send as document
+    await conn.sendMessage(remoteJid, {
+      document: { url: data.downloadUrl },
+      mimetype: "video/mp4",
+      fileName: `${quality}_cinesubz.mp4`,
+      caption: `✅ *Downloaded by Mr Senal*\n📥 Quality: ${quality}`
+    }, { quoted: mek });
+
+  } catch (err) {
+    console.error("Download error:", err);
+    await conn.sendMessage(remoteJid, {
+      text: `❌ Download failed: ${err.message}`
+    }, { quoted: mek });
+  }
+}
