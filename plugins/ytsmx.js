@@ -89,7 +89,7 @@ async (conn, mek, m, { from, q, reply }) => {
     reply("⏳ *Fetching details...*");
 
     // Call /details endpoint
-    const detailsUrl = `${API_BASE}/details?url=${encodeURIComponent(q)}`;
+    const detailsUrl = `${API_BASE}/details?url=${encoded_url}`;
     const { data } = await axios.get(detailsUrl);
 
     if (!data || !data.title) {
