@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@adiwajshing/keyed-db": "latest",
-    "@whiskeysockets/baileys": "npm:@neoxr/baileys@latest",
+    "@whiskeysockets/baileys": "npm:@baileys-xpro@latest",
     "axios": "latest",
     "express": "latest",
     "fs-extra": "latest",
