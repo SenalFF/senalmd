@@ -7,7 +7,7 @@ const API_BASE = "https://mapi-beta.vercel.app";
 // 1️⃣ SEARCH ENDPOINT - Search movies/TV shows
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 cmd({
-  pattern: "cs",
+  pattern: "cinesearch",
   alias: ["moviesearch", "csearch"],
   desc: "Search for movies/TV shows on CineSubz",
   category: "downloader",
@@ -65,8 +65,8 @@ async (conn, mek, m, { from, q, reply }) => {
 // 2️⃣ DETAILS ENDPOINT - Get movie/TV show details + download links
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 cmd({
-  pattern: "cds",
-  alias: ["moviedetails", "cdetails"],
+  pattern: "cinedetails",
+  alias: ["moviedetails", "cdetails", "cds"],
   desc: "Get movie/TV show details with download links",
   category: "downloader",
   react: "🎬",
@@ -77,13 +77,13 @@ async (conn, mek, m, { from, q, reply }) => {
     if (!q) {
       return reply(`❗ *Please provide a CineSubz URL*
 
-*Usage:* .cinedetails <url>
-*Example:* .cinedetails https://cinesubz.co/movies/avatar-2022/`);
+*Usage:* .cds <url>
+*Example:* .cds https://cinesubz.lk/movies/avatar-2009/`);
     }
 
-    // Validate URL
-    if (!q.includes('cinesubz.co')) {
-      return reply("❌ Please provide a valid CineSubz URL");
+    // Validate URL - accept both .lk and .co domains
+    if (!q.includes('cinesubz.lk') && !q.includes('cinesubz.co')) {
+      return reply("❌ Please provide a valid CineSubz URL (cinesubz.lk or cinesubz.co)");
     }
 
     reply("⏳ *Fetching details...*");
@@ -159,8 +159,8 @@ async (conn, mek, m, { from, q, reply }) => {
 // 3️⃣ EPISODES ENDPOINT - Get TV show episodes list
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 cmd({
-  pattern: "cep",
-  alias: ["episodes", "cepisodes"],
+  pattern: "cineepisodes",
+  alias: ["episodes", "cepisodes", "ceps"],
   desc: "Get TV show episodes list",
   category: "downloader",
   react: "📺",
@@ -171,11 +171,11 @@ async (conn, mek, m, { from, q, reply }) => {
     if (!q) {
       return reply(`❗ *Please provide a TV show URL*
 
-*Usage:* .cineepisodes <url>
-*Example:* .cineepisodes https://cinesubz.co/tvshows/the-witcher-2019/`);
+*Usage:* .ceps <url>
+*Example:* .ceps https://cinesubz.lk/tvshows/the-witcher-2019/`);
     }
 
-    if (!q.includes('cinesubz.co')) {
+    if (!q.includes('cinesubz.lk') && !q.includes('cinesubz.co')) {
       return reply("❌ Please provide a valid CineSubz URL");
     }
 
@@ -226,7 +226,7 @@ async (conn, mek, m, { from, q, reply }) => {
 // 4️⃣ DOWNLOAD ENDPOINT - Resolve countdown page & send file
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 cmd({
-  pattern: "cdn",
+  pattern: "cinedownload",
   alias: ["cinedl", "cdl"],
   desc: "Download movie/episode from countdown page",
   category: "downloader",
@@ -238,11 +238,11 @@ async (conn, mek, m, { from, q, reply }) => {
     if (!q) {
       return reply(`❗ *Please provide a countdown page URL*
 
-*Usage:* .cinedownload <countdown_url>
-*Example:* .cinedownload https://cinesubz.co/api-.../odcemnd9hb/`);
+*Usage:* .cdl <countdown_url>
+*Example:* .cdl https://cinesubz.lk/api-.../odcemnd9hb/`);
     }
 
-    if (!q.includes('cinesubz.co')) {
+    if (!q.includes('cinesubz.lk') && !q.includes('cinesubz.co')) {
       return reply("❌ Please provide a valid CineSubz countdown URL");
     }
 
@@ -281,7 +281,7 @@ async (conn, mek, m, { from, q, reply }) => {
 // 📖 HELP COMMAND - Show all CineSubz commands
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 cmd({
-  pattern: "chp",
+  pattern: "cinehelp",
   alias: ["moviehelp"],
   desc: "Show CineSubz downloader commands",
   category: "downloader",
