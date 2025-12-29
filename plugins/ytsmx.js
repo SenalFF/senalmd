@@ -160,7 +160,7 @@ async (conn, mek, m, { from, q, reply }) => {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 cmd({
   pattern: "cineepisodes",
-  alias: ["episodes", "cepisodes", "ceps"],
+  alias: ["episodes", "cepisodes"],
   desc: "Get TV show episodes list",
   category: "downloader",
   react: "📺",
@@ -171,11 +171,11 @@ async (conn, mek, m, { from, q, reply }) => {
     if (!q) {
       return reply(`❗ *Please provide a TV show URL*
 
-*Usage:* .ceps <url>
-*Example:* .ceps https://cinesubz.lk/tvshows/the-witcher-2019/`);
+*Usage:* .cineepisodes <url>
+*Example:* .cineepisodes https://cinesubz.co/tvshows/the-witcher-2019/`);
     }
 
-    if (!q.includes('cinesubz.lk') && !q.includes('cinesubz.co')) {
+    if (!q.includes('cinesubz.co')) {
       return reply("❌ Please provide a valid CineSubz URL");
     }
 
@@ -238,11 +238,11 @@ async (conn, mek, m, { from, q, reply }) => {
     if (!q) {
       return reply(`❗ *Please provide a countdown page URL*
 
-*Usage:* .cdl <countdown_url>
-*Example:* .cdl https://cinesubz.lk/api-.../odcemnd9hb/`);
+*Usage:* .cinedownload <countdown_url>
+*Example:* .cinedownload https://cinesubz.co/api-.../odcemnd9hb/`);
     }
 
-    if (!q.includes('cinesubz.lk') && !q.includes('cinesubz.co')) {
+    if (!q.includes('cinesubz.co')) {
       return reply("❌ Please provide a valid CineSubz countdown URL");
     }
 
