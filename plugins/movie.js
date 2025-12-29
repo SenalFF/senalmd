@@ -2,7 +2,7 @@ const { cmd } = require('../command');
 const axios = require('axios');
 
 const API = "https://mapi-beta.vercel.app";
-global.cineSession = {}; // store sessions per user
+const cineSession = {};
 
 /* =========================
    🔍 SEARCH MOVIE / TV
@@ -10,24 +10,25 @@ global.cineSession = {}; // store sessions per user
 cmd({
   pattern: "movie",
   alias: ["mv", "tv"],
-  category: "downloader",
   react: "🎬",
+  category: "downloader",
   filename: __filename
-},
-async (conn, mek, m, { from, q, reply }) => {
+}, async (conn, mek, m, { from, q, reply }) => {
+
   if (!q) return reply("❗ Example: .movie avatar");
   reply("🔍 Searching...");
 
   try {
-    const res = await axios.get(`${API}/search?q=${encodeURIComponent(q)}`, { timeout: 15000 });
+    const { data } = await axios.get(
+      `${API}/search?q=${encodeURIComponent(q)}`,
+      { timeout: 15000 }
+    );
 
-    if (!res.data || !res.data.results || !res.data.results.length) {
+    if (!data?.results?.length) {
       return reply("❌ No results found");
     }
 
-    const results = res.data.results.slice(0, 10);
-
-    const rows = results.map(v => ({
+    const rows = data.results.slice(0, 10).map(v => ({
       title: v.title,
       description: v.type === "tv" ? "📺 TV Series" : "🎬 Movie",
       rowId: `cine_select|${encodeURIComponent(v.url)}`
@@ -35,51 +36,56 @@ async (conn, mek, m, { from, q, reply }) => {
 
     await conn.sendMessage(from, {
       text: "🎬 *Search Results*",
-      footer: "Select one or Cancel",
-      title: "CineSubz Downloader",
+      footer: "CineSubz • Mr Senal",
+      title: "Select Movie / TV",
       buttonText: "📂 Open List",
       sections: [{ title: "Results", rows }]
     }, { quoted: mek });
 
   } catch (e) {
-    console.error("SEARCH ERROR:", e.message);
-    reply("❌ Search failed. Please try again.");
+    console.error("SEARCH ERROR:", e);
+    reply("❌ Search failed");
   }
 });
 
 /* =========================
-   🎬 LIST RESPONSE HANDLER
+   📂 HANDLE LIST SELECTION
 ========================= */
-cmd({ on: "list_response" }, async (conn, mek, m) => {
+cmd({ on: "message" }, async (conn, mek, m) => {
   try {
     const from = mek.key.remoteJid;
-    const id =
-      m.listResponse?.singleSelectReply?.selectedRowId ||
-      m.message?.listResponseMessage?.singleSelectReply?.selectedRowId;
+
+    const listMsg = m.message?.listResponseMessage;
+    if (!listMsg) return;
+
+    const id = listMsg.singleSelectReply.selectedRowId;
     if (!id) return;
 
-    const session = cineSession[from] || {};
-
-    // ❌ CANCEL
-    if (id === "cine_cancel") {
-      delete cineSession[from];
-      return conn.sendMessage(from, { text: "❌ Cancelled" }, { quoted: mek });
-    }
-
-    // 🎬 MOVIE / TV SELECT
+    /* 🎬 MOVIE / TV SELECT */
     if (id.startsWith("cine_select|")) {
       const url = decodeURIComponent(id.split("|")[1]);
-      const res = await axios.get(`${API}/details?url=${encodeURIComponent(url)}`);
-      const data = res.data;
 
-      // MOVIE → show download UI
-      if (data.type !== "tv") return sendDownloadUI(conn, mek, from, data);
+      const { data } = await axios.get(
+        `${API}/details?url=${encodeURIComponent(url)}`
+      );
 
-      // TV → store session & show seasons
-      cineSession[from] = { seriesUrl: url };
-      const epRes = await axios.get(`${API}/episodes?url=${encodeURIComponent(url)}`);
+      // MOVIE
+      if (data.type !== "tv") {
+        return sendDetails(conn, mek, from, data);
+      }
+
+      // TV SERIES
+      const epRes = await axios.get(
+        `${API}/episodes?url=${encodeURIComponent(url)}`
+      );
+
+      cineSession[from] = {
+        episodes: epRes.data,
+        title: data.title,
+        poster: data.poster
+      };
+
       const seasons = [...new Set(epRes.data.map(e => e.season || "Season 1"))];
-      cineSession[from].episodes = epRes.data;
 
       const rows = seasons.map(s => ({
         title: s,
@@ -97,12 +103,16 @@ cmd({ on: "list_response" }, async (conn, mek, m) => {
       }, { quoted: mek });
     }
 
-    // SEASON SELECT
+    /* 📺 SEASON SELECT */
     if (id.startsWith("cine_season|")) {
       const season = id.split("|")[1];
-      if (!session.episodes) return;
+      const session = cineSession[from];
+      if (!session) return;
 
-      const eps = session.episodes.filter(e => (e.season || "Season 1") === season);
+      const eps = session.episodes.filter(
+        e => (e.season || "Season 1") === season
+      );
+
       const rows = eps.map(e => ({
         title: e.title,
         description: season,
@@ -118,31 +128,33 @@ cmd({ on: "list_response" }, async (conn, mek, m) => {
       }, { quoted: mek });
     }
 
-    // EPISODE SELECT
+    /* 🎞 EPISODE SELECT */
     if (id.startsWith("cine_ep|")) {
       const epUrl = decodeURIComponent(id.split("|")[1]);
       delete cineSession[from];
 
-      const res = await axios.get(`${API}/details?url=${encodeURIComponent(epUrl)}`);
-      return sendDownloadUI(conn, mek, from, res.data);
+      const { data } = await axios.get(
+        `${API}/details?url=${encodeURIComponent(epUrl)}`
+      );
+
+      return sendDetails(conn, mek, from, data);
     }
 
   } catch (e) {
-    console.error("LIST RESPONSE ERROR:", e);
-    await conn.sendMessage(m.key.remoteJid, { text: "❌ Something went wrong" }, { quoted: mek });
+    console.error("LIST HANDLER ERROR:", e);
   }
 });
 
 /* =========================
-   🎞 DOWNLOAD + SUBTITLE UI
+   🎬 DETAILS + DOWNLOAD
 ========================= */
-async function sendDownloadUI(conn, mek, from, data) {
-  let textDetails = `🎬 *${data.title}*\n`;
-  if (data.release) textDetails += `📅 Release: ${data.release}\n`;
-  if (data.imdb) textDetails += `⭐ IMDb: ${data.imdb}\n`;
-  if (data.duration) textDetails += `⏱️ Duration: ${data.duration}\n`;
-  if (data.genre) textDetails += `🎭 Genre: ${data.genre.join(", ")}\n`;
-  if (data.description) textDetails += `📝 ${data.description}\n\n`;
+async function sendDetails(conn, mek, from, data) {
+  let caption = `🎬 *${data.title}*\n`;
+  if (data.release) caption += `📅 Release: ${data.release}\n`;
+  if (data.imdb) caption += `⭐ IMDb: ${data.imdb}\n`;
+  if (data.duration) caption += `⏱️ Duration: ${data.duration}\n`;
+  if (data.genre) caption += `🎭 Genre: ${data.genre.join(", ")}\n`;
+  if (data.description) caption += `\n📝 ${data.description}\n`;
 
   const buttons = data.downloads.map(d => ({
     buttonId: `cine_dl|${encodeURIComponent(d.url)}`,
@@ -150,23 +162,9 @@ async function sendDownloadUI(conn, mek, from, data) {
     type: 1
   }));
 
-  if (data.subtitles?.length) {
-    buttons.push({
-      buttonId: `cine_subs|${encodeURIComponent(data.url)}`,
-      buttonText: { displayText: "💬 Subtitles" },
-      type: 1
-    });
-  }
-
-  buttons.push({
-    buttonId: "cine_cancel_btn",
-    buttonText: { displayText: "❌ Cancel" },
-    type: 1
-  });
-
   await conn.sendMessage(from, {
     image: { url: data.poster },
-    caption: textDetails + "👇 Select option",
+    caption: caption + "\n👇 Select quality",
     footer: "CineSubz • Mr Senal",
     buttons,
     headerType: 4
@@ -174,38 +172,29 @@ async function sendDownloadUI(conn, mek, from, data) {
 }
 
 /* =========================
-   ⬇️ BUTTON HANDLER
+   ⬇️ DOWNLOAD HANDLER
 ========================= */
 cmd({ on: "button" }, async (conn, mek, m) => {
   try {
-    const id = m.buttonId;
     const from = mek.key.remoteJid;
+    const id = m.buttonId;
+    if (!id?.startsWith("cine_dl|")) return;
 
-    if (id === "cine_cancel_btn") {
-      delete cineSession[from];
-      return conn.sendMessage(from, { text: "❌ Cancelled" }, { quoted: mek });
-    }
-
-    if (id.startsWith("cine_subs|")) {
-      return conn.sendMessage(from, {
-        text: "💬 Subtitle download per language (API ready)"
-      }, { quoted: mek });
-    }
-
-    if (!id.startsWith("cine_dl|")) return;
     const pageUrl = decodeURIComponent(id.split("|")[1]);
+    await conn.sendMessage(from, { text: "⏳ Resolving download..." }, { quoted: mek });
 
-    await conn.sendMessage(from, { text: "⏳ Preparing download..." }, { quoted: mek });
+    const { data } = await axios.get(
+      `${API}/download?url=${encodeURIComponent(pageUrl)}`
+    );
 
-    const res = await axios.get(`${API}/download?url=${encodeURIComponent(pageUrl)}`);
-    if (!res.data?.download) {
+    if (!data?.download) {
       return conn.sendMessage(from, { text: "❌ Download failed" }, { quoted: mek });
     }
 
     await conn.sendMessage(from, {
-      document: { url: res.data.download },
+      document: { url: data.download },
       mimetype: "video/mp4",
-      fileName: "video.mp4",
+      fileName: "movie.mp4",
       caption: "✅ Download started"
     }, { quoted: mek });
 
@@ -213,4 +202,4 @@ cmd({ on: "button" }, async (conn, mek, m) => {
     console.error("DOWNLOAD ERROR:", e);
   }
 });
-                                  
+                           
