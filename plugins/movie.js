@@ -48,36 +48,38 @@ async (conn, mek, m, { from, q, reply }) => {
 });
 
 /* =========================
-   🎬 SELECT HANDLER (MOVIE / TV / SEASONS / EPISODES)
+   🎬 LIST RESPONSE HANDLER
 ========================= */
 cmd({ on: "list_response" }, async (conn, mek, m) => {
   try {
+    const from = mek.key.remoteJid;
     const id =
       m.listResponse?.singleSelectReply?.selectedRowId ||
       m.message?.listResponseMessage?.singleSelectReply?.selectedRowId;
     if (!id) return;
 
-    const from = mek.key.remoteJid;
+    const session = cineSession[from] || {};
 
-    /* ❌ CANCEL */
+    // ❌ CANCEL
     if (id === "cine_cancel") {
       delete cineSession[from];
       return conn.sendMessage(from, { text: "❌ Cancelled" }, { quoted: mek });
     }
 
-    /* 🎬 MOVIE / TV SELECT */
+    // 🎬 MOVIE / TV SELECT
     if (id.startsWith("cine_select|")) {
       const url = decodeURIComponent(id.split("|")[1]);
       const res = await axios.get(`${API}/details?url=${encodeURIComponent(url)}`);
       const data = res.data;
 
-      // MOVIE
+      // MOVIE → show download UI
       if (data.type !== "tv") return sendDownloadUI(conn, mek, from, data);
 
-      // TV SERIES → SHOW SEASONS
+      // TV → store session & show seasons
       cineSession[from] = { seriesUrl: url };
       const epRes = await axios.get(`${API}/episodes?url=${encodeURIComponent(url)}`);
       const seasons = [...new Set(epRes.data.map(e => e.season || "Season 1"))];
+      cineSession[from].episodes = epRes.data;
 
       const rows = seasons.map(s => ({
         title: s,
@@ -85,7 +87,7 @@ cmd({ on: "list_response" }, async (conn, mek, m) => {
         rowId: `cine_season|${s}`
       }));
 
-      await conn.sendMessage(from, {
+      return conn.sendMessage(from, {
         image: { url: data.poster },
         caption: `📺 *${data.title}*\n\nSelect season`,
         footer: "CineSubz",
@@ -93,25 +95,21 @@ cmd({ on: "list_response" }, async (conn, mek, m) => {
         buttonText: "📂 Season List",
         sections: [{ title: "Seasons", rows }]
       }, { quoted: mek });
-
-      cineSession[from].episodes = epRes.data;
     }
 
-    /* SEASON SELECT */
+    // SEASON SELECT
     if (id.startsWith("cine_season|")) {
       const season = id.split("|")[1];
-      const session = cineSession[from];
-      if (!session) return;
+      if (!session.episodes) return;
 
       const eps = session.episodes.filter(e => (e.season || "Season 1") === season);
-
       const rows = eps.map(e => ({
         title: e.title,
         description: season,
         rowId: `cine_ep|${encodeURIComponent(e.url)}`
       }));
 
-      await conn.sendMessage(from, {
+      return conn.sendMessage(from, {
         text: `📂 *${season}*\nSelect episode`,
         footer: "CineSubz",
         title: "Episodes",
@@ -120,7 +118,7 @@ cmd({ on: "list_response" }, async (conn, mek, m) => {
       }, { quoted: mek });
     }
 
-    /* EPISODE SELECT */
+    // EPISODE SELECT
     if (id.startsWith("cine_ep|")) {
       const epUrl = decodeURIComponent(id.split("|")[1]);
       delete cineSession[from];
@@ -130,7 +128,8 @@ cmd({ on: "list_response" }, async (conn, mek, m) => {
     }
 
   } catch (e) {
-    console.error("SELECT ERROR:", e);
+    console.error("LIST RESPONSE ERROR:", e);
+    await conn.sendMessage(m.key.remoteJid, { text: "❌ Something went wrong" }, { quoted: mek });
   }
 });
 
@@ -151,7 +150,6 @@ async function sendDownloadUI(conn, mek, from, data) {
     type: 1
   }));
 
-  // Subtitles
   if (data.subtitles?.length) {
     buttons.push({
       buttonId: `cine_subs|${encodeURIComponent(data.url)}`,
@@ -160,7 +158,6 @@ async function sendDownloadUI(conn, mek, from, data) {
     });
   }
 
-  // Cancel button
   buttons.push({
     buttonId: "cine_cancel_btn",
     buttonText: { displayText: "❌ Cancel" },
@@ -184,20 +181,17 @@ cmd({ on: "button" }, async (conn, mek, m) => {
     const id = m.buttonId;
     const from = mek.key.remoteJid;
 
-    /* ❌ CANCEL */
     if (id === "cine_cancel_btn") {
       delete cineSession[from];
       return conn.sendMessage(from, { text: "❌ Cancelled" }, { quoted: mek });
     }
 
-    /* 💬 SUBTITLES */
     if (id.startsWith("cine_subs|")) {
       return conn.sendMessage(from, {
         text: "💬 Subtitle download per language (API ready)"
       }, { quoted: mek });
     }
 
-    /* ⬇️ DOWNLOAD */
     if (!id.startsWith("cine_dl|")) return;
     const pageUrl = decodeURIComponent(id.split("|")[1]);
 
@@ -219,4 +213,4 @@ cmd({ on: "button" }, async (conn, mek, m) => {
     console.error("DOWNLOAD ERROR:", e);
   }
 });
-     
+                                  
