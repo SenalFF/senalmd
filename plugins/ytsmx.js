@@ -90,15 +90,19 @@ async (conn, mek, m, { from, q, reply }) => {
 *Example:* .cinedetails https://cinesubz.co/movies/avatar-2022/`);
     }
 
+    // Clean the input - remove command name if accidentally included
+    let cleanUrl = q.trim();
+    cleanUrl = cleanUrl.replace(/^(cinedetails|cdetails|cds)\s+/i, '');
+    
     // Validate URL
-    if (!q.includes('cinesubz.lk') && !q.includes('cinesubz.co')) {
+    if (!cleanUrl.includes('cinesubz.lk') && !cleanUrl.includes('cinesubz.co')) {
       return reply("❌ Please provide a valid CineSubz URL (cinesubz.lk or cinesubz.co)");
     }
 
     reply("⏳ *Fetching details...*");
 
     // Call /details endpoint
-    const detailsUrl = `${API_BASE}/details?url=${encodeURIComponent(q)}`;
+    const detailsUrl = `${API_BASE}/details?url=${encodeURIComponent(cleanUrl)}`;
     const { data } = await axios.get(detailsUrl);
 
     if (!data || !data.title) {
@@ -131,7 +135,7 @@ async (conn, mek, m, { from, q, reply }) => {
     if (data.movie_info?.type === "tvshow" || data.type === "tvshow") {
       message += `📺 *This is a TV Show*\n\n`;
       message += `📌 *Get Episodes:*\n`;
-      message += `.cineepisodes ${q}`;
+      message += `.cineepisodes ${cleanUrl}`;
     } 
     // If it's a movie with download links
     else if (data.download_links && data.download_links.length > 0) {
@@ -318,6 +322,39 @@ async (conn, mek, m, { from, reply }) => {
 2️⃣ *Get Details & Links*
    .cinedetails <url>
    Example: .cinedetails https://cinesubz.co/movies/avatar/
+
+3️⃣ *Get TV Show Episodes*
+   .cineepisodes <show_url>
+   Example: .cineepisodes https://cinesubz.co/tvshows/witcher/
+
+4️⃣ *Download Movie/Episode*
+   .cinedownload <countdown_url>
+   Example: .cinedownload https://cinesubz.co/api-.../abc123/
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 *WORKFLOW:*
+
+For Movies:
+.cinesearch → .cinedetails → .cinedownload
+
+For TV Shows:
+.cinesearch → .cinedetails → .cineepisodes → .cinedetails (episode) → .cinedownload
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+💡 *Tips:*
+• Copy URLs carefully (include full link)
+• Countdown links expire quickly
+• For TV shows, get episodes first
+• Large files sent as documents
+
+👨‍💻 Developed by Mr Senal
+🔗 Powered by CineSubz API
+`;
+
+  reply(helpText);
+});
 
 3️⃣ *Get TV Show Episodes*
    .cineepisodes <show_url>
