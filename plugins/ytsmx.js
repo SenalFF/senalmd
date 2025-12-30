@@ -105,25 +105,23 @@ async (conn, mek, m, { from, q, reply }) => {
     const detailsUrl = `${API_BASE}/details?url=${encodeURIComponent(cleanUrl)}`;
     const { data } = await axios.get(detailsUrl);
 
-    if (!data || !data.title) {
+    if (!data || !data.movie_info) {
       return reply("❌ Failed to fetch details. Please try again.");
     }
 
     // Format details
-    let message = `🎬 *${data.movie_info?.title || data.title}*\n\n`;
+    let message = `🎬 *${data.movie_info.title}*\n\n`;
     
-    if (data.movie_info) {
-      if (data.movie_info.year) message += `📅 *Year:* ${data.movie_info.year}\n`;
-      if (data.movie_info.rating) message += `⭐ *Rating:* ${data.movie_info.rating}\n`;
-      if (data.movie_info.genres && data.movie_info.genres.length > 0) {
-        message += `🎭 *Genre:* ${data.movie_info.genres.join(', ')}\n`;
-      }
-      if (data.movie_info.type) message += `📁 *Type:* ${data.movie_info.type}\n`;
+    if (data.movie_info.year) message += `📅 *Year:* ${data.movie_info.year}\n`;
+    if (data.movie_info.rating) message += `⭐ *Rating:* ${data.movie_info.rating}\n`;
+    if (data.movie_info.genres && data.movie_info.genres.length > 0) {
+      message += `🎭 *Genre:* ${data.movie_info.genres.join(', ')}\n`;
     }
+    if (data.movie_info.type) message += `📁 *Type:* ${data.movie_info.type}\n`;
     
     message += `\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
     
-    if (data.movie_info?.description && data.movie_info.description !== 'N/A') {
+    if (data.movie_info.description && data.movie_info.description !== 'N/A') {
       const desc = data.movie_info.description.length > 300 
         ? data.movie_info.description.substring(0, 300) + '...' 
         : data.movie_info.description;
@@ -132,7 +130,7 @@ async (conn, mek, m, { from, q, reply }) => {
     }
 
     // If it's a TV show
-    if (data.movie_info?.type === "tvshow" || data.type === "tvshow") {
+    if (data.movie_info.type === "tvshow") {
       message += `📺 *This is a TV Show*\n\n`;
       message += `📌 *Get Episodes:*\n`;
       message += `.cineepisodes ${cleanUrl}`;
@@ -158,11 +156,6 @@ async (conn, mek, m, { from, q, reply }) => {
     if (data.poster_url) {
       await conn.sendMessage(from, {
         image: { url: data.poster_url },
-        caption: message
-      }, { quoted: mek });
-    } else if (data.movie_info?.poster_url) {
-      await conn.sendMessage(from, {
-        image: { url: data.movie_info.poster_url },
         caption: message
       }, { quoted: mek });
     } else {
@@ -196,14 +189,18 @@ async (conn, mek, m, { from, q, reply }) => {
 *Example:* .cineepisodes https://cinesubz.co/tvshows/the-witcher-2019/`);
     }
 
-    if (!q.includes('cinesubz.lk') && !q.includes('cinesubz.co')) {
+    // Clean the input
+    let cleanUrl = q.trim();
+    cleanUrl = cleanUrl.replace(/^(cineepisodes|episodes|cepisodes)\s+/i, '');
+
+    if (!cleanUrl.includes('cinesubz.lk') && !cleanUrl.includes('cinesubz.co')) {
       return reply("❌ Please provide a valid CineSubz URL");
     }
 
     reply("📺 *Fetching episodes...*");
 
     // Call /episodes endpoint
-    const episodesUrl = `${API_BASE}/episodes?url=${encodeURIComponent(q)}`;
+    const episodesUrl = `${API_BASE}/episodes?url=${encodeURIComponent(cleanUrl)}`;
     const { data } = await axios.get(episodesUrl);
 
     if (!data.seasons || data.seasons.length === 0) {
@@ -263,14 +260,18 @@ async (conn, mek, m, { from, q, reply }) => {
 *Example:* .cinedownload https://cinesubz.co/api-.../odcemnd9hb/`);
     }
 
-    if (!q.includes('cinesubz.lk') && !q.includes('cinesubz.co')) {
+    // Clean the input
+    let cleanUrl = q.trim();
+    cleanUrl = cleanUrl.replace(/^(cinedownload|cinedl|cdl)\s+/i, '');
+
+    if (!cleanUrl.includes('cinesubz.lk') && !cleanUrl.includes('cinesubz.co')) {
       return reply("❌ Please provide a valid CineSubz countdown URL");
     }
 
     reply("⏳ *Resolving download link...*");
 
     // Call /download endpoint
-    const downloadUrl = `${API_BASE}/download?url=${encodeURIComponent(q)}`;
+    const downloadUrl = `${API_BASE}/download?url=${encodeURIComponent(cleanUrl)}`;
     const { data } = await axios.get(downloadUrl);
 
     if (!data.downloadUrl) {
@@ -310,8 +311,7 @@ cmd({
   filename: __filename
 },
 async (conn, mek, m, { from, reply }) => {
-  const helpText = `
-📚 *CineSubz Downloader Commands*
+  const helpText = `📚 *CineSubz Downloader Commands*
 
 ━━━━━━━━━━━━━━━━━━━━━━
 
@@ -350,41 +350,7 @@ For TV Shows:
 • Large files sent as documents
 
 👨‍💻 Developed by Mr Senal
-🔗 Powered by CineSubz API
-`;
-
-  reply(helpText);
-});
-
-3️⃣ *Get TV Show Episodes*
-   .cineepisodes <show_url>
-   Example: .cineepisodes https://cinesubz.co/tvshows/witcher/
-
-4️⃣ *Download Movie/Episode*
-   .cinedownload <countdown_url>
-   Example: .cinedownload https://cinesubz.co/api-.../abc123/
-
-━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 *WORKFLOW:*
-
-For Movies:
-.cinesearch → .cinedetails → .cinedownload
-
-For TV Shows:
-.cinesearch → .cinedetails → .cineepisodes → .cinedetails (episode) → .cinedownload
-
-━━━━━━━━━━━━━━━━━━━━━━
-
-💡 *Tips:*
-• Copy URLs carefully (include full link)
-• Countdown links expire quickly
-• For TV shows, get episodes first
-• Large files sent as documents
-
-👨‍💻 Developed by Mr Senal
-🔗 Powered by CineSubz API
-`;
+🔗 Powered by CineSubz API`;
 
   reply(helpText);
 });
