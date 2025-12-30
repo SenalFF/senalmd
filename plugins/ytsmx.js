@@ -274,17 +274,25 @@ async (conn, mek, m, { from, q, reply }) => {
     const downloadUrl = `${API_BASE}/download?url=${encodeURIComponent(cleanUrl)}`;
     const { data } = await axios.get(downloadUrl);
 
-    if (!data.downloadUrl) {
-      return reply("❌ Failed to get download link. The countdown page might be invalid.");
+    // Check for success and download_url
+    if (!data.success || !data.download_url) {
+      console.error("Download API Error:", data);
+      return reply(`❌ Failed to get download link.
+
+*Error:* ${data.error || 'Unknown error'}
+
+The countdown page might be invalid or expired.`);
     }
 
+    const finalUrl = data.download_url;
+
     await conn.sendMessage(from, {
-      text: `✅ *Download Link Ready!*\n\n🔗 ${data.downloadUrl}\n\n_Sending file now..._`
+      text: `✅ *Download Link Resolved!*\n\n🔗 ${finalUrl}\n\n_Sending file... This may take a moment._`
     }, { quoted: mek });
 
     // Send as document
     await conn.sendMessage(from, {
-      document: { url: data.downloadUrl },
+      document: { url: finalUrl },
       mimetype: "video/mp4",
       fileName: `cinesubz_${Date.now()}.mp4`,
       caption: `✅ *Downloaded by Mr Senal*\n🔗 Powered by CineSubz API`
