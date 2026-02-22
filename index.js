@@ -87,7 +87,7 @@ async function connectToWA() {
     const conn = makeWASocket({
       logger: P({ level: "silent" }),
       printQRInTerminal: false,
-      browser: Browsers.ubuntu("Firefox"),
+      browser: ["Ubuntu", "Firefox", "20.0.04"],
       syncFullHistory: true,
       auth: state,
       version,
