@@ -56,12 +56,37 @@ if (!fs.existsSync(credsFile)) {
     console.log("❌ Please add your SESSION_ID in .env!");
     process.exit(1);
   }
+  
   const { File } = require("megajs");
   const sessdata = config.SESSION_ID;
-  const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
-  file.download().pipe(fs.createWriteStream(credsFile))
-    .on("finish", () => console.log("✅ Session downloaded successfully"))
-    .on("error", (err) => { throw err });
+  
+  try {
+    const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
+    const writeStream = fs.createWriteStream(credsFile);
+    
+    file.download()
+      .on("finish", () => {
+        console.log("✅ Session downloaded successfully");
+      })
+      .on("error", (err) => {
+        console.error("❌ Session download failed:", err.message);
+        if (fs.existsSync(credsFile)) {
+          fs.unlinkSync(credsFile); // Remove corrupted file
+        }
+        process.exit(1);
+      })
+      .pipe(writeStream)
+      .on("error", (err) => {
+        console.error("❌ Session file write failed:", err.message);
+        if (fs.existsSync(credsFile)) {
+          fs.unlinkSync(credsFile); // Remove corrupted file
+        }
+        process.exit(1);
+      });
+  } catch (err) {
+    console.error("❌ Session loading error:", err.message);
+    process.exit(1);
+  }
 }
 
 // ================= Express Server =================
@@ -72,9 +97,26 @@ app.get("/", (req, res) => res.send("Hey, Senal MD started ✅"));
 
 app.listen(port, () => console.log(`🌐 Server listening on http://localhost:${port}`));
 
+// ================= Reconnection State =================
+let retryCount = 0;
+const maxRetries = 5;
+const baseDelay = 3000; // 3 seconds
+
 // ================= Connect to WhatsApp =================
 async function connectToWA() {
   try {
+    // Prevent too many reconnection attempts
+    if (retryCount > maxRetries) {
+      console.error(`❌ Max reconnection attempts (${maxRetries}) reached. Please check your configuration.`);
+      process.exit(1);
+    }
+
+    if (retryCount > 0) {
+      const delay = baseDelay * Math.pow(2, retryCount - 1); // Exponential backoff
+      console.log(`⏳ Reconnecting in ${delay / 1000}s (attempt ${retryCount}/${maxRetries})...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+
     await connectDB();
     const envConfig = await readEnv();
     const prefix = envConfig.PREFIX || ".";
@@ -91,36 +133,54 @@ async function connectToWA() {
       syncFullHistory: true,
       auth: state,
       version,
+      markOnlineOnConnect: true,
+      syncFullHistory: false,
     });
 
     // ================= Connection Updates =================
     conn.ev.on("connection.update", (update) => {
-      const { connection, lastDisconnect } = update;
+      const { connection, lastDisconnect, qr } = update;
 
-      if (connection === "close") {
+      if (connection === "connecting") {
+        console.log("📡 Attempting to connect...");
+      } else if (connection === "close") {
         const shouldReconnect =
           lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+        
         if (shouldReconnect) {
-          console.log("🔄 Reconnecting...");
+          retryCount++;
+          console.log(`⚠️ Connection closed. Error:`, lastDisconnect?.error);
           connectToWA();
         } else {
           console.log("❌ Logged out from WhatsApp");
+          process.exit(0);
         }
 
       } else if (connection === "open") {
+        retryCount = 0; // Reset retry counter on successful connection
         console.log("✅ Bot connected to WhatsApp");
+        console.log("🔌 Connection is stable");
 
         // Load plugins
-        fs.readdirSync("./plugins/").forEach((plugin) => {
-          if (path.extname(plugin).toLowerCase() === ".js") {
-            try {
-              require("./plugins/" + plugin);
-            } catch (err) {
-              console.error(`❌ Error loading plugin ${plugin}:`, err);
+        try {
+          const plugins = fs.readdirSync("./plugins/");
+          let loadedCount = 0;
+          
+          plugins.forEach((plugin) => {
+            if (path.extname(plugin).toLowerCase() === ".js") {
+              try {
+                require("./plugins/" + plugin);
+                loadedCount++;
+              } catch (err) {
+                console.error(`❌ Error loading plugin ${plugin}:`, err.message);
+              }
             }
-          }
-        });
-        console.log("✅ Plugins loaded");
+          });
+          
+          console.log(`✅ Plugins loaded (${loadedCount}/${plugins.length})`);
+        } catch (err) {
+          console.error("❌ Error reading plugins directory:", err.message);
+        }
 
         const upMsg = envConfig.ALIVE_MSG || `Senal MD connected ✅\nPrefix: ${prefix}`;
         const aliveImg = envConfig.ALIVE_IMG || null;
@@ -297,9 +357,32 @@ END:VCARD`;
     });
 
   } catch (err) {
-    console.error("❌ Error connecting to WhatsApp:", err);
+    console.error("❌ Error connecting to WhatsApp:", err.message);
+    console.error("Stack:", err.stack);
+    retryCount++;
+    connectToWA();
   }
 }
 
 // Start bot after 4 seconds
-setTimeout(() => connectToWA(), 4000);
+setTimeout(() => {
+  if (fs.existsSync(credsFile)) {
+    connectToWA();
+  } else {
+    console.log("⏳ Waiting for session file to download...");
+    const checkInterval = setInterval(() => {
+      if (fs.existsSync(credsFile)) {
+        clearInterval(checkInterval);
+        console.log("✅ Session file ready, starting bot...");
+        connectToWA();
+      }
+    }, 1000);
+    
+    // Timeout after 2 minutes
+    setTimeout(() => {
+      clearInterval(checkInterval);
+      console.error("❌ Session file download timeout");
+      process.exit(1);
+    }, 120000);
+  }
+}, 4000);
