@@ -159,7 +159,7 @@ Supported Audio: mp3, ogg, webm, aac, m4a, wav
 
       let data;
       try {
-        const response = await axios.get(apiUrl, { timeout: 90000 }); // ✅ 90s timeout
+        const response = await axios.get(apiUrl, { timeout: 300000 }); // ✅ 5 min timeout
         data = response.data;
       } catch (axiosErr) {
         const isTimeout = axiosErr.code === "ECONNABORTED";
