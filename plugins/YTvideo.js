@@ -46,8 +46,8 @@ Select your format below 👇
     `.trim();
 
     const buttons = [
-      { buttonId: `video_${videoId}`, buttonText: { displayText: "🎞 Video Formats" }, type: 1 },
-      { buttonId: `audio_${videoId}`, buttonText: { displayText: "🎵 Audio Formats" }, type: 1 },
+      { buttonId: `video__${videoId}`, buttonText: { displayText: "🎞 Video Formats" }, type: 1 },
+      { buttonId: `audio__${videoId}`, buttonText: { displayText: "🎵 Audio Formats" }, type: 1 },
       { buttonId: `api_info`, buttonText: { displayText: "ℹ️ API Info" }, type: 1 }
     ];
 
@@ -96,13 +96,14 @@ Supported Audio: mp3, ogg, webm, aac, m4a, wav
       }
 
       // ========= VIDEO FORMAT MENU =========
-      if (btnId.startsWith("video_")) {
-        const videoId = btnId.split("_")[1];
+      // btnId format: "video__VIDEOID"
+      if (btnId.startsWith("video__")) {
+        const videoId = btnId.slice("video__".length);
 
         const qualities = ["144","240","360","480","720","1080","1440","2160","4320"];
 
         const buttons = qualities.map(q => ({
-          buttonId: `dl_${videoId}_${q}`,
+          buttonId: `dl__${videoId}__${q}`,
           buttonText: { displayText: `📺 ${q}p` },
           type: 1
         }));
@@ -114,13 +115,14 @@ Supported Audio: mp3, ogg, webm, aac, m4a, wav
       }
 
       // ========= AUDIO FORMAT MENU =========
-      if (btnId.startsWith("audio_")) {
-        const videoId = btnId.split("_")[1];
+      // btnId format: "audio__VIDEOID"
+      if (btnId.startsWith("audio__")) {
+        const videoId = btnId.slice("audio__".length);
 
         const formats = ["mp3","ogg","webm","aac","m4a","wav"];
 
         const buttons = formats.map(f => ({
-          buttonId: `dl_${videoId}_${f}`,
+          buttonId: `dl__${videoId}__${f}`,
           buttonText: { displayText: `🎵 ${f.toUpperCase()}` },
           type: 1
         }));
@@ -132,9 +134,22 @@ Supported Audio: mp3, ogg, webm, aac, m4a, wav
       }
 
       // ========= DOWNLOAD HANDLER =========
-      if (!btnId.startsWith("dl_")) return;
+      // btnId format: "dl__VIDEOID__FORMAT"
+      if (!btnId.startsWith("dl__")) return;
 
-      const [, videoId, format] = btnId.split("_");
+      // Safe split using double underscore to avoid breaking on videoId characters
+      const withoutPrefix = btnId.slice("dl__".length); // "VIDEOID__FORMAT"
+      const lastSep = withoutPrefix.lastIndexOf("__");
+      if (lastSep === -1) return;
+
+      const videoId = withoutPrefix.slice(0, lastSep);
+      const format = withoutPrefix.slice(lastSep + 2);
+
+      if (!videoId || !format) {
+        return await conn.sendMessage(remoteJid, {
+          text: "❌ Invalid download request."
+        }, { quoted: mek });
+      }
 
       await conn.sendMessage(remoteJid, {
         text: `⏳ *Preparing ${format}... Please wait Sir!*`
@@ -142,30 +157,46 @@ Supported Audio: mp3, ogg, webm, aac, m4a, wav
 
       const apiUrl = `${BASE_URL}/download?id=${videoId}&format=${format}&key=${API_KEY}`;
 
-      const { data } = await axios.get(apiUrl, { timeout: 30000 });
-
-      if (!data?.url) {
+      let data;
+      try {
+        const response = await axios.get(apiUrl, { timeout: 90000 }); // ✅ 90s timeout
+        data = response.data;
+      } catch (axiosErr) {
+        const isTimeout = axiosErr.code === "ECONNABORTED";
         return await conn.sendMessage(remoteJid, {
-          text: "❌ Failed to fetch download URL."
+          text: isTimeout
+            ? "⏳ *Download timed out. The server is busy. Please try again.*"
+            : `❌ API request failed: ${axiosErr.message}`
         }, { quoted: mek });
       }
 
-      // If audio
-      if (["mp3","ogg","webm","aac","m4a","wav"].includes(format)) {
+      // ✅ API returns "download" field, not "url"
+      const downloadUrl = data?.download;
+
+      if (!downloadUrl) {
         return await conn.sendMessage(remoteJid, {
-          audio: { url: data.url },
+          text: `❌ Failed to fetch download URL.\n\n*API Response:* ${JSON.stringify(data)}`
+        }, { quoted: mek });
+      }
+
+      const audioFormats = ["mp3","ogg","webm","aac","m4a","wav"];
+
+      // ========= SEND AUDIO =========
+      if (audioFormats.includes(format)) {
+        return await conn.sendMessage(remoteJid, {
+          audio: { url: downloadUrl },
           mimetype: "audio/mpeg",
           fileName: `${videoId}.${format}`,
-          caption: `✅ Audio Downloaded (${format})\n👤 Mr Senal`
+          caption: `✅ *Audio Downloaded (${format.toUpperCase()})*\n👤 Powered by Mr Senal`
         }, { quoted: mek });
       }
 
-      // If video
+      // ========= SEND VIDEO =========
       await conn.sendMessage(remoteJid, {
-        document: { url: data.url },
+        document: { url: downloadUrl },
         mimetype: "video/mp4",
         fileName: `${videoId}_${format}p.mp4`,
-        caption: `✅ Video Downloaded (${format}p)\n👤 Mr Senal`
+        caption: `✅ *Video Downloaded (${format}p)*\n👤 Powered by Mr Senal`
       }, { quoted: mek });
 
     } catch (err) {
