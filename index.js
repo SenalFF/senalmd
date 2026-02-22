@@ -95,6 +95,7 @@ async function connectToWA() {
     // ================= Connection Updates =================
     conn.ev.on("connection.update", (update) => {
       const { connection, lastDisconnect } = update;
+
       if (connection === "close") {
         if (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut) {
           console.log("🔄 Reconnecting...");
@@ -102,6 +103,7 @@ async function connectToWA() {
         } else {
           console.log("❌ Logged out from WhatsApp");
         }
+
       } else if (connection === "open") {
         console.log("✅ Bot connected to WhatsApp");
 
@@ -117,42 +119,48 @@ async function connectToWA() {
         });
         console.log("✅ Plugins loaded");
 
-        // Send alive message to owner
+        // Send alive message + contact card to owner
         const upMsg = envConfig.ALIVE_MSG || `Senal MD connected ✅\nPrefix: ${prefix}`;
         const aliveImg = envConfig.ALIVE_IMG || null;
 
-       // Replace the aliveImg sending block with this:
-if (aliveImg) {
-  try {
-    const response = await fetch(aliveImg, { signal: AbortSignal.timeout(30000) });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const buffer = Buffer.from(await response.arrayBuffer());
-    conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-      image: buffer,
-      caption: upMsg,
-    });
-  } catch (err) {
-    console.error("⚠️ Failed to fetch alive image, sending text only:", err.message);
-    conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { text: upMsg });
-  }
-} else {
-  conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { text: upMsg });
-}
-
-        // Send Meta AI contact card to owner
         const vcard = `BEGIN:VCARD
 VERSION:3.0
 FN:${botName}
 ORG:Meta Platforms
 TEL;type=CELL;type=VOICE;waid=13135550002:+1 313 555 0002
 END:VCARD`;
-        
-        conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-          contacts: {
-            displayName: botName,
-            contacts: [{ vcard: vcard }]
+
+        // ✅ Async IIFE — required because connection.update callback is not async
+        (async () => {
+          try {
+            if (aliveImg) {
+              try {
+                const response = await fetch(aliveImg, { signal: AbortSignal.timeout(30000) });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const buffer = Buffer.from(await response.arrayBuffer());
+                await conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
+                  image: buffer,
+                  caption: upMsg,
+                });
+              } catch (imgErr) {
+                console.error("⚠️ Failed to fetch alive image, sending text only:", imgErr.message);
+                await conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { text: upMsg });
+              }
+            } else {
+              await conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { text: upMsg });
+            }
+
+            // Send Meta AI contact card
+            await conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
+              contacts: {
+                displayName: botName,
+                contacts: [{ vcard }],
+              },
+            });
+          } catch (err) {
+            console.error("❌ Error sending startup messages:", err);
           }
-        });
+        })();
       }
     });
 
@@ -209,7 +217,6 @@ END:VCARD`;
       const isOwner = ownerNumber.includes(senderNumber) || isMe;
 
       const reply = (text, extra = {}) => {
-        // Always quote with Meta AI status contact (chama) for all messages
         return conn.sendMessage(from, { text, ...extra }, { quoted: chama });
       };
 
@@ -266,6 +273,7 @@ END:VCARD`;
         }
       }
     });
+
   } catch (err) {
     console.error("❌ Error connecting to WhatsApp:", err);
   }
