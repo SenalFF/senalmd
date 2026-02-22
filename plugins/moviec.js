@@ -16,42 +16,28 @@ const API = {
 
 // ================== HELPERS ==================
 
-/**
- * Smart GET with retry logic
- * - First attempt: 30s timeout
- * - If fails, retry once more with 60s timeout
- * - Total max wait: ~90s instead of hanging forever
- */
+// Retry: 30s first attempt, 60s on retry
 async function safeGet(url, retries = 2) {
   let lastErr;
   for (let i = 0; i < retries; i++) {
     try {
-      const timeout = i === 0 ? 30000 : 60000; // 30s first, 60s retry
-      const { data } = await axios.get(url, { timeout });
+      const { data } = await axios.get(url, { timeout: i === 0 ? 30000 : 60000 });
       return data;
     } catch (err) {
       lastErr = err;
-      // Only retry on timeout/network errors, not 4xx
-      if (err.response && err.response.status < 500) throw err;
-      if (i < retries - 1) {
-        await new Promise(r => setTimeout(r, 2000)); // wait 2s before retry
-      }
+      if (err.response && err.response.status < 500) throw err; // don't retry 4xx
+      if (i < retries - 1) await new Promise(r => setTimeout(r, 2000));
     }
   }
   throw lastErr;
 }
 
-/**
- * Send "still working..." update after delay
- * Returns a cancel function — call cancel() if done before delay fires
- */
-function sendDelayedUpdate(conn, remoteJid, mek, msg, delayMs = 15000) {
+// Sends a "still working" message after delayMs if not cancelled
+function sendDelayedUpdate(conn, remoteJid, mek, msg, delayMs = 12000) {
   let cancelled = false;
   const timer = setTimeout(async () => {
     if (!cancelled) {
-      try {
-        await conn.sendMessage(remoteJid, { text: msg }, { quoted: mek });
-      } catch (_) {}
+      try { await conn.sendMessage(remoteJid, { text: msg }, { quoted: mek }); } catch (_) {}
     }
   }, delayMs);
   return () => { cancelled = true; clearTimeout(timer); };
@@ -62,25 +48,25 @@ function truncate(str = "", len = 30) {
 }
 
 function encodeBtn(prefix, payload) {
-  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  return `${prefix}::${encoded}`;
+  return `${prefix}::${Buffer.from(JSON.stringify(payload)).toString("base64url")}`;
 }
 
 function decodeBtn(btnId) {
   const sep = btnId.indexOf("::");
   if (sep === -1) return null;
-  const prefix = btnId.slice(0, sep);
   try {
-    const payload = JSON.parse(Buffer.from(btnId.slice(sep + 2), "base64url").toString("utf8"));
-    return { prefix, payload };
+    return {
+      prefix: btnId.slice(0, sep),
+      payload: JSON.parse(Buffer.from(btnId.slice(sep + 2), "base64url").toString("utf8"))
+    };
   } catch { return null; }
 }
 
 function stars(rating) {
   const n = parseFloat(rating);
   if (isNaN(n)) return "N/A";
-  const filled = Math.round(n / 2);
-  return "⭐".repeat(Math.min(filled, 5)) + "☆".repeat(Math.max(5 - filled, 0)) + ` (${rating}/10)`;
+  const filled = Math.min(Math.round(n / 2), 5);
+  return "⭐".repeat(filled) + "☆".repeat(5 - filled) + ` (${rating}/10)`;
 }
 
 
@@ -105,15 +91,15 @@ async (conn, mek, m, { from, q, reply }) => {
     try {
       data = await safeGet(API.search(q));
     } catch (err) {
-      const isTimeout = err.code === "ECONNABORTED";
-      return reply(isTimeout
-        ? "⏳ *Search timed out. CineSubz server is busy. Please try again.*"
+      return reply(err.code === "ECONNABORTED"
+        ? "⏳ *Search timed out. Please try again.*"
         : `❌ *Search failed:* ${err.message}`
       );
     }
 
-    const results = data?.results || data;
-    if (!results || !results.length) return reply("❌ *No results found.*\nTry a different keyword.");
+    // API: { query, count, results: [...] }
+    const results = Array.isArray(data) ? data : (data?.results || []);
+    if (!results.length) return reply("❌ *No results found.*\nTry a different keyword.");
 
     const top = results.slice(0, 5);
 
@@ -121,18 +107,26 @@ async (conn, mek, m, { from, q, reply }) => {
     text += `🔎 *"${q}"* — ${data.count || top.length} found\n`;
     text += `${"▬".repeat(20)}\n\n`;
     top.forEach((r, i) => {
-      const icon = r.type === "tv" ? "📺" : "🎥";
-      text += `*${i + 1}.* ${icon} *${r.title}*\n`;
+      text += `*${i + 1}.* ${r.type === "tv" ? "📺" : "🎥"} *${r.title}*\n`;
       text += `   📅 ${r.year || "N/A"} • ⭐ ${r.imdb || "N/A"} • ⏱ ${r.runtime || "N/A"}\n`;
       text += `   🎭 ${truncate(r.genres || "N/A", 40)}\n\n`;
     });
     text += `${"▬".repeat(20)}\n👇 *Select a title:*`;
 
+    // ✅ Store FULL search result in button — so we NEVER need details API for basic info
+    // url from search result is used directly for details if needed
     const buttons = top.map((r, i) => ({
       buttonId: encodeBtn("cine_details", {
-        url:   r.url,
-        title: truncate(r.title, 22),
-        type:  r.type || "movie"
+        // all data from search — no extra API call needed for basic display
+        post_id:   r.post_id,
+        url:       r.url,          // ← exact URL from search result
+        title:     r.title,
+        thumbnail: r.thumbnail,
+        year:      r.year,
+        imdb:      r.imdb,
+        runtime:   r.runtime,
+        genres:    r.genres,
+        type:      r.type || "movie"
       }),
       buttonText: { displayText: `${i + 1}. ${truncate(r.title, 24)} (${r.year || "?"})` },
       type: 1
@@ -164,73 +158,90 @@ cmd({
     try {
 
       // ────────────────────────────────
-      // DETAILS
+      // DETAILS — Show info card using search data first,
+      //           then fetch full details from API using url from search results
       // ────────────────────────────────
       if (prefix === "cine_details") {
-        const { url, title, type } = payload;
+        const { post_id, url, title, thumbnail, year, imdb, runtime, genres, type } = payload;
+        const isTv = type === "tv";
 
-        await conn.sendMessage(remoteJid, {
-          text: `⏳ *Loading details...*\n🎬 _${title}_`
-        }, { quoted: mek });
+        // ── Step 1: Show quick card immediately using search data ──
+        // User sees something right away — no waiting
+        let quickText = `╔${"═".repeat(24)}╗\n`;
+        quickText += `  🎬 *${truncate(title, 30)}*\n`;
+        quickText += `╚${"═".repeat(24)}╝\n\n`;
+        quickText += `${isTv ? "📺 *TV Series*" : "🎥 *Movie*"}\n`;
+        quickText += `📅 *Year:* ${year || "N/A"}\n`;
+        quickText += `⭐ *IMDb:* ${stars(imdb)}\n`;
+        quickText += `⏱ *Runtime:* ${runtime || "N/A"}\n`;
+        quickText += `🎭 *Genres:* ${genres || "N/A"}\n\n`;
+        quickText += `⏳ *Loading full details...*`;
 
-        // Send "still working" message if taking >15s
+        // Send quick info with poster immediately
+        if (thumbnail) {
+          await conn.sendMessage(remoteJid, {
+            image: { url: thumbnail },
+            caption: quickText,
+            footer: "🎬 CineSubz v3"
+          }, { quoted: mek });
+        } else {
+          await conn.sendMessage(remoteJid, { text: quickText }, { quoted: mek });
+        }
+
+        // ── Step 2: Fetch full details using URL directly from search results ──
         const cancel = sendDelayedUpdate(
           conn, remoteJid, mek,
-          `⏳ *Still loading, please wait...*\n🌐 CineSubz server is responding slowly.`,
+          "⏳ *Still loading full details... CineSubz is responding slowly.*",
           15000
         );
 
-        let d;
+        let d = null;
         try {
+          // url is exactly what came from search API — use it directly
           d = await safeGet(API.details(url));
-          cancel(); // done — cancel the delayed message
+          cancel();
         } catch (err) {
           cancel();
-          const isTimeout = err.code === "ECONNABORTED";
-          return await conn.sendMessage(remoteJid, {
-            text: isTimeout
-              ? `⏳ *Details timed out.*\n\nThe CineSubz server didn't respond for _${title}_.\n\n💡 Try again in a moment.`
-              : `❌ *Failed to load details.*\n\`${err.message}\``
+          // Details failed — but we already showed quick info
+          // Fall back to post_id for player buttons
+          d = null;
+          await conn.sendMessage(remoteJid, {
+            text: `⚠️ *Could not load full details* (server slow).\nShowing download options based on available data.`
           }, { quoted: mek });
         }
 
-        if (!d) {
-          return await conn.sendMessage(remoteJid, { text: "❌ Empty response from server." }, { quoted: mek });
-        }
-
-        const isTv = type === "tv" || d.type === "tv";
-
+        // ── Step 3: Build full details card + download buttons ──
         let text = `╔${"═".repeat(24)}╗\n`;
-        text += `  🎬 *${d.title || title}*\n`;
+        text += `  🎬 *${d?.title || title}*\n`;
         text += `╚${"═".repeat(24)}╝\n\n`;
         text += `${isTv ? "📺 *TV Series*" : "🎥 *Movie*"}\n`;
-        text += `📅 *Year:* ${d.year || "N/A"}\n`;
-        text += `⭐ *IMDb:* ${stars(d.imdb)}\n`;
-        if (d.site_rating) text += `🌟 *Site Rating:* ${d.site_rating} (${d.site_rating_count || ""})\n`;
-        text += `⏱ *Runtime:* ${d.runtime || "N/A"}\n`;
-        text += `🌐 *Country/Lang:* ${d.country || "N/A"}\n`;
-        text += `🎭 *Genres:* ${Array.isArray(d.genres) ? d.genres.join(", ") : "N/A"}\n`;
-        if (d.director) text += `🎬 *Director:* ${d.director}\n`;
-        if (d.quality)  text += `🎞 *Quality:* ${d.quality}\n`;
-        if (d.subtitle_by) text += `💬 *Subs by:* ${d.subtitle_by}\n`;
-        if (d.tagline) text += `\n💬 _${d.tagline}_\n`;
-        text += `\n📝 *Synopsis:*\n${(d.description || "N/A").slice(0, 350)}...\n`;
+        text += `📅 *Year:* ${d?.year || year || "N/A"}\n`;
+        text += `⭐ *IMDb:* ${stars(d?.imdb || imdb)}\n`;
+        if (d?.site_rating) text += `🌟 *Site Rating:* ${d.site_rating} (${d.site_rating_count || ""})\n`;
+        text += `⏱ *Runtime:* ${d?.runtime || runtime || "N/A"}\n`;
+        text += `🌐 *Country/Lang:* ${d?.country || "N/A"}\n`;
+        text += `🎭 *Genres:* ${Array.isArray(d?.genres) ? d.genres.join(", ") : (d?.genres || genres || "N/A")}\n`;
+        if (d?.director)    text += `🎬 *Director:* ${d.director}\n`;
+        if (d?.quality)     text += `🎞 *Quality:* ${d.quality}\n`;
+        if (d?.subtitle_by) text += `💬 *Subs by:* ${d.subtitle_by}\n`;
+        if (d?.tagline)     text += `\n💬 _${d.tagline}_\n`;
+        if (d?.description) text += `\n📝 *Synopsis:*\n${d.description.slice(0, 350)}...\n`;
         text += `\n${"▬".repeat(20)}\n`;
 
         const buttons = [];
-        const downloads = d.downloads || [];
-        const players   = d.players   || [];
+        const downloads = d?.downloads || [];
+        const players   = d?.players   || [];
 
         if (isTv) {
           text += "👇 *Browse Episodes:*";
           buttons.push({
-            buttonId: encodeBtn("cine_episodes", { url, title: truncate(d.title || title, 22) }),
+            buttonId: encodeBtn("cine_episodes", { url, title: truncate(d?.title || title, 22) }),
             buttonText: { displayText: "📺 Browse Seasons & Episodes" },
             type: 1
           });
+
         } else if (downloads.length) {
-          text += "👇 *Select Quality:*";
-          // Prefer Direct Download, fallback Telegram
+          text += "👇 *Select Quality to Download:*";
           const direct = downloads.filter(x => x.type?.toLowerCase().includes("direct"));
           const tg     = downloads.filter(x => x.type?.toLowerCase().includes("telegram"));
           const show   = (direct.length ? direct : tg).slice(0, 3);
@@ -240,42 +251,62 @@ cmd({
               buttonId: encodeBtn("cine_download", {
                 dlUrl:   dl.url,
                 quality: dl.quality,
-                title:   truncate(d.title || title, 24)
+                title:   truncate(d?.title || title, 24)
               }),
               buttonText: { displayText: `⬇️ ${truncate(dl.quality, 30)}` },
               type: 1
             });
           });
 
-          // If both types exist and we have room, add TG toggle
           if (direct.length && tg.length && buttons.length < 3) {
             buttons.push({
               buttonId: encodeBtn("cine_dl_tg", {
                 downloads: tg,
-                title: truncate(d.title || title, 24)
+                title: truncate(d?.title || title, 24)
               }),
-              buttonText: { displayText: "📲 Telegram Download Links" },
+              buttonText: { displayText: "📲 Telegram Links" },
               type: 1
             });
           }
+
         } else if (players.length) {
           text += "👇 *Select Player:*";
           players.slice(0, 3).forEach(p => {
             buttons.push({
               buttonId: encodeBtn("cine_play", {
-                post:  p.post,
+                post:  p.post  || post_id,
                 nume:  p.nume,
-                title: truncate(d.title || title, 24)
+                title: truncate(d?.title || title, 24)
               }),
               buttonText: { displayText: `▶️ ${p.name || `Player ${p.nume}`}` },
               type: 1
             });
           });
+
         } else {
-          text += "❌ *No download options found.*";
+          // Last resort fallback — use post_id from search to try player directly
+          text += "👇 *Download:*";
+          buttons.push({
+            buttonId: encodeBtn("cine_play", {
+              post:  post_id,
+              nume:  "1",
+              title: truncate(d?.title || title, 24)
+            }),
+            buttonText: { displayText: "▶️ Player 01" },
+            type: 1
+          });
+          buttons.push({
+            buttonId: encodeBtn("cine_play", {
+              post:  post_id,
+              nume:  "2",
+              title: truncate(d?.title || title, 24)
+            }),
+            buttonText: { displayText: "▶️ Player 02" },
+            type: 1
+          });
         }
 
-        const poster = d.poster || d.thumbnail || d.image;
+        const poster = d?.poster || d?.thumbnail || thumbnail;
         if (poster) {
           return await conn.sendMessage(remoteJid, {
             image: { url: poster },
@@ -308,8 +339,7 @@ cmd({
           20000
         );
 
-        try {
-          const caption = `
+        const caption = `
 ╔${"═".repeat(24)}╗
   🎬 *${title}*
 ╚${"═".repeat(24)}╝
@@ -318,19 +348,18 @@ cmd({
 💬 *Subtitles:* Sinhala | සිංහල
 ${"▬".repeat(20)}
 ✅ *CineSubz v3 | සිංහල උපසිරැසි*
-          `.trim();
+        `.trim();
 
+        try {
           await conn.sendMessage(remoteJid, {
             document: { url: dlUrl },
             mimetype: "video/mp4",
             fileName: `${title.replace(/[^\w\s\-()]/g, "").trim()}.mp4`,
             caption
           }, { quoted: mek });
-
           cancel();
-        } catch (err) {
+        } catch {
           cancel();
-          // If sending the document failed, send the raw link as fallback
           await conn.sendMessage(remoteJid, {
             text: `⚠️ *Could not auto-send file.*\n\n🔗 *Direct Download Link:*\n${dlUrl}\n\n💡 Open in browser to download.`
           }, { quoted: mek });
@@ -356,7 +385,7 @@ ${"▬".repeat(20)}
 
 
       // ────────────────────────────────
-      // PLAYER API
+      // PLAYER API → fetch video_url
       // ────────────────────────────────
       if (prefix === "cine_play") {
         const { post, nume, title } = payload;
@@ -389,7 +418,7 @@ ${"▬".repeat(20)}
         const videoUrl = pd.video_url || pd.raw_url || null;
         const embedUrl = pd.raw_embed || pd.iframe_url || null;
         const subtUrl  = pd.subtitle_url || null;
-        const vidType  = pd.video_type  || "mp4";
+        const vidType  = pd.video_type || "mp4";
 
         if (!videoUrl && !embedUrl) {
           return await conn.sendMessage(remoteJid, {
@@ -418,7 +447,7 @@ ${"▬".repeat(20)}
             }, { quoted: mek });
           } catch {
             await conn.sendMessage(remoteJid, {
-              text: `⚠️ *Could not send file directly.*\n\n🔗 *Video Link:*\n${videoUrl}`
+              text: `⚠️ *Could not send file.*\n\n🔗 *Video Link:*\n${videoUrl}`
             }, { quoted: mek });
           }
 
@@ -433,8 +462,9 @@ ${"▬".repeat(20)}
           return;
         }
 
+        // Fallback embed only
         return await conn.sendMessage(remoteJid, {
-          text: `🎬 *${title}*\n\n⚠️ *Direct download unavailable.*\n\n🔗 *Watch / Download:*\n${embedUrl}\n\n💡 Open in browser to download.`
+          text: `🎬 *${title}*\n\n⚠️ *Direct download unavailable.*\n\n🔗 *Watch/Download:*\n${embedUrl}\n\n💡 Open in browser to download.`
         }, { quoted: mek });
       }
 
@@ -449,7 +479,7 @@ ${"▬".repeat(20)}
           text: `⏳ *Loading seasons...*\n📺 _${title}_`
         }, { quoted: mek });
 
-        const cancel = sendDelayedUpdate(conn, remoteJid, mek, "⏳ *Still loading seasons, please wait...*", 15000);
+        const cancel = sendDelayedUpdate(conn, remoteJid, mek, "⏳ *Still loading seasons...*", 15000);
 
         let epData;
         try {
@@ -459,7 +489,7 @@ ${"▬".repeat(20)}
           cancel();
           return await conn.sendMessage(remoteJid, {
             text: err.code === "ECONNABORTED"
-              ? "⏳ *Timed out loading seasons. Please try again.*"
+              ? "⏳ *Timed out loading seasons. Try again.*"
               : `❌ Error: \`${err.message}\``
           }, { quoted: mek });
         }
@@ -533,7 +563,7 @@ ${"▬".repeat(20)}
           text: `⏳ *Resolving episode...*\n🎞 _${epTitle}_`
         }, { quoted: mek });
 
-        const cancel = sendDelayedUpdate(conn, remoteJid, mek, "⏳ *Still resolving episode, please wait...*", 15000);
+        const cancel = sendDelayedUpdate(conn, remoteJid, mek, "⏳ *Still resolving episode...*", 15000);
 
         let ep;
         try {
@@ -550,9 +580,9 @@ ${"▬".repeat(20)}
 
         if (!ep) return await conn.sendMessage(remoteJid, { text: "❌ Could not resolve episode." }, { quoted: mek });
 
-        const players   = ep.players   || [];
-        const downloads = ep.downloads || [];
-        const fallbackId = ep.post_id || ep.id;
+        const players    = ep.players   || [];
+        const downloads  = ep.downloads || [];
+        const fallbackId = ep.post_id   || ep.id;
 
         let text = `╔${"═".repeat(24)}╗\n  📺 *${showTitle}*\n╚${"═".repeat(24)}╝\n\n`;
         text += `🎞 *Episode:* ${epTitle}\n${"▬".repeat(20)}\n👇 Select quality:`;
@@ -560,8 +590,7 @@ ${"▬".repeat(20)}
         const buttons = [];
 
         if (downloads.length) {
-          const show = downloads.slice(0, 3);
-          show.forEach(dl => {
+          downloads.slice(0, 3).forEach(dl => {
             buttons.push({
               buttonId: encodeBtn("cine_download", {
                 dlUrl: dl.url, quality: dl.quality,
