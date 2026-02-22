@@ -22,7 +22,7 @@
     "pino": "latest",
     "pm2": "latest",
     "cheerio": "latest",
-    "sharp": "latest",
+    "sharp": "^0.32.6",
     "yt-search": "latest",
     "file-type": "latest",
     "file_size_url": "latest",
