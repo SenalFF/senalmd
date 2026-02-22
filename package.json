@@ -9,9 +9,9 @@
     "restart": "pm2 restart SENAL-MD-V1"
   },
   "dependencies": {
-    "@adiwajshing/keyed-db": "latest",
-    "@whiskeysockets/baileys": "npm:@rexxhayanasi/elaina-baileys",
-    "axios": "latest",
+  "@adiwajshing/keyed-db": "latest",
+   "@whiskeysockets/baileys": "github:dew-coders/Dew-Baileys"
+   "axios": "latest",
     "express": "latest",
     "fs-extra": "latest",
     "path": "latest",
