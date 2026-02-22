@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@adiwajshing/keyed-db": "latest",
-    "@whiskeysockets/baileys": "npm:@vreden/meta",
+    "@whiskeysockets/baileys": "github:dew-coders/Dew-Baileys",
     "axios": "latest",
     "express": "latest",
     "fs-extra": "latest",
