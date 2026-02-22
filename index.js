@@ -121,14 +121,23 @@ async function connectToWA() {
         const upMsg = envConfig.ALIVE_MSG || `Senal MD connected ✅\nPrefix: ${prefix}`;
         const aliveImg = envConfig.ALIVE_IMG || null;
 
-        if (aliveImg) {
-          conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-            image: { url: aliveImg },
-            caption: upMsg,
-          });
-        } else {
-          conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { text: upMsg });
-        }
+       // Replace the aliveImg sending block with this:
+if (aliveImg) {
+  try {
+    const response = await fetch(aliveImg, { signal: AbortSignal.timeout(30000) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
+      image: buffer,
+      caption: upMsg,
+    });
+  } catch (err) {
+    console.error("⚠️ Failed to fetch alive image, sending text only:", err.message);
+    conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { text: upMsg });
+  }
+} else {
+  conn.sendMessage(ownerNumber[0] + "@s.whatsapp.net", { text: upMsg });
+}
 
         // Send Meta AI contact card to owner
         const vcard = `BEGIN:VCARD
