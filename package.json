@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@adiwajshing/keyed-db": "latest",
-    "@whiskeysockets/baileys": "github:dew-coders/Dew-Baileys",
+    "@whiskeysockets/baileys": "npm:@rexxhayanasi/elaina-baileys",
     "axios": "latest",
     "express": "latest",
     "fs-extra": "latest",
