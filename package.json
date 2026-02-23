@@ -21,6 +21,7 @@
     "fluent-ffmpeg": "latest",
     "pino": "latest",
     "pm2": "latest",
+    "puppeteer": "latest",
     "cheerio": "latest",
     "sharp": "^0.32.2",
     "yt-search": "latest",
